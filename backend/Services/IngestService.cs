@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.IO;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using iTextSharp.text.pdf;
@@ -9,6 +10,8 @@ using Markdig;
 using CortexApi.Models;
 using CortexApi.Data;
 using Microsoft.EntityFrameworkCore;
+
+using PathIO = System.IO.Path;
 
 namespace CortexApi.Services;
 
@@ -66,7 +69,7 @@ public class IngestService : IIngestService
         var supportedExtensions = new[] { ".txt", ".md", ".pdf", ".docx" };
 
         var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
-            .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLower()));
+            .Where(f => supportedExtensions.Contains(PathIO.GetExtension(f).ToLower()));
 
         foreach (var filePath in files)
         {
@@ -116,11 +119,11 @@ public class IngestService : IIngestService
         // Save file to data directory
         var now = DateTime.UtcNow;
         var yearMonth = $"{now.Year:D4}/{now.Month:D2}";
-        var dataPath = Path.Combine(_dataDir, "raw", yearMonth);
+    var dataPath = PathIO.Combine(_dataDir, "raw", yearMonth);
         Directory.CreateDirectory(dataPath);
 
-        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-        var filePath = Path.Combine(dataPath, fileName);
+    var fileName = $"{Guid.NewGuid()}{PathIO.GetExtension(file.FileName)}";
+    var filePath = PathIO.Combine(dataPath, fileName);
 
         using (var fileStream = new FileStream(filePath, FileMode.Create))
         {
@@ -138,10 +141,10 @@ public class IngestService : IIngestService
         // Create note and chunks
         var note = new Note
         {
-            Title = Path.GetFileNameWithoutExtension(file.FileName),
+            Title = PathIO.GetFileNameWithoutExtension(file.FileName),
             OriginalPath = file.FileName,
             FilePath = filePath,
-            FileType = Path.GetExtension(file.FileName).ToLower(),
+            FileType = PathIO.GetExtension(file.FileName).ToLower(),
             Sha256Hash = hash,
             FileSizeBytes = file.Length,
             CreatedAt = now,
@@ -184,7 +187,7 @@ public class IngestService : IIngestService
         }
 
         // Extract text content
-        var content = await ExtractTextAsync(filePath, fileInfo.Name);
+    var content = await ExtractTextAsync(filePath, fileInfo.Name);
         if (string.IsNullOrWhiteSpace(content))
         {
             return null;
@@ -193,7 +196,7 @@ public class IngestService : IIngestService
         // Create note and chunks
         var note = new Note
         {
-            Title = Path.GetFileNameWithoutExtension(fileInfo.Name),
+            Title = PathIO.GetFileNameWithoutExtension(fileInfo.Name),
             OriginalPath = filePath,
             FilePath = filePath,
             FileType = fileInfo.Extension.ToLower(),
@@ -227,7 +230,7 @@ public class IngestService : IIngestService
 
     private async Task<string> ExtractTextAsync(string filePath, string originalFileName)
     {
-        var extension = Path.GetExtension(originalFileName).ToLower();
+    var extension = PathIO.GetExtension(originalFileName).ToLower();
 
         return extension switch
         {

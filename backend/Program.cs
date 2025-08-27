@@ -17,12 +17,15 @@ builder.Services.AddScoped<ISearchService, SearchService>();
 builder.Services.AddScoped<IVoiceService, VoiceService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 
-// Add CORS
+// Add CORS (configurable via CORS_ORIGINS)
+var corsOrigins = builder.Configuration["CORS_ORIGINS"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                 ?? new[] { "http://localhost:3000" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins(corsOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -68,8 +71,7 @@ app.MapPost("/ingest/files", async (IFormFileCollection files, IIngestService in
     var results = await ingestService.IngestFilesAsync(files);
     return Results.Ok(results);
 })
-.WithName("IngestFiles")
-.WithOpenApi();
+.WithName("IngestFiles");
 
 // POST /ingest/folder
 app.MapPost("/ingest/folder", async (FolderIngestRequest request, IIngestService ingestService) =>
@@ -84,8 +86,7 @@ app.MapPost("/ingest/folder", async (FolderIngestRequest request, IIngestService
         return Results.StatusCode(403);
     }
 })
-.WithName("IngestFolder")
-.WithOpenApi();
+.WithName("IngestFolder");
 
 // GET /notes/{id}
 app.MapGet("/notes/{id}", async (string id, IIngestService ingestService) =>
@@ -93,11 +94,10 @@ app.MapGet("/notes/{id}", async (string id, IIngestService ingestService) =>
     var note = await ingestService.GetNoteAsync(id);
     return note != null ? Results.Ok(note) : Results.NotFound();
 })
-.WithName("GetNote")
-.WithOpenApi();
+.WithName("GetNote");
 
 // GET /search
-app.MapGet("/search", async (string? q, int limit = 20, string? fileType = null, string? dateFrom = null, string? dateTo = null, ISearchService searchService) =>
+app.MapGet("/search", async (ISearchService searchService, string? q, int limit = 20, string? fileType = null, string? dateFrom = null, string? dateTo = null) =>
 {
     var filters = new Dictionary<string, string>();
     if (!string.IsNullOrEmpty(fileType)) filters["fileType"] = fileType;
@@ -107,8 +107,7 @@ app.MapGet("/search", async (string? q, int limit = 20, string? fileType = null,
     var results = await searchService.SearchAsync(q ?? "", limit, filters);
     return Results.Ok(results);
 })
-.WithName("Search")
-.WithOpenApi();
+.WithName("Search");
 
 // WS /voice/stt
 app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
@@ -130,21 +129,18 @@ app.MapPost("/voice/tts", async (VoiceTtsRequest request, IVoiceService voiceSer
     var audioData = await voiceService.GenerateTtsAsync(request.Text);
     return Results.File(audioData, "audio/wav");
 })
-.WithName("TextToSpeech")
-.WithOpenApi();
+.WithName("TextToSpeech");
 
 // POST /chat/stream
 app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, IChatService chatService) =>
 {
     await chatService.StreamChatResponseAsync(request.Prompt, request.Provider, context);
 })
-.WithName("ChatStream")
-.WithOpenApi();
+.WithName("ChatStream");
 
 // Health check
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
-.WithName("HealthCheck")
-.WithOpenApi();
+.WithName("HealthCheck");
 
 app.Run();
 

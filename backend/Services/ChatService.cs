@@ -23,9 +23,9 @@ public class ChatService : IChatService
 
     public async Task StreamChatResponseAsync(string prompt, string provider, HttpContext context)
     {
-        context.Response.Headers.Add("Content-Type", "text/event-stream");
-        context.Response.Headers.Add("Cache-Control", "no-cache");
-        context.Response.Headers.Add("Connection", "keep-alive");
+    context.Response.Headers.Append("Content-Type", "text/event-stream");
+    context.Response.Headers.Append("Cache-Control", "no-cache");
+    context.Response.Headers.Append("Connection", "keep-alive");
 
         try
         {
