@@ -5,7 +5,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      NEXT_PUBLIC_API_URL: http://localhost:8080
     depends_on:
       - backend
     volumes:
@@ -17,17 +17,18 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ASPNETCORE_URLS=http://+:8080
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3.2:3b
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL=gpt-4o-mini
-      - STT_URL=http://faster-whisper:8001
-      - TTS_URL=http://piper:8002
-      - DATA_DIR=/app/data
-      - ALLOW_LOCAL_SCAN=true
-      - ConnectionStrings__DefaultConnection=Data Source=/app/data/cortex.db
-      - Redis__ConnectionString=redis:6379
+      ASPNETCORE_URLS: http://+:8080
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      STT_URL: ${STT_URL:-http://host.docker.internal:8001}
+      TTS_URL: ${TTS_URL:-http://host.docker.internal:8002}
+      DATA_DIR: /app/data
+      ALLOW_LOCAL_SCAN: "true"
+      ConnectionStrings__DefaultConnection: Data Source=/app/data/cortex.db
+      Redis__ConnectionString: redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       - ./data:/app/data
       - ./backend:/app/src
@@ -56,17 +57,17 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      - OLLAMA_ORIGINS=*
+      OLLAMA_ORIGINS: "*"
+    profiles: ["ai"]
 
   faster-whisper:
     image: linuxserver/faster-whisper:latest
-    ports:
-      - "8001:8001"
     environment:
-      - WHISPER_MODEL=small
-      - WHISPER_LANGUAGE=auto
+      WHISPER_MODEL: small
+      WHISPER_LANGUAGE: auto
     volumes:
       - whisper_data:/app/data
+    profiles: ["ai"]
 
   piper:
     image: rhasspy/piper:latest
@@ -75,6 +76,7 @@ services:
     command: ["--model", "en_US-lessac-medium", "--output_dir", "/data"]
     volumes:
       - piper_data:/data
+    profiles: ["ai"]
 
 volumes:
   redis_data:
