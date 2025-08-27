@@ -1,0 +1,8 @@
+{
+    "chat.checkpoints.showFileChanges": true,
+    "chat.editor.wordWrap": "on",
+    "chat.edits2.enabled": true,
+    "chat.math.enabled": true,
+    "chat.mcp.assisted.nuget.enabled": true,
+    "chat.mcp.autostart": "newAndOutdated"
+}
