@@ -1,0 +1,63 @@
+Architecture Overview
+
+The Cortex system implements a modern microservices architecture designed for scalability and maintainability.
+
+## Backend Services
+
+### API Gateway
+The .NET 8 Minimal API serves as the primary entry point, handling:
+- File upload and ingestion
+- Search query processing  
+- WebSocket connections for real-time voice
+- Authentication and authorization (future)
+
+### Data Layer
+- SQLite database for metadata and search indices
+- File system storage for raw documents
+- Redis for caching and session management
+
+### External Services
+- Faster-Whisper: Speech-to-text transcription
+- Piper: Text-to-speech synthesis
+- Ollama: Local LLM processing
+- OpenAI: Cloud LLM alternative
+
+## Frontend Architecture
+
+### Next.js Application
+- App Router for improved performance
+- Server-side rendering where beneficial
+- Progressive Web App capabilities
+
+### Component Structure
+- CommandDeck: Voice controls and transcript display
+- DropZone: File upload with progress tracking
+- SearchPage: Query interface with filters
+- Reader: Document viewer with chunk navigation
+
+## Data Flow
+
+1. Documents uploaded via REST API
+2. Text extraction and chunking
+3. Metadata stored in SQLite
+4. Search queries processed with BM25
+5. Voice commands transcribed and processed
+6. Results streamed back to frontend
+
+## Security Considerations
+
+- Input validation on all endpoints
+- File type restrictions for uploads
+- SQL injection prevention
+- XSS protection in frontend
+- Rate limiting on API endpoints
+
+## Performance Optimizations
+
+- Chunked file processing
+- Lazy loading of document content
+- Database indexing on search fields
+- Connection pooling for external services
+- Client-side caching of search results
+
+This architecture supports the goal of processing 200+ files in under 10 minutes while maintaining responsive user interactions.
