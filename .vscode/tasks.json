@@ -1,0 +1,43 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build-backend",
+			"type": "shell",
+			"command": "dotnet build",
+			"args": [],
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "run-backend-8080",
+			"type": "shell",
+			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:TTS_PROVIDER='openai'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
+			"isBackground": true
+		},
+		{
+			"label": "build-backend",
+			"type": "shell",
+			"command": "dotnet build",
+			"args": [],
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "run-backend-dev-config",
+			"type": "shell",
+			"command": "dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+			"isBackground": true
+		},
+		{
+			"label": "run-backend",
+			"type": "shell",
+			"command": "dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+			"isBackground": true
+		}
+	]
+}

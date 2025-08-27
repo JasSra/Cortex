@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("CortexApi")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+30956e4ba82e6d6f5a9502bcf826f78c6893b47a")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d81876e3847f9d82fadc5793fd2bbb646d88d239")]
 [assembly: System.Reflection.AssemblyProductAttribute("CortexApi")]
 [assembly: System.Reflection.AssemblyTitleAttribute("CortexApi")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

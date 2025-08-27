@@ -126,7 +126,13 @@ npm run dev
 
 # Tests
 npm install @playwright/test
-npx playwright test
+Run end-to-end voice tests (requires OpenAI key configured in backend appsettings):
+
+- Start backend (listens on http://localhost:8080 by default)
+- From repo root:
+	- dotnet test .\tests\E2E\E2E.csproj
+
+You can override target API with env var CORTEX_API_URL.
 ```
 
 ## 🧪 Testing

@@ -17,9 +17,10 @@ builder.Services.AddScoped<ISearchService, SearchService>();
 builder.Services.AddScoped<IVoiceService, VoiceService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 
-// Add CORS (configurable via CORS_ORIGINS)
+// Add CORS (configurable via CORS_ORIGINS or Server:CorsOrigins)
 var corsOrigins = builder.Configuration["CORS_ORIGINS"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                 ?? new[] { "http://localhost:3000" };
+                 ?? builder.Configuration.GetSection("Server:CorsOrigins").Get<string[]>()
+                 ?? new[] { "http://localhost:3000", "http://localhost:3001" };
 
 builder.Services.AddCors(options =>
 {
@@ -53,12 +54,34 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// Ensure we also listen on :8080 unless ASPNETCORE_URLS explicitly set
+var urlsEnv = builder.Configuration["ASPNETCORE_URLS"];
+if (string.IsNullOrWhiteSpace(urlsEnv))
+{
+    var port = builder.Configuration["PORT"]
+               ?? builder.Configuration["Server:Port"]
+               ?? "8080";
+    try
+    {
+        app.Urls.Add($"http://localhost:{port}");
+    }
+    catch { /* ignore if already bound */ }
+}
+
 app.UseCors("AllowFrontend");
 app.UseWebSockets();
 
 // Ensure database is created
 using (var scope = app.Services.CreateScope())
 {
+    // Ensure data directory exists for SQLite
+    try
+    {
+        var dataDir = Path.Combine(app.Environment.ContentRootPath, "data");
+        if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
+    }
+    catch { /* ignore */ }
+
     var context = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     context.Database.EnsureCreated();
 }
