@@ -51,6 +51,8 @@ builder.Services.AddScoped<ISecretsDetectionService, SecretsDetectionService>();
 builder.Services.AddScoped<IClassificationService, ClassificationService>();
 // Seed data service for new users
 builder.Services.AddScoped<ISeedDataService, SeedDataService>();
+// Gamification service for achievements and stats
+builder.Services.AddScoped<IGamificationService, GamificationService>();
 // User context / RBAC
 builder.Services.AddScoped<UserContextAccessor>();
 builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());
@@ -59,17 +61,20 @@ builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<Use
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // Microsoft identity platform configuration
-        options.Authority = builder.Configuration["Authentication:Authority"] ?? "https://login.microsoftonline.com/common/v2.0";
-        options.Audience = builder.Configuration["Authentication:ClientId"];
+        // Azure B2C configuration
+        options.Authority = builder.Configuration["Authentication:Authority"] ?? "https://cortexb2c.b2clogin.com/cortexb2c.onmicrosoft.com/B2C_1_cortex_signup_signin/v2.0";
+        options.Audience = builder.Configuration["Authentication:ClientId"] ?? "34fb7a0c-4038-4ceb-96c6-e56fdd2dd57e";
         
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false, // Allow multiple tenants
+            ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ClockSkew = TimeSpan.FromMinutes(5)
+            ClockSkew = TimeSpan.FromMinutes(5),
+            // B2C specific settings
+            NameClaimType = "name",
+            RoleClaimType = "extension_Role"
         };
 
         // For development, allow anonymous access
@@ -150,8 +155,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseWebSockets();
-// Inject per-request user context before endpoints (comment out for now)
-// app.UseMiddleware<UserContextMiddleware>();
+// Inject per-request user context before endpoints
+app.UseMiddleware<UserContextMiddleware>();
 
 // Ensure database is created
 using (var scope = app.Services.CreateScope())

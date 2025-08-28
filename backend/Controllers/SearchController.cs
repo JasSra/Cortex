@@ -15,15 +15,18 @@ public class SearchController : ControllerBase
     private readonly ISearchService _searchService;
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<SearchController> _logger;
+    private readonly IGamificationService _gamificationService;
 
     public SearchController(
         ISearchService searchService,
         IUserContextAccessor userContext,
-        ILogger<SearchController> logger)
+        ILogger<SearchController> logger,
+        IGamificationService gamificationService)
     {
         _searchService = searchService;
         _userContext = userContext;
         _logger = logger;
+        _gamificationService = gamificationService;
     }
 
     /// <summary>
@@ -43,6 +46,11 @@ public class SearchController : ControllerBase
 
         // Ensure user ID is set for scoped search
         var response = await _searchService.SearchHybridAsync(request, _userContext.UserId);
+
+        // Track search activity for gamification
+        var userProfileId = _userContext.UserId; // Get the actual profile ID
+        await _gamificationService.UpdateUserStatsAsync(userProfileId, "search");
+        await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search");
 
         _logger.LogInformation("Search returned {HitCount} results for user {UserId}", 
             response.Hits.Count, _userContext.UserId);
@@ -77,6 +85,12 @@ public class SearchController : ControllerBase
         _logger.LogInformation("GET search query '{Query}' for user {UserId}", q, _userContext.UserId);
 
         var response = await _searchService.SearchHybridAsync(request, _userContext.UserId);
+        
+        // Track search activity for gamification
+        var userProfileId = _userContext.UserId; // Get the actual profile ID
+        await _gamificationService.UpdateUserStatsAsync(userProfileId, "search");
+        await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search");
+        
         return Ok(response);
     }
 
@@ -99,6 +113,11 @@ public class SearchController : ControllerBase
 
         // Ensure user ID is set for scoped search
         var response = await _searchService.SearchAdvancedAsync(request, _userContext.UserId);
+
+        // Track search activity for gamification
+        var userProfileId = _userContext.UserId; // Get the actual profile ID
+        await _gamificationService.UpdateUserStatsAsync(userProfileId, "search");
+        await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search");
 
         _logger.LogInformation("Advanced search returned {HitCount} results for user {UserId}", 
             response.Hits.Count, _userContext.UserId);

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using CortexApi.Data;
 using CortexApi.Models;
 using CortexApi.Security;
+using CortexApi.Services;
 
 namespace CortexApi.Controllers
 {
@@ -14,15 +15,18 @@ namespace CortexApi.Controllers
     {
         private readonly CortexDbContext _context;
         private readonly IUserContextAccessor _userContext;
+        private readonly IGamificationService _gamificationService;
         private readonly ILogger<UserController> _logger;
 
         public UserController(
             CortexDbContext context,
             IUserContextAccessor userContext,
+            IGamificationService gamificationService,
             ILogger<UserController> logger)
         {
             _context = context;
             _userContext = userContext;
+            _gamificationService = gamificationService;
             _logger = logger;
         }
 
@@ -44,6 +48,10 @@ namespace CortexApi.Controllers
                 {
                     return NotFound(new { message = "User profile not found" });
                 }
+
+                // Track login activity for gamification
+                await _gamificationService.UpdateUserStatsAsync(profile.Id, "login");
+                await _gamificationService.CheckAndAwardAchievementsAsync(profile.Id, "login");
 
                 return Ok(profile);
             }
@@ -77,6 +85,11 @@ namespace CortexApi.Controllers
                     existingProfile.UpdatedAt = DateTime.UtcNow;
                     
                     await _context.SaveChangesAsync();
+
+                    // Track login activity for gamification
+                    await _gamificationService.UpdateUserStatsAsync(existingProfile.Id, "login");
+                    await _gamificationService.CheckAndAwardAchievementsAsync(existingProfile.Id, "login");
+
                     return Ok(existingProfile);
                 }
 
@@ -92,6 +105,10 @@ namespace CortexApi.Controllers
 
                 _context.UserProfiles.Add(profile);
                 await _context.SaveChangesAsync();
+
+                // Award first time registration achievements
+                await _gamificationService.UpdateUserStatsAsync(profile.Id, "registration");
+                await _gamificationService.CheckAndAwardAchievementsAsync(profile.Id, "registration");
 
                 _logger.LogInformation("Created user profile for subject ID: {SubjectId}", profile.SubjectId);
                 return CreatedAtAction(nameof(GetUserProfile), new { }, profile);

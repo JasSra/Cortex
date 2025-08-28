@@ -36,10 +36,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const initializeAuth = async () => {
       await msalInstance.initialize()
       
-      const accounts = msalInstance.getAllAccounts()
-      if (accounts.length > 0) {
-        setUser(accounts[0])
+      // Handle redirect response
+      const response = await msalInstance.handleRedirectPromise()
+      
+      if (response && response.account) {
+        setUser(response.account)
         setIsAuthenticated(true)
+        
+        // Create or get user profile and trigger seed data creation
+        await handleUserProfile(response.account, response.accessToken)
+      } else {
+        // Check for existing accounts
+        const accounts = msalInstance.getAllAccounts()
+        if (accounts.length > 0) {
+          setUser(accounts[0])
+          setIsAuthenticated(true)
+        }
       }
       
       setLoading(false)
@@ -60,30 +72,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
         currentUrl: window.location.href
       })
       
-      const response: AuthenticationResult = await msalInstance.loginPopup(loginRequest)
+      // Use redirect instead of popup
+      await msalInstance.loginRedirect(loginRequest)
       
-      if (response.account) {
-        setUser(response.account)
-        setIsAuthenticated(true)
-        
-        // Create or get user profile and trigger seed data creation
-        await handleUserProfile(response.account, response.accessToken)
-      }
     } catch (error) {
       console.error('Login failed:', error)
-    } finally {
       setLoading(false)
     }
   }
 
   const logout = () => {
     setLoading(true)
-    msalInstance.logoutPopup({
+    msalInstance.logoutRedirect({
       postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri
-    }).then(() => {
-      setUser(null)
-      setIsAuthenticated(false)
-      setLoading(false)
     }).catch((error) => {
       console.error('Logout failed:', error)
       setLoading(false)

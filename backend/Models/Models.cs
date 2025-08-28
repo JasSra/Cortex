@@ -102,6 +102,154 @@ public class UserProfile
     /// Last profile update timestamp
     /// </summary>
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    
+    /// <summary>
+    /// Total number of notes created by user
+    /// </summary>
+    public int TotalNotes { get; set; } = 0;
+    
+    /// <summary>
+    /// Total number of searches performed
+    /// </summary>
+    public int TotalSearches { get; set; } = 0;
+    
+    /// <summary>
+    /// Total login count
+    /// </summary>
+    public int TotalLogins { get; set; } = 0;
+    
+    /// <summary>
+    /// Current streak of consecutive daily logins
+    /// </summary>
+    public int LoginStreak { get; set; } = 0;
+    
+    /// <summary>
+    /// Date of last login (for streak calculation)
+    /// </summary>
+    public DateTime? LastStreakDate { get; set; }
+    
+    /// <summary>
+    /// Total time spent in app (in minutes)
+    /// </summary>
+    public int TotalTimeSpentMinutes { get; set; } = 0;
+    
+    /// <summary>
+    /// Experience points
+    /// </summary>
+    public int ExperiencePoints { get; set; } = 0;
+    
+    /// <summary>
+    /// Current level based on XP
+    /// </summary>
+    public int Level { get; set; } = 1;
+    
+    /// <summary>
+    /// Navigation for user achievements
+    /// </summary>
+    public virtual ICollection<UserAchievement> UserAchievements { get; set; } = new List<UserAchievement>();
+}
+
+/// <summary>
+/// Achievement definitions
+/// </summary>
+public class Achievement
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    
+    /// <summary>
+    /// Achievement name/title
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Achievement description
+    /// </summary>
+    public string Description { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Achievement emoji/icon
+    /// </summary>
+    public string Icon { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Achievement category (activity, milestone, streak, etc.)
+    /// </summary>
+    public string Category { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Points awarded for this achievement
+    /// </summary>
+    public int Points { get; set; } = 0;
+    
+    /// <summary>
+    /// Whether this achievement is hidden until unlocked
+    /// </summary>
+    public bool IsHidden { get; set; } = false;
+    
+    /// <summary>
+    /// Sort order for display
+    /// </summary>
+    public int SortOrder { get; set; } = 0;
+    
+    /// <summary>
+    /// Achievement criteria as JSON (flexible for different types)
+    /// </summary>
+    public string Criteria { get; set; } = "{}";
+    
+    /// <summary>
+    /// When this achievement was created
+    /// </summary>
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    /// <summary>
+    /// Navigation for users who earned this achievement
+    /// </summary>
+    public virtual ICollection<UserAchievement> UserAchievements { get; set; } = new List<UserAchievement>();
+}
+
+/// <summary>
+/// Bridge table for user achievements with earned timestamp
+/// </summary>
+public class UserAchievement
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    
+    /// <summary>
+    /// User who earned the achievement
+    /// </summary>
+    public string UserProfileId { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Achievement that was earned
+    /// </summary>
+    public string AchievementId { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// When the achievement was earned
+    /// </summary>
+    public DateTime EarnedAt { get; set; } = DateTime.UtcNow;
+    
+    /// <summary>
+    /// Progress towards achievement (for progressive achievements)
+    /// </summary>
+    public int Progress { get; set; } = 0;
+    
+    /// <summary>
+    /// Whether user has seen this achievement notification
+    /// </summary>
+    public bool HasSeen { get; set; } = false;
+    
+    /// <summary>
+    /// Navigation to user profile
+    /// </summary>
+    public virtual UserProfile UserProfile { get; set; } = null!;
+    
+    /// <summary>
+    /// Navigation to achievement
+    /// </summary>
+    public virtual Achievement Achievement { get; set; } = null!;
 }
 
 public class NoteChunk

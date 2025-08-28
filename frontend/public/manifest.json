@@ -1,0 +1,57 @@
+{
+  "name": "Cortex - Personal Knowledge Hub",
+  "short_name": "Cortex",
+  "description": "A secure, AI-powered personal knowledge management system with voice capabilities and Azure AD B2C authentication",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#8b5cf6",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["productivity", "utilities", "education"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icon-512.png", 
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Upload Documents",
+      "url": "/?tab=upload",
+      "description": "Upload new documents to your knowledge base"
+    },
+    {
+      "name": "Search Notes",
+      "url": "/?tab=search", 
+      "description": "Search through your document collection"
+    },
+    {
+      "name": "Voice Recording",
+      "url": "/?tab=voice",
+      "description": "Record voice notes"
+    }
+  ]
+}

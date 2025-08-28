@@ -2,14 +2,19 @@
 
 import { ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useAppAuth } from '../hooks/useAppAuth'
 import { LoginPage } from './LoginPage'
 
 interface AuthWrapperProps {
   children: ReactNode
 }
 
+const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
+
 export function AuthWrapper({ children }: AuthWrapperProps) {
-  const { isAuthenticated, loading } = useAuth()
+  // Use appropriate auth based on development mode
+  const auth = isDevelopment ? useAppAuth() : useAuth()
+  const { isAuthenticated, loading } = auth
 
   if (loading) {
     return (

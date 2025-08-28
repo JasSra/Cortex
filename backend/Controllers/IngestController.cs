@@ -15,15 +15,18 @@ public class IngestController : ControllerBase
     private readonly IIngestService _ingestService;
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<IngestController> _logger;
+    private readonly IGamificationService _gamificationService;
 
     public IngestController(
         IIngestService ingestService,
         IUserContextAccessor userContext,
-        ILogger<IngestController> logger)
+        ILogger<IngestController> logger,
+        IGamificationService gamificationService)
     {
         _ingestService = ingestService;
         _userContext = userContext;
         _logger = logger;
+        _gamificationService = gamificationService;
     }
 
     /// <summary>
@@ -44,6 +47,11 @@ public class IngestController : ControllerBase
         try
         {
             var results = await _ingestService.IngestFilesAsync(files);
+            
+            // Track note creation for gamification
+            var userProfileId = _userContext.UserId; // Get the actual profile ID
+            await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_creation", files.Count);
+            await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_creation");
             
             _logger.LogInformation("Successfully ingested {FileCount} files for user {UserId}", 
                 files.Count, _userContext.UserId);
@@ -75,6 +83,15 @@ public class IngestController : ControllerBase
         try
         {
             var results = await _ingestService.IngestFolderAsync(request.Path);
+            
+            // Track note creation for gamification - assume one note per file in folder
+            var userProfileId = _userContext.UserId; // Get the actual profile ID
+            if (results != null)
+            {
+                var noteCount = results.GetType().GetProperty("Count")?.GetValue(results) as int? ?? 1;
+                await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_creation", noteCount);
+                await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_creation");
+            }
             
             _logger.LogInformation("Successfully ingested folder '{FolderPath}' for user {UserId}", 
                 request.Path, _userContext.UserId);
