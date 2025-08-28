@@ -17,6 +17,7 @@
     <PackageReference Include="iTextSharp" Version="5.5.13.3" />
     <PackageReference Include="Markdig" Version="0.33.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="0.21.0-preview.24378.1" />
+    <PackageReference Include="Microsoft.ML" Version="3.0.1" />
   </ItemGroup>
 
 </Project>
