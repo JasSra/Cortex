@@ -21,6 +21,7 @@ public interface IIngestService
     Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files);
     Task<List<IngestResult>> IngestFolderAsync(string folderPath);
     Task<Note?> GetNoteAsync(string noteId);
+    Task<List<Note>> GetUserNotesAsync(string userId, int limit = 20, int offset = 0);
 }
 
 public class IngestService : IIngestService
@@ -415,5 +416,26 @@ public class IngestService : IIngestService
     {
         // Rough estimate: 1 token ≈ 4 characters
         return text.Length / 4;
+    }
+
+    public async Task<List<Note>> GetUserNotesAsync(string userId, int limit = 20, int offset = 0)
+    {
+        try
+        {
+            var notes = await _context.Notes
+                .Where(n => !n.IsDeleted && n.UserId == userId)
+                .OrderByDescending(n => n.UpdatedAt)
+                .Skip(offset)
+                .Take(limit)
+                .ToListAsync();
+
+            _logger.LogInformation("Retrieved {Count} notes for user {UserId}", notes.Count, userId);
+            return notes;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving notes for user {UserId}", userId);
+            throw;
+        }
     }
 }

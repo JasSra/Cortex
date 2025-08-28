@@ -18,6 +18,12 @@ public class Note
     public bool IsDeleted { get; set; }
     public int Version { get; set; } = 1;
     
+    // Stage 2 fields
+    public int SensitivityLevel { get; set; } = 0; // 0=Public, 1=Internal, 2=Confidential, 3=Secret
+    public string PiiFlags { get; set; } = string.Empty; // JSON array of PII detection results
+    public string SecretFlags { get; set; } = string.Empty; // JSON array of secret detection results  
+    public string Summary { get; set; } = string.Empty; // Auto-generated summary
+    
     public string OriginalPath { get; set; } = string.Empty;
     
     public string FilePath { get; set; } = string.Empty;
@@ -39,6 +45,7 @@ public class Note
     public virtual ICollection<NoteChunk> Chunks { get; set; } = new List<NoteChunk>();
     public virtual ICollection<NoteTag> NoteTags { get; set; } = new List<NoteTag>();
     public virtual ICollection<Classification> Classifications { get; set; } = new List<Classification>();
+    public virtual ICollection<TextSpan> Spans { get; set; } = new List<TextSpan>();
 }
 
 public class NoteChunk
@@ -58,6 +65,12 @@ public class NoteChunk
     public int Seq { get; set; } // mirror of ChunkIndex for Stage1 naming
     public string Text { get; set; } = string.Empty; // mirror of Content
     public string Sha256 { get; set; } = string.Empty;
+    
+    // Stage 2 fields
+    public int SensitivityLevel { get; set; } = 0; // 0=Public, 1=Internal, 2=Confidential, 3=Secret
+    public string PiiFlags { get; set; } = string.Empty; // JSON array of PII detection results
+    public string SecretFlags { get; set; } = string.Empty; // JSON array of secret detection results
+    public string Summary { get; set; } = string.Empty; // Auto-generated summary
     
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     
@@ -96,6 +109,7 @@ public class SearchHit
     public double Score { get; set; }
 }
 
+// Request models
 public class SearchResponse
 {
     public List<SearchHit> Hits { get; set; } = new();
@@ -209,4 +223,100 @@ public class ActionLog
     public string Status { get; set; } = "ok";
     public int Latency_ms { get; set; }
     public DateTime Ts { get; set; } = DateTime.UtcNow;
+}
+
+// Request model for folder ingestion
+public record FolderIngestRequest(string Path);
+
+// Stage 2 Models
+
+/// <summary>
+/// Entity detected in text (persons, organizations, locations, etc.)
+/// </summary>
+public class Entity
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Type { get; set; } = string.Empty; // PERSON, ORG, LOCATION, etc.
+    public string Value { get; set; } = string.Empty; // Actual entity text
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Text spans for PII, secrets, entities marking positions in notes
+/// </summary>
+public class TextSpan
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string NoteId { get; set; } = string.Empty;
+    public int Start { get; set; } // Character start position
+    public int End { get; set; }   // Character end position  
+    public string Label { get; set; } = string.Empty; // PII, SECRET, ENTITY_PERSON, etc.
+    public string EntityId { get; set; } = string.Empty; // Reference to Entity if applicable
+    public double Confidence { get; set; } = 1.0; // Detection confidence 0-1
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    public virtual Note Note { get; set; } = null!;
+    public virtual Entity? Entity { get; set; }
+}
+
+// Stage 2 Request/Response Models
+
+public class ClassificationResult
+{
+    public string NoteId { get; set; } = string.Empty;
+    public List<TagPrediction> Tags { get; set; } = new();
+    public int SensitivityLevel { get; set; }
+    public List<PiiDetection> PiiFlags { get; set; } = new();
+    public List<SecretDetection> SecretFlags { get; set; } = new();
+    public string Summary { get; set; } = string.Empty;
+}
+
+public class TagPrediction
+{
+    public string Name { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public bool Suggested { get; set; } = true;
+}
+
+public class PiiDetection
+{
+    public string Type { get; set; } = string.Empty; // EMAIL, PHONE, TFN, etc.
+    public string Value { get; set; } = string.Empty;
+    public int Start { get; set; }
+    public int End { get; set; }
+    public double Confidence { get; set; }
+}
+
+public class SecretDetection
+{
+    public string Type { get; set; } = string.Empty; // API_KEY, PASSWORD, etc.
+    public string Value { get; set; } = string.Empty; // Redacted value
+    public int Start { get; set; }
+    public int End { get; set; }
+    public string Severity { get; set; } = "medium"; // low, medium, high, critical
+}
+
+public record BulkTagRequest(List<string> Ids, List<string> Add, List<string> Remove);
+
+public record RedactionPreviewRequest(string NoteId, string Policy = "default");
+
+public class RedactionPreviewResponse
+{
+    public string NoteId { get; set; } = string.Empty;
+    public string MaskedText { get; set; } = string.Empty;
+    public List<TextSpan> Spans { get; set; } = new();
+    public int SensitivityLevel { get; set; }
+}
+
+// Classification feedback model
+public class UserFeedback
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string NoteId { get; set; } = string.Empty;
+    public string ActualTopic { get; set; } = string.Empty;
+    public string ActualTags { get; set; } = string.Empty;
+    public double ActualSensitivity { get; set; }
+    public DateTime CreatedAt { get; set; }
 }

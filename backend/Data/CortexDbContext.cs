@@ -21,6 +21,11 @@ public class CortexDbContext : DbContext
     public DbSet<NoteTag> NoteTags { get; set; }
     public DbSet<Classification> Classifications { get; set; }
     public DbSet<ActionLog> ActionLogs { get; set; }
+    
+    // Stage 2 DbSets
+    public DbSet<Entity> Entities { get; set; }
+    public DbSet<TextSpan> TextSpans { get; set; }
+    public DbSet<UserFeedback> UserFeedbacks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -117,5 +122,33 @@ public class CortexDbContext : DbContext
         modelBuilder.Entity<NoteChunk>()
             .HasIndex(e => e.Content)
             .HasDatabaseName("IX_NoteChunks_Content_FTS");
+
+        // Stage 2 Entity Configurations
+        
+        // Entity
+        modelBuilder.Entity<Entity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Value).IsRequired().HasMaxLength(500);
+            entity.HasIndex(e => new { e.Type, e.Value });
+        });
+
+        // TextSpan  
+        modelBuilder.Entity<TextSpan>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Label).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.NoteId, e.Label });
+            entity.HasIndex(e => new { e.Start, e.End });
+            entity.HasOne(e => e.Note)
+                  .WithMany(n => n.Spans)
+                  .HasForeignKey(e => e.NoteId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Entity)
+                  .WithMany()
+                  .HasForeignKey(e => e.EntityId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
     }
 }

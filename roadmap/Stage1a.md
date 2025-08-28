@@ -122,6 +122,32 @@ public Permission RequiredPermission => Permission.WriteNotes; // example
 2. `Policy:RetentionRules=[{ "scope":"personal", "ageDays":365, "action":"redact" }]`.
 3. `FeatureFlags:ShareLinks=true`, `FeatureFlags:ConfirmDelete=true`.
 
+## 16) Backlog - Future Enhancements
+
+**Non-critical items moved to future phases:**
+
+1. ❌ **Audit logging implementation** - Move to Phase 3
+   * Currently no audit logging implemented
+   * Can be added after core RBAC is working
+   * Lower priority than basic auth/authz
+
+2. ❌ **RBAC enforcement in endpoints** - Move to Phase 2  
+   * Basic UserContext exists but needs endpoint-level enforcement
+   * Can start with middleware approach
+   * Focus on core functionality first
+
+3. ❌ **Retention/redaction policies** - Move to Phase 4
+   * Complex feature requiring governance framework
+   * Not needed for basic multi-user operation
+   * Can be implemented after share links
+
+4. ❌ **Share link functionality** - Move to Phase 3
+   * Nice-to-have feature for collaboration
+   * Not critical for core auth/authz
+   * Requires token management infrastructure
+
+**Current Focus**: Controller separation with proper context isolation
+
 ---
 
-**Execute now**: wire OIDC → add RBAC/policies → implement audit/version/share → confirm cards → enforce model routing → ship dashboards & alerts.
+**Execute now**: separate controllers by context → implement basic auth middleware → add user scoping to queries → defer advanced governance features.
