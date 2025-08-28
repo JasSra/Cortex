@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using CortexApi.Data;
 using CortexApi.Models;
+using System.Text.RegularExpressions;
 
 namespace CortexApi.Services;
 
@@ -8,6 +9,7 @@ public interface ISearchService
 {
     Task<List<SearchResult>> SearchAsync(string query, int limit = 20, Dictionary<string, string>? filters = null);
     Task<SearchResponse> SearchHybridAsync(SearchRequest request, string userId);
+    Task<SearchResponse> SearchAdvancedAsync(AdvancedSearchRequest request, string userId);
 }
 
 public class SearchService : ISearchService
@@ -16,6 +18,10 @@ public class SearchService : ISearchService
     private readonly ILogger<SearchService> _logger;
     private readonly IEmbeddingService _embeddingService;
     private readonly IVectorService _vectorService;
+    
+    // BM25 parameters
+    private const double K1 = 1.2;
+    private const double B = 0.75;
 
     public SearchService(CortexDbContext context, ILogger<SearchService> logger, IEmbeddingService embeddingService, IVectorService vectorService)
     {
@@ -203,6 +209,264 @@ public class SearchService : ISearchService
 
         var hits = merged.Values.OrderByDescending(h => h.Score).Take(k).ToList();
         return new SearchResponse { Hits = hits };
+    }
+
+    public async Task<SearchResponse> SearchAdvancedAsync(AdvancedSearchRequest request, string userId)
+    {
+        var mode = (request.Mode ?? "hybrid").ToLowerInvariant();
+        var alpha = Math.Clamp(request.Alpha, 0.0, 1.0);
+        var k = Math.Clamp(request.K <= 0 ? 10 : request.K, 1, 100);
+        var q = request.Q ?? string.Empty;
+
+        _logger.LogInformation("Advanced search: Query='{Query}', Mode={Mode}, K={K}, Alpha={Alpha}, UseReranking={UseReranking}", 
+            q, mode, k, alpha, request.UseReranking);
+
+        // Vector search component
+        var semanticScores = new Dictionary<string, double>(); // chunkId -> score
+        if (mode is "hybrid" or "semantic")
+        {
+            var vec = await _embeddingService.EmbedAsync(q);
+            if (vec is not null)
+            {
+                var knn = await _vectorService.KnnAsync(vec, k * 2, userId); // Get more candidates for reranking
+                double max = knn.Count > 0 ? knn.Max(x => x.score) : 1e-9;
+                foreach (var (chunkId, score) in knn)
+                {
+                    semanticScores[chunkId] = max > 0 ? score / max : 0.0;
+                }
+            }
+        }
+
+        // BM25 text search component with advanced filtering
+        var textResults = new List<(NoteChunk chunk, Note note, double bm25)>();
+        if (mode is "hybrid" or "bm25")
+        {
+            var baseQuery = from chunk in _context.NoteChunks
+                            join note in _context.Notes on chunk.NoteId equals note.Id
+                            where !note.IsDeleted && note.UserId == userId
+                            select new { chunk, note };
+
+            // Apply advanced Stage 2 filters
+            if (request.SensitivityLevels?.Any() == true)
+            {
+                baseQuery = baseQuery.Where(x => request.SensitivityLevels.Contains(x.note.SensitivityLevel));
+            }
+
+            if (request.Tags?.Any() == true)
+            {
+                baseQuery = baseQuery.Where(x => request.Tags.Any(tag => 
+                    x.note.Tags != null && x.note.Tags.Contains(tag)));
+            }
+
+            if (request.PiiTypes?.Any() == true)
+            {
+                baseQuery = baseQuery.Where(x => request.PiiTypes.Any(piiType => 
+                    x.note.PiiFlags != null && x.note.PiiFlags.Contains(piiType)));
+            }
+
+            if (request.SecretTypes?.Any() == true)
+            {
+                baseQuery = baseQuery.Where(x => request.SecretTypes.Any(secretType => 
+                    x.note.SecretFlags != null && x.note.SecretFlags.Contains(secretType)));
+            }
+
+            if (request.ExcludePii)
+            {
+                baseQuery = baseQuery.Where(x => string.IsNullOrEmpty(x.note.PiiFlags));
+            }
+
+            if (request.ExcludeSecrets)
+            {
+                baseQuery = baseQuery.Where(x => string.IsNullOrEmpty(x.note.SecretFlags));
+            }
+
+            // Basic filters
+            if (request.DateFrom.HasValue)
+            {
+                baseQuery = baseQuery.Where(x => x.note.CreatedAt >= request.DateFrom.Value);
+            }
+
+            if (request.DateTo.HasValue)
+            {
+                baseQuery = baseQuery.Where(x => x.note.CreatedAt <= request.DateTo.Value);
+            }
+
+            if (request.FileTypes?.Any() == true)
+            {
+                baseQuery = baseQuery.Where(x => request.FileTypes.Contains(x.note.FileType));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Source))
+            {
+                baseQuery = baseQuery.Where(x => x.note.Source == request.Source);
+            }
+
+            // Text matching with BM25 scoring
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                baseQuery = baseQuery.Where(x => x.chunk.Content.Contains(q));
+            }
+
+            var limited = await baseQuery.Take(k * 3).ToListAsync(); // Get more for better BM25 scoring
+
+            // Calculate BM25 scores
+            var avgDocLength = limited.Any() ? limited.Average(x => x.chunk.Content.Length) : 1.0;
+            
+            foreach (var row in limited)
+            {
+                var score = CalculateBM25Score(q, row.chunk.Content, avgDocLength);
+                textResults.Add((row.chunk, row.note, score));
+            }
+        }
+
+        // Merge and combine scores
+        var merged = new Dictionary<string, SearchHit>();
+        
+        // Process text search results
+        foreach (var r in textResults)
+        {
+            var id = r.chunk.Id;
+            var sem = semanticScores.TryGetValue(id, out var s) ? s : 0.0;
+            var score = alpha * sem + (1 - alpha) * r.bm25;
+            
+            merged[id] = CreateSearchHit(r.chunk, r.note, q, score);
+        }
+
+        // Add semantic-only results
+        foreach (var kvp in semanticScores)
+        {
+            if (!merged.ContainsKey(kvp.Key))
+            {
+                var chunk = await _context.NoteChunks.FindAsync(kvp.Key);
+                if (chunk is null) continue;
+                var note = await _context.Notes.FindAsync(chunk.NoteId);
+                if (note is null) continue;
+                
+                merged[kvp.Key] = CreateSearchHit(chunk, note, q, kvp.Value * alpha);
+            }
+        }
+
+        var hits = merged.Values.OrderByDescending(h => h.Score).Take(k * 2).ToList();
+
+        // Apply cross-encoder reranking if enabled
+        if (request.UseReranking && !string.IsNullOrWhiteSpace(q) && hits.Count > 1)
+        {
+            hits = await ApplyCrossEncoderReranking(q, hits);
+        }
+
+        return new SearchResponse { Hits = hits.Take(k).ToList() };
+    }
+
+    private double CalculateBM25Score(string query, string document, double avgDocLength)
+    {
+        if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(document))
+            return 0.0;
+
+        const double k1 = 1.2;
+        const double b = 0.75;
+
+        var queryTerms = query.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var docTerms = document.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var docLength = docTerms.Length;
+
+        var termFreqs = new Dictionary<string, int>();
+        foreach (var term in docTerms)
+        {
+            termFreqs[term] = termFreqs.GetValueOrDefault(term) + 1;
+        }
+
+        double score = 0.0;
+        foreach (var queryTerm in queryTerms)
+        {
+            if (termFreqs.TryGetValue(queryTerm, out var tf))
+            {
+                // Simplified BM25 without IDF (would need document collection stats)
+                var numerator = tf * (k1 + 1);
+                var denominator = tf + k1 * (1 - b + b * (docLength / avgDocLength));
+                score += numerator / denominator;
+            }
+        }
+
+        return score;
+    }
+
+    private SearchHit CreateSearchHit(NoteChunk chunk, Note note, string query, double score)
+    {
+        var highlight = GenerateHighlight(chunk.Content, query);
+        
+        return new SearchHit
+        {
+            ChunkId = chunk.Id,
+            NoteId = note.Id,
+            Title = note.Title,
+            Content = chunk.Content,
+            Highlight = highlight,
+            Score = score,
+            CreatedAt = note.CreatedAt,
+            Source = note.Source,
+            FileType = note.FileType,
+            SensitivityLevel = note.SensitivityLevel,
+            Tags = note.Tags?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() ?? new List<string>(),
+            HasPii = !string.IsNullOrEmpty(note.PiiFlags),
+            HasSecrets = !string.IsNullOrEmpty(note.SecretFlags),
+            PiiTypes = note.PiiFlags?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() ?? new List<string>(),
+            SecretTypes = note.SecretFlags?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() ?? new List<string>()
+        };
+    }
+
+    private string GenerateHighlight(string content, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(content))
+            return content.Length > 200 ? content.Substring(0, 200) + "..." : content;
+
+        var terms = query.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var lowerContent = content.ToLowerInvariant();
+        
+        var firstMatch = -1;
+        foreach (var term in terms)
+        {
+            var index = lowerContent.IndexOf(term);
+            if (index >= 0 && (firstMatch == -1 || index < firstMatch))
+            {
+                firstMatch = index;
+            }
+        }
+
+        if (firstMatch == -1)
+        {
+            return content.Length > 200 ? content.Substring(0, 200) + "..." : content;
+        }
+
+        var start = Math.Max(0, firstMatch - 100);
+        var length = Math.Min(300, content.Length - start);
+        var snippet = content.Substring(start, length);
+
+        foreach (var term in terms)
+        {
+            var pattern = $@"\b{Regex.Escape(term)}\b";
+            snippet = Regex.Replace(snippet, pattern, $"<mark>{term}</mark>", RegexOptions.IgnoreCase);
+        }
+
+        return snippet + (start + length < content.Length ? "..." : "");
+    }
+
+    private Task<List<SearchHit>> ApplyCrossEncoderReranking(string query, List<SearchHit> hits)
+    {
+        try
+        {
+            // Placeholder for cross-encoder reranking
+            // In a real implementation, this would use a cross-encoder model to score query-document pairs
+            _logger.LogInformation("Cross-encoder reranking requested for {Count} hits", hits.Count);
+            
+            // For now, return the hits as-is (cross-encoder implementation would require ML model)
+            // Future enhancement: Use a cross-encoder model like ms-marco-MiniLM-L-6-v2 for reranking
+            return Task.FromResult(hits);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cross-encoder reranking failed, returning original results");
+            return Task.FromResult(hits);
+        }
     }
 
     private double CalculateRelevanceScore(string query, string content)

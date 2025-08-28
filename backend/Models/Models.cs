@@ -97,22 +97,122 @@ public class SearchRequest
     public double Alpha { get; set; } = 0.6; // weight for vector score
 }
 
+// Advanced search with Stage 2 filtering capabilities
+public class AdvancedSearchRequest
+{
+    public string Q { get; set; } = string.Empty;
+    public int K { get; set; } = 10;
+    public string Mode { get; set; } = "hybrid"; // hybrid|semantic|bm25
+    public double Alpha { get; set; } = 0.6; // weight for vector score
+    public bool UseReranking { get; set; } = true; // Enable cross-encoder reranking
+    
+    // Stage 2 Advanced Filters
+    public int[]? SensitivityLevels { get; set; } // Filter by sensitivity (1=public, 2=low, 3=medium, 4=high)
+    public string[]? Tags { get; set; } // Filter by specific tags
+    public string[]? PiiTypes { get; set; } // Filter by PII types (EMAIL, PHONE, etc.)
+    public string[]? SecretTypes { get; set; } // Filter by secret types (API_KEY, JWT_TOKEN, etc.)
+    public bool ExcludePii { get; set; } = false; // Exclude documents with any PII
+    public bool ExcludeSecrets { get; set; } = false; // Exclude documents with any secrets
+    
+    // Basic filters
+    public DateTime? DateFrom { get; set; }
+    public DateTime? DateTo { get; set; }
+    public string[]? FileTypes { get; set; }
+    public string? Source { get; set; }
+}
+
 public class SearchHit
 {
     public string NoteId { get; set; } = string.Empty;
     public string ChunkId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Snippet { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string Highlight { get; set; } = string.Empty;
     // Offsets expressed as [start, length] in the chunk text for the best match
     public int[] Offsets { get; set; } = Array.Empty<int>();
     public int ChunkIndex { get; set; }
     public double Score { get; set; }
+    
+    // Stage 2 enhanced properties for auto-classification
+    public DateTime CreatedAt { get; set; }
+    public string Source { get; set; } = string.Empty;
+    public string FileType { get; set; } = string.Empty;
+    public int SensitivityLevel { get; set; }
+    public List<string> Tags { get; set; } = new();
+    public bool HasPii { get; set; }
+    public bool HasSecrets { get; set; }
+    public List<string> PiiTypes { get; set; } = new();
+    public List<string> SecretTypes { get; set; } = new();
 }
 
 // Request models
 public class SearchResponse
 {
     public List<SearchHit> Hits { get; set; } = new();
+}
+
+public class ClassificationResponse
+{
+    public string NoteId { get; set; } = string.Empty;
+    public List<string> Tags { get; set; } = new();
+    public int Sensitivity { get; set; }
+    public double SensitivityScore { get; set; }
+    public List<string> Pii { get; set; } = new();
+    public List<string> Secrets { get; set; } = new();
+    public string Summary { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public DateTime ProcessedAt { get; set; }
+    public string? Error { get; set; }
+}
+
+public class BulkClassificationRequest
+{
+    public List<string> NoteIds { get; set; } = new();
+}
+
+public class BulkClassificationResponse
+{
+    public List<ClassificationResponse> Results { get; set; } = new();
+}
+
+public class BulkTagRequest
+{
+    public List<string> NoteIds { get; set; } = new();
+    public List<string>? Add { get; set; }
+    public List<string>? Remove { get; set; }
+}
+
+public class BulkTagResponse
+{
+    public List<TagOperationResult> Results { get; set; } = new();
+}
+
+public class TagOperationResult
+{
+    public string NoteId { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public int OriginalTagCount { get; set; }
+    public int NewTagCount { get; set; }
+    public List<string> Tags { get; set; } = new();
+    public string? Error { get; set; }
+}
+
+public class TagsResponse
+{
+    public List<TagInfo> Tags { get; set; } = new();
+}
+
+public class TagInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public class NoteTagsResponse
+{
+    public string NoteId { get; set; } = string.Empty;
+    public List<string> Tags { get; set; } = new();
 }
 
 public class IngestResult
@@ -239,7 +339,17 @@ public class Entity
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Type { get; set; } = string.Empty; // PERSON, ORG, LOCATION, etc.
     public string Value { get; set; } = string.Empty; // Actual entity text
+    public string CanonicalValue { get; set; } = string.Empty; // Canonical form after deduplication
+    public string? CanonicalEntityId { get; set; } // Reference to canonical entity if this is a duplicate
+    public double ConfidenceScore { get; set; } = 1.0; // NER confidence
+    public int MentionCount { get; set; } = 1; // How many times this entity appears
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
+    
+    // Navigation properties
+    public virtual Entity? CanonicalEntity { get; set; }
+    public virtual ICollection<Edge> OutgoingEdges { get; set; } = new List<Edge>();
+    public virtual ICollection<Edge> IncomingEdges { get; set; } = new List<Edge>();
 }
 
 /// <summary>
@@ -298,8 +408,6 @@ public class SecretDetection
     public string Severity { get; set; } = "medium"; // low, medium, high, critical
 }
 
-public record BulkTagRequest(List<string> Ids, List<string> Add, List<string> Remove);
-
 public record RedactionPreviewRequest(string NoteId, string Policy = "default");
 
 public class RedactionPreviewResponse
@@ -319,4 +427,283 @@ public class UserFeedback
     public string ActualTags { get; set; } = string.Empty;
     public double ActualSensitivity { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+// Stage 2D Admin Embedding API Models
+
+public class EmbedReindexRequest
+{
+    public string Scope { get; set; } = "all"; // all, note, since
+    public string? NoteId { get; set; }
+    public DateTime? Since { get; set; }
+}
+
+public class EmbedReindexResponse
+{
+    public bool Success { get; set; }
+    public int ProcessedCount { get; set; }
+    public int ErrorCount { get; set; }
+    public List<string> Errors { get; set; } = new();
+    public int DurationMs { get; set; }
+    public DateTime CompletedAt { get; set; }
+}
+
+public class EmbedStatsResponse
+{
+    public int TotalNotes { get; set; }
+    public int TotalChunks { get; set; }
+    public int TotalEmbeddings { get; set; }
+    public int ChunksWithoutEmbeddings { get; set; }
+    public double CoveragePercentage { get; set; }
+    public DateTime? NewestEmbeddingAt { get; set; }
+    public DateTime? OldestEmbeddingAt { get; set; }
+    public Dictionary<string, int> ProviderBreakdown { get; set; } = new();
+    public Dictionary<string, int> ModelBreakdown { get; set; } = new();
+}
+
+// Stage 3 Models
+
+/// <summary>
+/// Graph edges representing relationships between entities
+/// </summary>
+public class Edge
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string FromEntityId { get; set; } = string.Empty;
+    public string ToEntityId { get; set; } = string.Empty;
+    public string RelationType { get; set; } = string.Empty; // same_topic, references, refines, contradicts
+    public double Confidence { get; set; } = 0.0; // 0.0 to 1.0
+    public string Source { get; set; } = string.Empty; // co-occurrence, llm, manual
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    public virtual Entity FromEntity { get; set; } = null!;
+    public virtual Entity ToEntity { get; set; } = null!;
+}
+
+/// <summary>
+/// Tool execution requests for RAG assistant
+/// </summary>
+public class ToolRequest
+{
+    public string Tool { get; set; } = string.Empty; // search_hybrid, tag_apply, etc.
+    public Dictionary<string, object> Parameters { get; set; } = new();
+    public bool RequiresConfirmation { get; set; } = false;
+}
+
+/// <summary>
+/// Tool execution results
+/// </summary>
+public class ToolResult
+{
+    public string Tool { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public object? Result { get; set; }
+    public string? Error { get; set; }
+    public DateTime ExecutedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Graph node for visualization
+/// </summary>
+public class GraphNode
+{
+    public string Id { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public int ConnectionCount { get; set; }
+    public DateTime LastSeen { get; set; }
+}
+
+/// <summary>
+/// Graph edge for visualization
+/// </summary>
+public class GraphEdge
+{
+    public string Id { get; set; } = string.Empty;
+    public string FromId { get; set; } = string.Empty;
+    public string ToId { get; set; } = string.Empty;
+    public string RelationType { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+}
+
+/// <summary>
+/// Daily digest entry
+/// </summary>
+public class DigestEntry
+{
+    public string Type { get; set; } = string.Empty; // new_notes, new_entities, duplicates, secrets
+    public string Summary { get; set; } = string.Empty;
+    public List<string> Items { get; set; } = new();
+    public string Suggestion { get; set; } = string.Empty;
+}
+
+// Stage 3 Request/Response Models
+
+public class GraphRequest
+{
+    public string? Focus { get; set; } // entity:ID format
+    public int Depth { get; set; } = 2;
+    public List<string> EntityTypes { get; set; } = new();
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
+}
+
+public class GraphResponse
+{
+    public List<GraphNode> Nodes { get; set; } = new();
+    public List<GraphEdge> Edges { get; set; } = new();
+    public int TotalNodes { get; set; }
+    public int TotalEdges { get; set; }
+}
+
+public class ChatToolsRequest
+{
+    public string Query { get; set; } = string.Empty;
+    public List<string> AvailableTools { get; set; } = new();
+    public Dictionary<string, object> Context { get; set; } = new();
+}
+
+public class ChatToolsResponse
+{
+    public string Response { get; set; } = string.Empty;
+    public List<ToolRequest> SuggestedTools { get; set; } = new();
+    public bool RequiresConfirmation { get; set; }
+}
+
+public class DigestRequest
+{
+    public DateTime? Date { get; set; }
+    public List<string> IncludeTypes { get; set; } = new();
+}
+
+public class DigestResponse
+{
+    public DateTime Date { get; set; }
+    public List<DigestEntry> Entries { get; set; } = new();
+    public string Summary { get; set; } = string.Empty;
+}
+
+public class ExportRequest
+{
+    public string Scope { get; set; } = "all"; // all, filtered, entity
+    public string Format { get; set; } = "json"; // json, zip
+    public bool IncludeSensitive { get; set; } = false;
+    public List<string> EntityIds { get; set; } = new();
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
+}
+
+// Stage 3: Suggestions Engine Models
+public class DailyDigest
+{
+    public DateTime Date { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public ActivitySummary RecentActivity { get; set; } = new();
+    public List<string> KeyInsights { get; set; } = new();
+    public List<ProactiveSuggestion> ProactiveSuggestions { get; set; } = new();
+    public List<EntityCluster> EntityClusters { get; set; } = new();
+    public DateTime GeneratedAt { get; set; }
+}
+
+public class ActivitySummary
+{
+    public int NotesCreated { get; set; }
+    public List<CategoryCount> TopCategories { get; set; } = new();
+    public List<EntityTrend> TrendingEntities { get; set; } = new();
+}
+
+public class CategoryCount
+{
+    public string Category { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public class EntityTrend
+{
+    public string EntityType { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public string TrendDirection { get; set; } = "stable"; // up, down, stable
+}
+
+public class ProactiveSuggestion
+{
+    public string Type { get; set; } = string.Empty; // tagging, review, connection, content_gap
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string ActionUrl { get; set; } = string.Empty;
+    public string Priority { get; set; } = "medium"; // high, medium, low
+    public int EstimatedTimeMinutes { get; set; }
+}
+
+public class EntityCluster
+{
+    public string Name { get; set; } = string.Empty;
+    public List<string> EntityTypes { get; set; } = new();
+    public int Strength { get; set; }
+    public string Description { get; set; } = string.Empty;
+}
+
+public class EntityInsight
+{
+    public string EntityType { get; set; } = string.Empty;
+    public string EntityValue { get; set; } = string.Empty;
+    public int Frequency { get; set; }
+    public DateTime LastSeen { get; set; }
+    public double Confidence { get; set; }
+}
+
+// Enhanced Graph Analysis Models
+public class GraphInsights
+{
+    public int TotalEntities { get; set; }
+    public int TotalRelationships { get; set; }
+    public int ConnectedEntities { get; set; }
+    public int IsolatedEntities { get; set; }
+    public List<GraphHub> TopHubs { get; set; } = new();
+    public Dictionary<string, int> RelationshipTypeDistribution { get; set; } = new();
+    public double GraphDensity { get; set; }
+    public DateTime GeneratedAt { get; set; }
+}
+
+public class GraphHub
+{
+    public int EntityId { get; set; }
+    public string EntityLabel { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public int ConnectionCount { get; set; }
+}
+
+// Security & Audit Models
+public class AuditEntry
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string UserId { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string ResourceType { get; set; } = string.Empty;
+    public string ResourceId { get; set; } = string.Empty;
+    public string? Details { get; set; }
+    public string IpAddress { get; set; } = string.Empty;
+    public string UserAgent { get; set; } = string.Empty;
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+}
+
+public class AuditSummary
+{
+    public DateTime FromDate { get; set; }
+    public DateTime ToDate { get; set; }
+    public int TotalActions { get; set; }
+    public int UniqueUsers { get; set; }
+    public Dictionary<string, int> ActionBreakdown { get; set; } = new();
+    public Dictionary<string, int> ResourceTypeBreakdown { get; set; } = new();
+    public int SensitiveOperations { get; set; }
+    public List<UserActivity> TopUsers { get; set; } = new();
+    public DateTime GeneratedAt { get; set; }
+}
+
+public class UserActivity
+{
+    public string UserId { get; set; } = string.Empty;
+    public int ActionCount { get; set; }
 }

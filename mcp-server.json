@@ -1,0 +1,214 @@
+{
+  "name": "cortex-knowledge-system",
+  "version": "2.0.0",
+  "description": "Advanced AI-powered knowledge management system with classification, PII detection, and vector search",
+  "author": "Cortex Team",
+  "license": "MIT",
+  "mcpVersion": "2024-11-05",
+  "capabilities": {
+    "tools": [
+      {
+        "name": "cortex_search_notes",
+        "description": "Search notes using hybrid BM25+Vector search with advanced filtering",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string", "description": "Search query text"},
+            "mode": {"type": "string", "enum": ["semantic", "hybrid", "bm25"], "default": "hybrid"},
+            "k": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+            "filters": {
+              "type": "object",
+              "properties": {
+                "topics": {"type": "array", "items": {"type": "string"}},
+                "sensitivity": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 3}},
+                "hasPii": {"type": "boolean"},
+                "hasSecrets": {"type": "boolean"},
+                "dateRange": {
+                  "type": "object",
+                  "properties": {
+                    "start": {"type": "string", "format": "date-time"},
+                    "end": {"type": "string", "format": "date-time"}
+                  }
+                }
+              }
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "cortex_classify_note",
+        "description": "Classify a note for topics, sensitivity, PII, and secrets using ML.NET",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "noteId": {"type": "string", "description": "Note ID to classify"},
+            "text": {"type": "string", "description": "Text content to classify (if no noteId)"}
+          }
+        }
+      },
+      {
+        "name": "cortex_bulk_classify",
+        "description": "Batch classify multiple notes for efficiency",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "noteIds": {"type": "array", "items": {"type": "string"}},
+            "forceReprocess": {"type": "boolean", "default": false}
+          },
+          "required": ["noteIds"]
+        }
+      },
+      {
+        "name": "cortex_manage_tags",
+        "description": "Create, update, delete, and bulk manage tags",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {"type": "string", "enum": ["create", "update", "delete", "bulk_apply", "bulk_remove", "list"]},
+            "tagName": {"type": "string"},
+            "noteIds": {"type": "array", "items": {"type": "string"}},
+            "tagIds": {"type": "array", "items": {"type": "integer"}},
+            "description": {"type": "string"}
+          },
+          "required": ["action"]
+        }
+      },
+      {
+        "name": "cortex_redact_content",
+        "description": "Preview or apply redaction based on sensitivity policies",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "noteId": {"type": "string"},
+            "policy": {"type": "integer", "minimum": 0, "maximum": 3, "description": "Redaction policy level"},
+            "voicePin": {"type": "string", "description": "Voice PIN for revealing sensitive content"},
+            "preview": {"type": "boolean", "default": true}
+          },
+          "required": ["noteId", "policy"]
+        }
+      },
+      {
+        "name": "cortex_admin_reindex",
+        "description": "Administrative embedding reindexing with scope control",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "scope": {"type": "string", "enum": ["all", "note", "since"], "default": "all"},
+            "noteId": {"type": "string"},
+            "since": {"type": "string", "format": "date-time"},
+            "batchSize": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}
+          },
+          "required": ["scope"]
+        }
+      },
+      {
+        "name": "cortex_ingest_content",
+        "description": "Ingest documents with automatic processing pipeline",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "files": {"type": "array", "items": {"type": "string"}},
+            "title": {"type": "string"},
+            "content": {"type": "string"},
+            "autoClassify": {"type": "boolean", "default": true},
+            "autoEmbed": {"type": "boolean", "default": true}
+          }
+        }
+      },
+      {
+        "name": "cortex_get_stats",
+        "description": "Get system statistics and health metrics",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "includeJobs": {"type": "boolean", "default": true},
+            "includeML": {"type": "boolean", "default": true},
+            "includeEmbeddings": {"type": "boolean", "default": true}
+          }
+        }
+      }
+    ]
+  },
+  "server": {
+    "baseUrl": "http://localhost:8081/api",
+    "endpoints": {
+      "search": "/search/advanced",
+      "classify": "/classification/classify",
+      "bulkClassify": "/classification/batch",
+      "tags": "/tags",
+      "redaction": "/redaction/preview",
+      "adminReindex": "/admin/embed/reindex",
+      "ingest": "/notes",
+      "stats": "/admin/stats"
+    },
+    "authentication": {
+      "type": "none",
+      "description": "Development mode - no authentication required"
+    }
+  },
+  "features": {
+    "aiClassification": {
+      "enabled": true,
+      "models": ["SdcaMaximumEntropy"],
+      "topics": ["tech", "legal", "finance", "personal", "health", "travel", "projects", "code", "credentials"],
+      "sensitivityLevels": [
+        {"level": 0, "name": "Public", "description": "No restrictions"},
+        {"level": 1, "name": "Internal", "description": "Internal use only"},
+        {"level": 2, "name": "Confidential", "description": "Requires authorization"},
+        {"level": 3, "name": "Secret", "description": "Requires voice PIN"}
+      ]
+    },
+    "piiDetection": {
+      "enabled": true,
+      "patterns": [
+        "email", "phone", "ssn", "credit_card", "iban", "bic",
+        "au_tfn", "au_medicare", "au_abn", "api_key", "jwt_token",
+        "aws_key", "gcp_key", "azure_key", "github_token", "slack_token",
+        "database_url", "private_key", "password_hash"
+      ]
+    },
+    "secretsDetection": {
+      "enabled": true,
+      "patterns": [
+        "api_keys", "tokens", "passwords", "connection_strings",
+        "private_keys", "certificates", "credentials"
+      ]
+    },
+    "vectorSearch": {
+      "enabled": true,
+      "backend": "redis",
+      "embeddingModel": "nomic-embed-text",
+      "dimensions": 768,
+      "hybridSearch": true,
+      "bm25Params": {"k1": 1.2, "b": 0.75}
+    },
+    "backgroundJobs": {
+      "enabled": true,
+      "backend": "redis_streams",
+      "fallback": "polling",
+      "consumerGroup": "CORTEX-WORKERS",
+      "jobTypes": ["embedding", "classification", "pii_detection"]
+    }
+  },
+  "configuration": {
+    "environment": "development",
+    "database": {
+      "provider": "sqlite",
+      "connectionString": "Data Source=./Data/cortex.db"
+    },
+    "redis": {
+      "enabled": false,
+      "connectionString": "localhost:6379"
+    },
+    "embedding": {
+      "provider": "local",
+      "model": "nomic-embed-text",
+      "dimensions": 768
+    },
+    "tts": {
+      "provider": "openai",
+      "voice": "nova"
+    }
+  }
+}

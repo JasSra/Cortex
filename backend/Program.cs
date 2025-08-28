@@ -37,12 +37,24 @@ builder.Services.AddScoped<IVoiceService, VoiceService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddSingleton<IVectorService, VectorService>();
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
-builder.Services.AddHostedService<BackgroundJobService>();
+// Background job service temporarily disabled for testing
+// builder.Services.AddSingleton<BackgroundJobService>();
+// builder.Services.AddHostedService<BackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
+// builder.Services.AddScoped<IBackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
+builder.Services.AddScoped<IBackgroundJobService, BackgroundJobService>();
 builder.Services.AddScoped<IRagService, RagService>();
 // Detection services for auto-classification
 builder.Services.AddScoped<IPiiDetectionService, PiiDetectionService>();
 builder.Services.AddScoped<ISecretsDetectionService, SecretsDetectionService>();
 builder.Services.AddScoped<IClassificationService, ClassificationService>();
+// Redaction service for Stage 2C
+builder.Services.AddScoped<IRedactionService, RedactionService>();
+// Stage 3 services
+builder.Services.AddScoped<INerService, NerService>();
+builder.Services.AddScoped<IGraphService, GraphService>();
+builder.Services.AddScoped<IChatToolsService, ChatToolsService>();
+builder.Services.AddScoped<ISuggestionsService, SuggestionsService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
 // User context / RBAC
 builder.Services.AddScoped<UserContextAccessor>();
 builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());

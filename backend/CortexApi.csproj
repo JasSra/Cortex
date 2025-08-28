@@ -18,6 +18,12 @@
     <PackageReference Include="Markdig" Version="0.33.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="0.21.0-preview.24378.1" />
     <PackageReference Include="Microsoft.ML" Version="3.0.1" />
+    <!-- Stage 3 Dependencies -->
+    <PackageReference Include="TensorFlow.NET" Version="0.150.0" />
+    <PackageReference Include="SciSharp.TensorFlow.Redist" Version="2.16.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.18.0" />
+    <PackageReference Include="F23.StringSimilarity" Version="5.0.0" />
+    <PackageReference Include="Neo4j.Driver" Version="5.21.0" />
   </ItemGroup>
 
 </Project>

@@ -26,6 +26,10 @@ public class CortexDbContext : DbContext
     public DbSet<Entity> Entities { get; set; }
     public DbSet<TextSpan> TextSpans { get; set; }
     public DbSet<UserFeedback> UserFeedbacks { get; set; }
+    
+    // Stage 3 DbSets
+    public DbSet<Edge> Edges { get; set; }
+    public DbSet<AuditEntry> AuditEntries { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -125,13 +129,22 @@ public class CortexDbContext : DbContext
 
         // Stage 2 Entity Configurations
         
-        // Entity
+        // Entity (updated for Stage 3)
         modelBuilder.Entity<Entity>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Type).IsRequired().HasMaxLength(50);
             entity.Property(e => e.Value).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.CanonicalValue).HasMaxLength(500);
             entity.HasIndex(e => new { e.Type, e.Value });
+            entity.HasIndex(e => new { e.Type, e.CanonicalValue });
+            entity.HasIndex(e => e.CanonicalEntityId);
+            
+            // Self-referencing relationship for canonical entities
+            entity.HasOne(e => e.CanonicalEntity)
+                  .WithMany()
+                  .HasForeignKey(e => e.CanonicalEntityId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         // TextSpan  
@@ -149,6 +162,28 @@ public class CortexDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.EntityId)
                   .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // Stage 3 Configurations
+        
+        // Edge (entity relationships)
+        modelBuilder.Entity<Edge>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.RelationType).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Source).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.FromEntityId, e.ToEntityId, e.RelationType });
+            entity.HasIndex(e => e.RelationType);
+            
+            entity.HasOne(e => e.FromEntity)
+                  .WithMany(en => en.OutgoingEdges)
+                  .HasForeignKey(e => e.FromEntityId)
+                  .OnDelete(DeleteBehavior.Cascade);
+                  
+            entity.HasOne(e => e.ToEntity)
+                  .WithMany(en => en.IncomingEdges)
+                  .HasForeignKey(e => e.ToEntityId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
