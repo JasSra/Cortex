@@ -1,72 +1,68 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import CommandDeck from "@/components/CommandDeck";
-import DropZone from "@/components/DropZone";
-import SearchPage from "@/components/SearchPage";
-import Reader from "@/components/Reader";
+import React, { useState } from 'react'
+import { useCortexStore } from '../store/cortexStore'
+import ModernLayout from '../components/layout/ModernLayout'
+import ModernDashboard from '../components/dashboard/ModernDashboard'
+import ModernChatInterface from '../components/chat/ModernChatInterface'
+import KnowledgeGraphVisualizer from '../components/graph/KnowledgeGraphVisualizer'
+import EnhancedSearchPage from '../components/EnhancedSearchPage'
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<"upload" | "search" | "reader">("upload");
-  const [selectedNote, setSelectedNote] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const { notes, searchResults } = useCortexStore()
+
+  const renderActiveView = () => {
+    switch (activeView) {
+      case 'dashboard':
+      case 'analytics':
+        return <ModernDashboard />
+      
+      case 'chat':
+        return <ModernChatInterface />
+      
+      case 'search':
+        return <EnhancedSearchPage onNoteSelect={() => {}} />
+      
+      case 'documents':
+        return (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Document Management</h2>
+              <p className="text-gray-600">Upload and manage your documents here</p>
+            </div>
+          </div>
+        )
+      
+      case 'graph':
+        return <KnowledgeGraphVisualizer />
+      
+      case 'settings':
+        return (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Settings</h2>
+              <p className="text-gray-600">Configure your Cortex preferences</p>
+            </div>
+          </div>
+        )
+      
+      default:
+        return <ModernDashboard />
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <CommandDeck />
-      
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-6">
-          <nav className="flex space-x-4">
-            <button
-              onClick={() => setActiveView("upload")}
-              className={`px-4 py-2 rounded-lg ${
-                activeView === "upload"
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-100"
-              }`}
-            >
-              Upload
-            </button>
-            <button
-              onClick={() => setActiveView("search")}
-              className={`px-4 py-2 rounded-lg ${
-                activeView === "search"
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-100"
-              }`}
-            >
-              Search
-            </button>
-            {selectedNote && (
-              <button
-                onClick={() => setActiveView("reader")}
-                className={`px-4 py-2 rounded-lg ${
-                  activeView === "reader"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                Reader
-              </button>
-            )}
-          </nav>
-        </div>
-
-        {activeView === "upload" && <DropZone />}
-        
-        {activeView === "search" && (
-          <SearchPage 
-            onNoteSelect={(noteId) => {
-              setSelectedNote(noteId);
-              setActiveView("reader");
-            }} 
-          />
-        )}
-        
-        {activeView === "reader" && selectedNote && (
-          <Reader noteId={selectedNote} />
-        )}
-      </main>
+    <div className="h-screen overflow-hidden">
+      <ModernLayout
+        activeView={activeView}
+        onViewChange={setActiveView}
+        sidebarOpen={sidebarOpen}
+        onSidebarToggle={() => setSidebarOpen(!sidebarOpen)}
+      >
+        {renderActiveView()}
+      </ModernLayout>
     </div>
-  );
+  )
 }

@@ -32,8 +32,19 @@ public class IngestService : IIngestService
     private readonly string _dataDir;
     private readonly IVectorService _vectorService;
     private readonly IUserContextAccessor _user;
+    private readonly IPiiDetectionService _piiDetectionService;
+    private readonly ISecretsDetectionService _secretsDetectionService;
+    private readonly IClassificationService _classificationService;
 
-    public IngestService(CortexDbContext context, IConfiguration configuration, ILogger<IngestService> logger, IVectorService vectorService, IUserContextAccessor user)
+    public IngestService(
+        CortexDbContext context, 
+        IConfiguration configuration, 
+        ILogger<IngestService> logger, 
+        IVectorService vectorService, 
+        IUserContextAccessor user,
+        IPiiDetectionService piiDetectionService,
+        ISecretsDetectionService secretsDetectionService,
+        IClassificationService classificationService)
     {
         _context = context;
         _configuration = configuration;
@@ -41,6 +52,9 @@ public class IngestService : IIngestService
         _dataDir = _configuration["DATA_DIR"] ?? "/app/data";
         _vectorService = vectorService;
         _user = user;
+        _piiDetectionService = piiDetectionService;
+        _secretsDetectionService = secretsDetectionService;
+        _classificationService = classificationService;
     }
 
     public async Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files)
@@ -162,6 +176,9 @@ public class IngestService : IIngestService
         note.ChunkCount = chunks.Count;
         note.Chunks = chunks;
 
+        // Perform auto-classification on the full content
+        await PerformAutoClassificationAsync(note, content);
+
         _context.Notes.Add(note);
         await _context.SaveChangesAsync();
 
@@ -223,6 +240,9 @@ public class IngestService : IIngestService
         var chunks = ChunkText(content, note.Id);
         note.ChunkCount = chunks.Count;
         note.Chunks = chunks;
+
+        // Perform auto-classification on the full content
+        await PerformAutoClassificationAsync(note, content);
 
         _context.Notes.Add(note);
         await _context.SaveChangesAsync();
@@ -436,6 +456,78 @@ public class IngestService : IIngestService
         {
             _logger.LogError(ex, "Error retrieving notes for user {UserId}", userId);
             throw;
+        }
+    }
+
+    private async Task PerformAutoClassificationAsync(Note note, string content)
+    {
+        try
+        {
+            _logger.LogInformation("Starting auto-classification for note {NoteId}", note.Id);
+
+            // Run classification
+            var classificationResult = await _classificationService.ClassifyTextAsync(content, note.Id);
+            
+            // Apply classification results to note
+            if (classificationResult.Tags.Any())
+            {
+                note.Tags = string.Join(",", classificationResult.Tags.Select(t => t.Name));
+            }
+            
+            note.SensitivityLevel = classificationResult.SensitivityLevel;
+            note.Summary = classificationResult.Summary;
+
+            // Run PII detection
+            var piiDetections = await _piiDetectionService.DetectPiiAsync(content);
+            var piiSpans = await _piiDetectionService.CreatePiiSpansAsync(note.Id, content);
+            
+            if (piiDetections.Any())
+            {
+                note.PiiFlags = string.Join(",", piiDetections.Select(p => p.Type).Distinct());
+                
+                // Add PII spans to context for saving
+                foreach (var span in piiSpans)
+                {
+                    _context.TextSpans.Add(span);
+                }
+                
+                _logger.LogInformation("Detected {Count} PII items in note {NoteId}", piiDetections.Count, note.Id);
+            }
+
+            // Run secrets detection
+            var secretDetections = await _secretsDetectionService.DetectSecretsAsync(content);
+            var secretSpans = await _secretsDetectionService.CreateSecretSpansAsync(note.Id, content);
+            
+            if (secretDetections.Any())
+            {
+                note.SecretFlags = string.Join(",", secretDetections.Select(s => s.Type).Distinct());
+                
+                // Add secret spans to context for saving
+                foreach (var span in secretSpans)
+                {
+                    _context.TextSpans.Add(span);
+                }
+                
+                _logger.LogInformation("Detected {Count} secrets in note {NoteId}", secretDetections.Count, note.Id);
+            }
+
+            // Update sensitivity level based on detections
+            if (secretDetections.Any(s => s.Severity == "critical") || piiDetections.Any(p => p.Confidence > 0.9))
+            {
+                note.SensitivityLevel = Math.Max(note.SensitivityLevel, 4); // high
+            }
+            else if (secretDetections.Any(s => s.Severity == "high") || piiDetections.Any(p => p.Confidence > 0.7))
+            {
+                note.SensitivityLevel = Math.Max(note.SensitivityLevel, 3); // medium
+            }
+
+            _logger.LogInformation("Auto-classification completed for note {NoteId}: Sensitivity={Sensitivity}, Tags={Tags}, PII={PiiCount}, Secrets={SecretCount}", 
+                note.Id, note.SensitivityLevel, note.Tags, piiDetections.Count, secretDetections.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during auto-classification for note {NoteId}", note.Id);
+            // Don't fail the ingestion if classification fails
         }
     }
 }

@@ -22,7 +22,24 @@
     "@fortawesome/react-fontawesome": "^0.2.0",
     "clsx": "^2.1.1",
     "class-variance-authority": "^0.7.0",
-    "lucide-react": "^0.400.0"
+    "lucide-react": "^0.400.0",
+    "@lobehub/ui": "^1.160.0",
+    "plotly.js": "^2.29.1",
+    "react-plotly.js": "^2.6.0",
+    "@tanstack/react-query": "^5.51.15",
+    "zustand": "^4.5.4",
+    "framer-motion": "^11.3.19",
+    "@radix-ui/react-tabs": "^1.0.4",
+    "@radix-ui/react-toast": "^1.1.5",
+    "@radix-ui/react-dialog": "^1.0.5",
+    "@radix-ui/react-dropdown-menu": "^2.0.6",
+    "@radix-ui/react-avatar": "^1.0.4",
+    "@radix-ui/react-progress": "^1.0.3",
+    "recharts": "^2.12.7",
+    "d3": "^7.9.0",
+    "react-force-graph-2d": "^1.25.4",
+    "react-markdown": "^9.0.1",
+    "react-syntax-highlighter": "^15.5.0"
   },
   "devDependencies": {
     "typescript": "^5",
@@ -33,6 +50,10 @@
     "eslint-config-next": "14.2.5",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.39",
-    "@playwright/test": "^1.45.0"
+    "@playwright/test": "^1.45.0",
+    "@types/plotly.js": "^2.12.29",
+    "@types/react-plotly.js": "^2.6.3",
+    "@types/d3": "^7.4.3",
+    "@types/react-syntax-highlighter": "^15.5.13"
   }
 }

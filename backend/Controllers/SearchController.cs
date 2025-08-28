@@ -79,4 +79,30 @@ public class SearchController : ControllerBase
         var response = await _searchService.SearchHybridAsync(request, _userContext.UserId);
         return Ok(response);
     }
+
+    /// <summary>
+    /// Advanced search with Stage 2 auto-classification filtering
+    /// </summary>
+    [HttpPost("advanced")]
+    public async Task<IActionResult> SearchAdvanced([FromBody] AdvancedSearchRequest request)
+    {
+        if (!Rbac.RequireRole(_userContext, "Reader"))
+            return Forbid("Reader role required");
+
+        if (string.IsNullOrWhiteSpace(request.Q))
+            return BadRequest("Query 'Q' is required");
+
+        _logger.LogInformation("Advanced search query '{Query}' for user {UserId} (mode: {Mode}, k: {K}, sensitivity: {SensitivityLevels}, excludePii: {ExcludePii}, excludeSecrets: {ExcludeSecrets})", 
+            request.Q, _userContext.UserId, request.Mode, request.K, 
+            request.SensitivityLevels?.Any() == true ? string.Join(",", request.SensitivityLevels) : "none",
+            request.ExcludePii, request.ExcludeSecrets);
+
+        // Ensure user ID is set for scoped search
+        var response = await _searchService.SearchAdvancedAsync(request, _userContext.UserId);
+
+        _logger.LogInformation("Advanced search returned {HitCount} results for user {UserId}", 
+            response.Hits.Count, _userContext.UserId);
+
+        return Ok(response);
+    }
 }
