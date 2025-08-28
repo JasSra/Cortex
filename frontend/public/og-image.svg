@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#1e1b4b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f172a;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3B82F6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGradient)"/>
+  
+  <!-- Pattern overlay -->
+  <circle cx="200" cy="150" r="100" fill="#8B5CF6" opacity="0.1"/>
+  <circle cx="1000" cy="480" r="120" fill="#3B82F6" opacity="0.1"/>
+  
+  <!-- Logo -->
+  <rect x="100" y="200" width="200" height="200" rx="24" fill="url(#logoGradient)"/>
+  <g transform="translate(140, 240)">
+    <rect x="20" y="20" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="60" y="20" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="100" y="20" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="20" y="60" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="60" y="60" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="100" y="60" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="20" y="100" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="60" y="100" width="30" height="30" fill="white" opacity="0.9"/>
+    <rect x="100" y="100" width="30" height="30" fill="white" opacity="0.9"/>
+  </g>
+  
+  <!-- Main text -->
+  <text x="400" y="280" font-family="Arial, sans-serif" font-size="72" font-weight="bold" fill="white">Cortex</text>
+  <text x="400" y="340" font-family="Arial, sans-serif" font-size="36" fill="#94a3b8">Personal Knowledge Hub</text>
+  
+  <!-- Features -->
+  <text x="400" y="420" font-family="Arial, sans-serif" font-size="24" fill="#8B5CF6">✨ AI-Powered Search</text>
+  <text x="400" y="460" font-family="Arial, sans-serif" font-size="24" fill="#3B82F6">🔒 Secure Authentication</text>
+  <text x="400" y="500" font-family="Arial, sans-serif" font-size="24" fill="#10B981">🎤 Voice Capabilities</text>
+</svg>

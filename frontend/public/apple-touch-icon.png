@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <defs>
+    <linearGradient id="brainGradientApple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3B82F6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="22" fill="url(#brainGradientApple)"/>
+  <g transform="translate(24, 24)">
+    <path d="M12 18h15v15H12zm20 0h15v15H20zm30 0h15v15H30zm40 0h15v15H40zm-60 20h15v15H12zm20 0h15v15H20zm30 0h15v15H30zm40 0h15v15H40zm-60 20h15v15H12zm20 0h15v15H20zm30 0h15v15H30zm40 0h15v15H40zm-60 20h15v15H12zm20 0h15v15H20zm30 0h15v15H30zm40 0h15v15H40zm-60 20h15v15H12zm20 0h15v15H20zm30 0h15v15H30zm40 0h15v15H40z" 
+          fill="white" opacity="0.9"/>
+    <circle cx="100" cy="32" r="16" fill="#10B981" opacity="0.8"/>
+  </g>
+</svg>
