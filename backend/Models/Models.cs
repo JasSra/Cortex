@@ -48,6 +48,62 @@ public class Note
     public virtual ICollection<TextSpan> Spans { get; set; } = new List<TextSpan>();
 }
 
+public class UserProfile
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    
+    /// <summary>
+    /// Subject ID from Azure AD B2C (unique identifier)
+    /// </summary>
+    public string SubjectId { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// User's email address
+    /// </summary>
+    public string Email { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// User's display name
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// User's bio/description
+    /// </summary>
+    public string Bio { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Avatar image URL or base64 data
+    /// </summary>
+    public string Avatar { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// User preferences as JSON
+    /// </summary>
+    public string Preferences { get; set; } = "{}";
+    
+    /// <summary>
+    /// Whether the user has completed onboarding
+    /// </summary>
+    public bool HasCompletedOnboarding { get; set; } = false;
+    
+    /// <summary>
+    /// Last login timestamp
+    /// </summary>
+    public DateTime? LastLoginAt { get; set; }
+    
+    /// <summary>
+    /// Profile creation timestamp
+    /// </summary>
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    /// <summary>
+    /// Last profile update timestamp
+    /// </summary>
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class NoteChunk
 {
     [Key]
@@ -668,7 +724,7 @@ public class GraphInsights
 
 public class GraphHub
 {
-    public int EntityId { get; set; }
+    public string EntityId { get; set; } = string.Empty;
     public string EntityLabel { get; set; } = string.Empty;
     public string EntityType { get; set; } = string.Empty;
     public int ConnectionCount { get; set; }

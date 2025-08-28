@@ -12,6 +12,10 @@ public interface IGraphService
     Task<List<GraphNode>> GetConnectedEntitiesAsync(string entityId, int depth = 2);
     Task<List<string>> SuggestRelatedEntitiesAsync(string entityId);
     Task<Dictionary<string, int>> GetEntityStatisticsAsync();
+    Task<List<Edge>> DiscoverCoOccurrenceRelationshipsAsync();
+    Task<List<Edge>> DiscoverSemanticRelationshipsAsync();
+    Task<List<Edge>> DiscoverTemporalRelationshipsAsync();
+    Task<GraphInsights> AnalyzeGraphStructureAsync();
 }
 
 public class GraphService : IGraphService
@@ -296,8 +300,8 @@ public class GraphService : IGraphService
                     if (entityA.Value == entityB.Value || entityA.Type == entityB.Type)
                         continue;
                     
-                    var canonicalA = await _nerService.GetOrCreateCanonicalEntityAsync(entityA);
-                    var canonicalB = await _nerService.GetOrCreateCanonicalEntityAsync(entityB);
+                    var canonicalA = await _nerService.GetOrCreateCanonicalEntityAsync(entityA.Type, entityA.Value, entityA.Confidence);
+                    var canonicalB = await _nerService.GetOrCreateCanonicalEntityAsync(entityB.Type, entityB.Value, entityB.Confidence);
                     
                     // Check if relationship already exists
                     var existingEdge = await _context.Edges

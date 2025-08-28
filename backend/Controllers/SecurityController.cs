@@ -1,3 +1,4 @@
+/*
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using CortexApi.Models;
@@ -202,3 +203,4 @@ public class SecurityController : ControllerBase
         return false;
     }
 }
+*/

@@ -5,19 +5,31 @@ namespace CortexApi.Security;
 public interface IUserContextAccessor
 {
     string UserId { get; }
+    string? UserSubjectId { get; }
+    string? UserEmail { get; }
+    string? UserName { get; }
     IReadOnlyCollection<string> Roles { get; }
     bool IsInRole(string role);
+    bool IsAuthenticated { get; }
 }
 
 public class UserContextAccessor : IUserContextAccessor
 {
     private readonly List<string> _roles = new();
     public string UserId { get; private set; } = "default";
+    public string? UserSubjectId { get; private set; }
+    public string? UserEmail { get; private set; }
+    public string? UserName { get; private set; }
+    public bool IsAuthenticated { get; private set; }
     public IReadOnlyCollection<string> Roles => _roles;
 
-    public void Set(string userId, IEnumerable<string> roles)
+    public void Set(string userId, string? subjectId, string? email, string? name, IEnumerable<string> roles, bool isAuthenticated)
     {
         UserId = string.IsNullOrWhiteSpace(userId) ? "default" : userId;
+        UserSubjectId = subjectId;
+        UserEmail = email;
+        UserName = name;
+        IsAuthenticated = isAuthenticated;
         _roles.Clear();
         _roles.AddRange(roles.Select(r => r.Trim()).Where(r => !string.IsNullOrWhiteSpace(r)).Distinct(StringComparer.OrdinalIgnoreCase));
     }
@@ -37,21 +49,62 @@ public class UserContextMiddleware
 
     public async Task InvokeAsync(HttpContext context, UserContextAccessor accessor)
     {
-        // Extract from headers (or claims in future OIDC phase)
-        var hdrUser = context.Request.Headers["X-UserId"].FirstOrDefault();
-        var hdrRolesRaw = context.Request.Headers["X-Roles"].FirstOrDefault();
-        var roles = (hdrRolesRaw ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
+        var isAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
+        string userId = "default";
+        string? subjectId = null;
+        string? email = null;
+        string? name = null;
+        var roles = new List<string>();
 
-        // Dev-friendly default: Admin if no roles in Development, Reader otherwise
-        if (roles.Count == 0)
+        if (isAuthenticated)
         {
-            roles = _env.IsDevelopment() ? new List<string> { "Admin", "Editor", "Reader" } : new List<string> { "Reader" };
+            // Extract from JWT claims
+            subjectId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+                       ?? context.User.FindFirst("sub")?.Value;
+            
+            email = context.User.FindFirst(ClaimTypes.Email)?.Value 
+                   ?? context.User.FindFirst("preferred_username")?.Value;
+            
+            name = context.User.FindFirst(ClaimTypes.Name)?.Value 
+                  ?? context.User.FindFirst("name")?.Value;
+
+            // Use subject ID as primary user identifier for data binding
+            userId = subjectId ?? email ?? "default";
+
+            // Extract roles from claims
+            var roleClaims = context.User.FindAll(ClaimTypes.Role)
+                           .Concat(context.User.FindAll("roles"))
+                           .Select(c => c.Value)
+                           .ToList();
+
+            roles.AddRange(roleClaims);
+        }
+        else
+        {
+            // Fallback to headers for development/testing
+            var hdrUser = context.Request.Headers["X-UserId"].FirstOrDefault();
+            var hdrRolesRaw = context.Request.Headers["X-Roles"].FirstOrDefault();
+            
+            if (!string.IsNullOrEmpty(hdrUser))
+            {
+                userId = hdrUser;
+                isAuthenticated = true;
+            }
+
+            if (!string.IsNullOrEmpty(hdrRolesRaw))
+            {
+                roles.AddRange(hdrRolesRaw
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            }
         }
 
-        accessor.Set(hdrUser ?? "default", roles);
+        // Dev-friendly default: Admin if no roles
+        if (roles.Count == 0)
+        {
+            roles = new List<string> { "Admin", "Editor", "Reader" };
+        }
 
+        accessor.Set(userId, subjectId, email, name, roles, isAuthenticated);
         await _next(context);
     }
 }
