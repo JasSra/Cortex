@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="brainGradient192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3B82F6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="24" fill="url(#brainGradient192)"/>
+  <g transform="translate(32, 32)">
+    <path d="M12 20h18v18H12zm24 0h18v18H24zm36 0h18v18H36zm-48 24h18v18H12zm24 0h18v18H24zm36 0h18v18H36zm-48 24h18v18H12zm24 0h18v18H24zm36 0h18v18H36zm-48 24h18v18H12zm24 0h18v18H24zm36 0h18v18H36zm-48 24h18v18H12zm24 0h18v18H24zm36 0h18v18H36z" 
+          fill="white" opacity="0.9"/>
+    <circle cx="108" cy="36" r="18" fill="#10B981" opacity="0.8"/>
+  </g>
+</svg>

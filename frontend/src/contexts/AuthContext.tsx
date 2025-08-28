@@ -51,6 +51,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = async () => {
     try {
       setLoading(true)
+      
+      // Debug: Log the current configuration
+      console.log('MSAL Config being used:', {
+        clientId: msalConfig.auth.clientId,
+        authority: msalConfig.auth.authority,
+        redirectUri: msalConfig.auth.redirectUri,
+        currentUrl: window.location.href
+      })
+      
       const response: AuthenticationResult = await msalInstance.loginPopup(loginRequest)
       
       if (response.account) {

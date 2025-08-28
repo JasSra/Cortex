@@ -1,0 +1,6 @@
+Contact: mailto:security@cortex.yourdomain.com
+Expires: 2025-12-31T23:59:59.000Z
+Preferred-Languages: en
+Canonical: https://cortex.yourdomain.com/.well-known/security.txt
+Policy: https://cortex.yourdomain.com/security-policy
+Acknowledgments: https://cortex.yourdomain.com/security-acknowledgments
