@@ -10,6 +10,7 @@ using Markdig;
 using CortexApi.Models;
 using CortexApi.Data;
 using Microsoft.EntityFrameworkCore;
+using CortexApi.Security;
 
 using PathIO = System.IO.Path;
 
@@ -29,14 +30,16 @@ public class IngestService : IIngestService
     private readonly ILogger<IngestService> _logger;
     private readonly string _dataDir;
     private readonly IVectorService _vectorService;
+    private readonly IUserContextAccessor _user;
 
-    public IngestService(CortexDbContext context, IConfiguration configuration, ILogger<IngestService> logger, IVectorService vectorService)
+    public IngestService(CortexDbContext context, IConfiguration configuration, ILogger<IngestService> logger, IVectorService vectorService, IUserContextAccessor user)
     {
         _context = context;
         _configuration = configuration;
         _logger = logger;
         _dataDir = _configuration["DATA_DIR"] ?? "/app/data";
         _vectorService = vectorService;
+        _user = user;
     }
 
     public async Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files)
@@ -143,6 +146,7 @@ public class IngestService : IIngestService
         // Create note and chunks
         var note = new Note
         {
+            UserId = _user.UserId,
             Title = PathIO.GetFileNameWithoutExtension(file.FileName),
             OriginalPath = file.FileName,
             FilePath = filePath,
@@ -204,6 +208,7 @@ public class IngestService : IIngestService
         // Create note and chunks
     var note = new Note
         {
+            UserId = _user.UserId,
             Title = PathIO.GetFileNameWithoutExtension(fileInfo.Name),
             OriginalPath = filePath,
             FilePath = filePath,

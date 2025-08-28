@@ -1,12 +1,17 @@
 using Microsoft.EntityFrameworkCore;
 using CortexApi.Models;
+using CortexApi.Security;
 
 namespace CortexApi.Data;
 
 public class CortexDbContext : DbContext
 {
-    public CortexDbContext(DbContextOptions<CortexDbContext> options) : base(options)
+    private readonly IUserContextAccessor? _user;
+    public string CurrentUserId => _user?.UserId ?? "default";
+
+    public CortexDbContext(DbContextOptions<CortexDbContext> options, IUserContextAccessor? user = null) : base(options)
     {
+        _user = user; // may be null during design-time tooling
     }
 
     public DbSet<Note> Notes { get; set; }
@@ -21,8 +26,8 @@ public class CortexDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Configure Note entity
-        modelBuilder.Entity<Note>(entity =>
+    // Configure Note entity
+    modelBuilder.Entity<Note>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Title).IsRequired().HasMaxLength(500);
@@ -35,6 +40,8 @@ public class CortexDbContext : DbContext
             entity.HasIndex(e => e.FileType);
             entity.HasIndex(e => e.UserId);
             entity.HasIndex(e => e.IsDeleted);
+            // Row-level filter: user scope + soft delete
+            entity.HasQueryFilter(n => !n.IsDeleted && n.UserId == CurrentUserId);
         });
 
         // Configure NoteChunk entity
@@ -54,6 +61,8 @@ public class CortexDbContext : DbContext
                   .WithMany(n => n.Chunks)
                   .HasForeignKey(e => e.NoteId)
                   .OnDelete(DeleteBehavior.Cascade);
+            // Row-level filter via parent Note
+            entity.HasQueryFilter(c => !c.Note.IsDeleted && c.Note.UserId == CurrentUserId);
         });
 
         // Embedding entity
@@ -68,6 +77,7 @@ public class CortexDbContext : DbContext
                   .WithMany(c => c.Embeddings)
                   .HasForeignKey(e => e.ChunkId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasQueryFilter(e => !e.Chunk.Note.IsDeleted && e.Chunk.Note.UserId == CurrentUserId);
         });
 
         // Tags and NoteTag (many-to-many)
