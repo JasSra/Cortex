@@ -28,13 +28,15 @@ public class IngestService : IIngestService
     private readonly IConfiguration _configuration;
     private readonly ILogger<IngestService> _logger;
     private readonly string _dataDir;
+    private readonly IVectorService _vectorService;
 
-    public IngestService(CortexDbContext context, IConfiguration configuration, ILogger<IngestService> logger)
+    public IngestService(CortexDbContext context, IConfiguration configuration, ILogger<IngestService> logger, IVectorService vectorService)
     {
         _context = context;
         _configuration = configuration;
         _logger = logger;
         _dataDir = _configuration["DATA_DIR"] ?? "/app/data";
+        _vectorService = vectorService;
     }
 
     public async Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files)
@@ -158,6 +160,12 @@ public class IngestService : IIngestService
         _context.Notes.Add(note);
         await _context.SaveChangesAsync();
 
+        // Enqueue chunks for embedding
+        foreach (var ch in chunks)
+        {
+            await _vectorService.EnqueueEmbedAsync(note, ch);
+        }
+
         return new IngestResult
         {
             NoteId = note.Id,
@@ -194,7 +202,7 @@ public class IngestService : IIngestService
         }
 
         // Create note and chunks
-        var note = new Note
+    var note = new Note
         {
             Title = PathIO.GetFileNameWithoutExtension(fileInfo.Name),
             OriginalPath = filePath,
@@ -212,6 +220,11 @@ public class IngestService : IIngestService
 
         _context.Notes.Add(note);
         await _context.SaveChangesAsync();
+
+        foreach (var ch in chunks)
+        {
+            await _vectorService.EnqueueEmbedAsync(note, ch);
+        }
 
         return new IngestResult
         {
@@ -300,7 +313,9 @@ public class IngestService : IIngestService
                 {
                     NoteId = noteId,
                     Content = currentChunk.ToString().Trim(),
+                    Text = currentChunk.ToString().Trim(),
                     ChunkIndex = chunkIndex++,
+                    Seq = chunkIndex-1,
                     TokenCount = currentTokenCount
                 });
 
@@ -318,7 +333,9 @@ public class IngestService : IIngestService
                 {
                     NoteId = noteId,
                     Content = currentChunk.ToString().Trim(),
+                    Text = currentChunk.ToString().Trim(),
                     ChunkIndex = chunkIndex++,
+                    Seq = chunkIndex-1,
                     TokenCount = currentTokenCount
                 });
 
@@ -334,9 +351,19 @@ public class IngestService : IIngestService
             {
                 NoteId = noteId,
                 Content = currentChunk.ToString().Trim(),
+                Text = currentChunk.ToString().Trim(),
                 ChunkIndex = chunkIndex,
+                Seq = chunkIndex,
                 TokenCount = currentTokenCount
             });
+        }
+
+        // compute chunk sha256
+        foreach (var ch in chunks)
+        {
+            using var sha = SHA256.Create();
+            var bytes = Encoding.UTF8.GetBytes(ch.Content);
+            ch.Sha256 = Convert.ToHexString(sha.ComputeHash(bytes)).ToLowerInvariant();
         }
 
         return chunks;

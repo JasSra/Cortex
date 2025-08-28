@@ -4416,11 +4416,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectUniqueName": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "projectName": "CortexApi",
-      "projectPath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectPath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "packagesPath": "C:\\Users\\jaska\\.nuget\\packages\\",
-      "outputPath": "C:\\Code\\Cortex\\backend\\obj\\",
+      "outputPath": "c:\\Code\\Cortex\\backend\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

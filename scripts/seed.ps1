@@ -53,13 +53,14 @@ foreach ($file in $files) {
     }
 }
 
-# Test search
+# Test search (POST /search)
 Write-Host "🔍 Testing search for 'cortex'..." -ForegroundColor Yellow
 try {
-    $search = Invoke-RestMethod -Method GET -Uri "$ApiUrl/search?q=cortex&limit=5"
-    if ($search -and $search.Count -gt 0) {
+    $body = @{ q = 'cortex'; k = 5; mode = 'hybrid'; alpha = 0.6 } | ConvertTo-Json
+    $search = Invoke-RestMethod -Method Post -Uri "$ApiUrl/search" -ContentType 'application/json' -Body $body
+    if ($search -and $search.hits -and $search.hits.Count -gt 0) {
         Write-Host "✅ Search is working!" -ForegroundColor Green
-        $search | ForEach-Object { Write-Host ("   → {0} ({1})" -f $_.title, $_.fileType) }
+        $search.hits | Select-Object -First 5 | ForEach-Object { Write-Host ("   → {0} (score {1:N3})" -f $_.title, $_.score) }
     }
     else {
         Write-Host "⚠️  Search returned no results" -ForegroundColor Yellow

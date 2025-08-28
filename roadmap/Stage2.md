@@ -1,7 +1,7 @@
 Extend Stage-1 to Stage-2: auto-classify, auto-tag, embeddings search, sensitivity policy.
 
 A. Data
-1) Add tables: Tags(id,name), NoteTags(noteId,tagId), Chunks(embedVec?), Entities(id,type,value), Spans(noteId,start,end,label).
+1) Add tables: Tags(id,name), NoteTags(noteId,tagId), Entities(id,type,value), Spans(noteId,start,end,label). (Keep P0 `Embedding` table; do not add `embedVec` to `Chunks`.)
 2) Add fields to notes/chunks: sensitivity_level INT(0–3), pii_flags JSON, secret_flags JSON, summary TEXT.
 
 B. Detection pipeline
@@ -12,9 +12,9 @@ B. Detection pipeline
    - Classifier: SdcaMaximumEntropy to predict up to 20 base topics (tech, legal, finance, personal, health, travel, projects, code, credentials, etc.). Output top-k with confidences.
    - Create a “SensitivityScore” regressor (FastTree) trained on features + secret/pii hits; map to Level 0–3 via thresholds.
    - Provide CLI: `dotnet run -- train --data ./data/labelled/*.csv` to (re)train with user feedback.
-4) Embeddings: add vector retrieval using Redis Vector or Qdrant (choose one via env VECTOR_BACKEND={{ redis|qdrant }}).
-   - Embedding source: nomic-embed-text via Ollama or OpenAI text-embedding-3-small; store 768–1024D vectors.
-   - Hybrid search: BM25 ∪ Top-k Vector → Cross-encoder rerank (optional later).
+4) Embeddings: add vector retrieval using Redis Vector or Qdrant (choose via `Vector:Backend = redis|qdrant|neo4j`).
+   - Embedding source: nomic-embed-text via Ollama or OpenAI text-embedding-3-small; store vectors with dimensionality from `Embedding:Dim`.
+   - Hybrid search: BM25 ∪ Top-k Vector → Cross-encoder rerank (optional toggle).
 
 C. Redaction + gates
 1) Sensitivity policy:
@@ -25,8 +25,8 @@ C. Redaction + gates
 D. API
 1) POST /classify/{noteId} → {tags[], sensitivity, pii, secrets, summary}
 2) POST /tags/bulk { ids[], add[], remove[] }
-3) POST /embed/reindex { scope:"all|note|since", noteId?, since? }
-4) GET /search/semantic?q=&k=&filters=  (returns chunks with highlights + sensitivity)
+3) POST /admin/embed/reindex { scope:"all|note|since", noteId?, since? } (alias: `/embed/reindex`)
+4) POST /search { q, k, filters, mode:"semantic|hybrid|bm25", alpha } → returns chunks with highlights + sensitivity (alias: GET /search/semantic)
 
 E. UI
 1) Autotag panel with confidence chips; “Apply All” → bulk endpoint.
@@ -34,7 +34,7 @@ E. UI
 3) Search: toggle BM25 vs Semantic, and filters (tags, sensitivity, time).
 
 F. Background jobs
-1) Redis Streams “ingest”, “classify”, “embed”. Worker service runs batches with backoff.
+1) Redis Streams: `stream:ingest`, `stream:classify`, `stream:embed` with consumer groups; worker service runs batches with backoff.
 2) Idempotency on note hash. Errors logged to /data/logs with correlationId.
 
 G. Tests + Output

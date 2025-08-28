@@ -38,6 +38,22 @@
 			"type": "shell",
 			"command": "dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj",
 			"isBackground": true
+		},
+		{
+			"label": "build-backend",
+			"type": "shell",
+			"command": "dotnet build",
+			"args": [],
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "build-backend",
+			"type": "shell",
+			"command": "dotnet build",
+			"group": "build"
 		}
 	]
 }
