@@ -15,15 +15,18 @@ public class NotesController : ControllerBase
     private readonly IIngestService _ingestService;
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<NotesController> _logger;
+    private readonly IGamificationService _gamificationService;
 
     public NotesController(
         IIngestService ingestService,
         IUserContextAccessor userContext,
-        ILogger<NotesController> logger)
+        ILogger<NotesController> logger,
+        IGamificationService gamificationService)
     {
         _ingestService = ingestService;
         _userContext = userContext;
         _logger = logger;
+        _gamificationService = gamificationService;
     }
 
     /// <summary>
@@ -33,7 +36,7 @@ public class NotesController : ControllerBase
     public async Task<IActionResult> GetNote(string id)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
-            return Forbid("Reader role required");
+            return StatusCode(403, "Reader role required");
 
         _logger.LogInformation("Getting note {NoteId} for user {UserId}", id, _userContext.UserId);
 
@@ -49,7 +52,7 @@ public class NotesController : ControllerBase
         {
             _logger.LogWarning("User {UserId} attempted to access note {NoteId} owned by {OwnerId}", 
                 _userContext.UserId, id, note.UserId);
-            return Forbid("Access denied");
+            return StatusCode(403, "Access denied");
         }
 
         return Ok(note);
@@ -62,7 +65,7 @@ public class NotesController : ControllerBase
     public async Task<IActionResult> GetNotes([FromQuery] int limit = 20, [FromQuery] int offset = 0)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
-            return Forbid("Reader role required");
+            return StatusCode(403, "Reader role required");
 
         _logger.LogInformation("Getting notes for user {UserId} (limit: {Limit}, offset: {Offset})", 
             _userContext.UserId, limit, offset);
@@ -78,7 +81,7 @@ public class NotesController : ControllerBase
     public async Task<IActionResult> DeleteNote(string id)
     {
         if (!Rbac.RequireRole(_userContext, "Editor"))
-            return Forbid("Editor role required");
+            return StatusCode(403, "Editor role required");
 
         // Check for confirmation header (safety measure)
         var confirmDelete = Request.Headers["X-Confirm-Delete"].FirstOrDefault();

@@ -5,6 +5,8 @@ import { AuthProvider } from "../contexts/AuthContext";
 import { AuthWrapper } from "../components/AuthWrapper";
 import { StructuredData } from "../components/StructuredData";
 
+const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
+
 export const metadata: Metadata = {
   title: {
     default: "Cortex - Personal Knowledge Hub",

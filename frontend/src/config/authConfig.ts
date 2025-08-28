@@ -1,12 +1,12 @@
-import { Configuration, PopupRequest } from '@azure/msal-browser'
+import { Configuration, RedirectRequest } from '@azure/msal-browser'
 
 // MSAL Configuration for Azure AD B2C
 export const msalConfig: Configuration = {
   auth: {
     clientId: 'c83c5908-2b64-4304-8c53-b964ace5a1ea',
     authority: 'https://jsraauth.b2clogin.com/jsraauth.onmicrosoft.com/B2C_1_SIGNUP_SIGNIN',
-    redirectUri: '/',
-    postLogoutRedirectUri: '/',
+    redirectUri: typeof window !== 'undefined' ? window.location.origin : '/',
+    postLogoutRedirectUri: typeof window !== 'undefined' ? window.location.origin : '/',
     navigateToLoginRequestUrl: false, // stay on callback while handling
     knownAuthorities: ['jsraauth.b2clogin.com'] // Required for B2C
   },
@@ -23,8 +23,8 @@ export const MSAL_SCOPES = {
   user: 'https://jsraauth.onmicrosoft.com/c83c5908-2b64-4304-8c53-b964ace5a1ea/Consolidated.User',
 } as const
 
-// Add scopes for B2C APIs
-export const loginRequest: PopupRequest = {
+// Add scopes for B2C APIs - changed to RedirectRequest
+export const loginRequest: RedirectRequest = {
   scopes: ['openid', 'profile', 'email']
 }
 

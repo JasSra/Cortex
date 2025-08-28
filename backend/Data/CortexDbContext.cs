@@ -22,6 +22,8 @@ public class CortexDbContext : DbContext
     public DbSet<Classification> Classifications { get; set; }
     public DbSet<ActionLog> ActionLogs { get; set; }
     public DbSet<UserProfile> UserProfiles { get; set; }
+    public DbSet<Achievement> Achievements { get; set; }
+    public DbSet<UserAchievement> UserAchievements { get; set; }
     
     // Stage 2 DbSets
     public DbSet<Entity> Entities { get; set; }
@@ -202,6 +204,40 @@ public class CortexDbContext : DbContext
             entity.HasIndex(e => e.SubjectId).IsUnique();
             entity.HasIndex(e => e.Email);
             entity.HasIndex(e => e.CreatedAt);
+        });
+
+        // Achievement Configuration
+        modelBuilder.Entity<Achievement>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Description).IsRequired().HasMaxLength(1000);
+            entity.Property(e => e.Icon).IsRequired().HasMaxLength(10); // Emoji
+            entity.Property(e => e.Category).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Criteria).HasDefaultValue("{}");
+            
+            entity.HasIndex(e => e.Category);
+            entity.HasIndex(e => e.SortOrder);
+        });
+
+        // UserAchievement Configuration
+        modelBuilder.Entity<UserAchievement>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            
+            entity.HasOne(e => e.UserProfile)
+                  .WithMany(u => u.UserAchievements)
+                  .HasForeignKey(e => e.UserProfileId)
+                  .OnDelete(DeleteBehavior.Cascade);
+                  
+            entity.HasOne(e => e.Achievement)
+                  .WithMany(a => a.UserAchievements)
+                  .HasForeignKey(e => e.AchievementId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            
+            // Unique constraint - each user can only earn each achievement once
+            entity.HasIndex(e => new { e.UserProfileId, e.AchievementId }).IsUnique();
+            entity.HasIndex(e => e.EarnedAt);
         });
     }
 }

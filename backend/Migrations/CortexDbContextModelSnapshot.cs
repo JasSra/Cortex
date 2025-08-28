@@ -50,7 +50,7 @@ namespace CortexApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ActionLogs");
+                    b.ToTable("ActionLogs", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.AuditEntry", b =>
@@ -90,7 +90,7 @@ namespace CortexApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("AuditEntries");
+                    b.ToTable("AuditEntries", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.Classification", b =>
@@ -121,7 +121,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("NoteId", "Label");
 
-                    b.ToTable("Classifications");
+                    b.ToTable("Classifications", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.Edge", b =>
@@ -161,7 +161,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("FromEntityId", "ToEntityId", "RelationType");
 
-                    b.ToTable("Edges");
+                    b.ToTable("Edges", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.Embedding", b =>
@@ -197,7 +197,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("ChunkId");
 
-                    b.ToTable("Embeddings");
+                    b.ToTable("Embeddings", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.Entity", b =>
@@ -243,7 +243,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("Type", "Value");
 
-                    b.ToTable("Entities");
+                    b.ToTable("Entities", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.Note", b =>
@@ -342,7 +342,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Notes");
+                    b.ToTable("Notes", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.NoteChunk", b =>
@@ -409,7 +409,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("Sha256");
 
-                    b.ToTable("NoteChunks");
+                    b.ToTable("NoteChunks", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.NoteTag", b =>
@@ -424,7 +424,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("TagId");
 
-                    b.ToTable("NoteTags");
+                    b.ToTable("NoteTags", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.Tag", b =>
@@ -443,7 +443,7 @@ namespace CortexApi.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Tags");
+                    b.ToTable("Tags", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.TextSpan", b =>
@@ -484,7 +484,7 @@ namespace CortexApi.Migrations
 
                     b.HasIndex("Start", "End");
 
-                    b.ToTable("TextSpans");
+                    b.ToTable("TextSpans", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.UserFeedback", b =>
@@ -512,7 +512,7 @@ namespace CortexApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("UserFeedbacks");
+                    b.ToTable("UserFeedbacks", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.UserProfile", b =>
@@ -572,7 +572,7 @@ namespace CortexApi.Migrations
                     b.HasIndex("SubjectId")
                         .IsUnique();
 
-                    b.ToTable("UserProfiles");
+                    b.ToTable("UserProfiles", (string)null);
                 });
 
             modelBuilder.Entity("CortexApi.Models.Classification", b =>
