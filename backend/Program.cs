@@ -6,6 +6,9 @@ using CortexApi.Models;
 using System.Net.WebSockets;
 using System.Data;
 using Microsoft.Data.Sqlite;
+using CortexApi.Security;
+using System.Security.Cryptography;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +39,9 @@ builder.Services.AddSingleton<IVectorService, VectorService>();
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddHostedService<BackgroundJobService>();
 builder.Services.AddScoped<IRagService, RagService>();
+// User context / RBAC
+builder.Services.AddScoped<UserContextAccessor>();
+builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());
 
 // Add CORS (configurable via CORS_ORIGINS or Server:CorsOrigins)
 var corsOrigins = builder.Configuration["CORS_ORIGINS"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -90,6 +96,8 @@ if (string.IsNullOrWhiteSpace(urlsEnv))
 
 app.UseCors("AllowFrontend");
 app.UseWebSockets();
+// Inject per-request user context before endpoints
+app.UseMiddleware<UserContextMiddleware>();
 
 // Ensure database is created
 using (var scope = app.Services.CreateScope())
@@ -165,17 +173,19 @@ using (var scope = app.Services.CreateScope())
 
 // API Endpoints
 
-// POST /ingest/files
-app.MapPost("/ingest/files", async (IFormFileCollection files, IIngestService ingestService) =>
+// POST /ingest/files (Editor)
+app.MapPost("/ingest/files", async (HttpContext ctx, IFormFileCollection files, IIngestService ingestService, IUserContextAccessor user) =>
 {
+    if (!Rbac.RequireRole(user, "Editor")) return Results.StatusCode(403);
     var results = await ingestService.IngestFilesAsync(files);
     return Results.Ok(results);
 })
 .WithName("IngestFiles");
 
-// POST /ingest/folder
-app.MapPost("/ingest/folder", async (FolderIngestRequest request, IIngestService ingestService) =>
+// POST /ingest/folder (Editor)
+app.MapPost("/ingest/folder", async (FolderIngestRequest request, IIngestService ingestService, IUserContextAccessor user) =>
 {
+    if (!Rbac.RequireRole(user, "Editor")) return Results.StatusCode(403);
     try
     {
         var results = await ingestService.IngestFolderAsync(request.Path);
@@ -188,8 +198,8 @@ app.MapPost("/ingest/folder", async (FolderIngestRequest request, IIngestService
 })
 .WithName("IngestFolder");
 
-// GET /notes/{id}
-app.MapGet("/notes/{id}", async (string id, IIngestService ingestService) =>
+// GET /notes/{id} (Reader)
+app.MapGet("/notes/{id}", async (string id, IIngestService ingestService, IUserContextAccessor user) =>
 {
     var note = await ingestService.GetNoteAsync(id);
     return note != null ? Results.Ok(note) : Results.NotFound();
@@ -197,7 +207,7 @@ app.MapGet("/notes/{id}", async (string id, IIngestService ingestService) =>
 .WithName("GetNote");
 
 // POST /search (Stage1)
-app.MapPost("/search", async (SearchRequest req, ISearchService searchService, HttpContext ctx) =>
+app.MapPost("/search", async (SearchRequest req, ISearchService searchService, HttpContext ctx, IUserContextAccessor user) =>
 {
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
     var resp = await searchService.SearchHybridAsync(req, userId);
@@ -206,7 +216,7 @@ app.MapPost("/search", async (SearchRequest req, ISearchService searchService, H
 .WithName("Search");
 
 // GET /search (compat: allow simple query via query string)
-app.MapGet("/search", async (HttpContext ctx, ISearchService searchService) =>
+app.MapGet("/search", async (HttpContext ctx, ISearchService searchService, IUserContextAccessor user) =>
 {
     var q = ctx.Request.Query["q"].FirstOrDefault() ?? string.Empty;
     // support both "k" and legacy "limit"
@@ -240,7 +250,7 @@ app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
 });
 
 // POST /voice/tts
-app.MapPost("/voice/tts", async (VoiceTtsRequest request, IVoiceService voiceService) =>
+app.MapPost("/voice/tts", async (VoiceTtsRequest request, IVoiceService voiceService, IUserContextAccessor user) =>
 {
     var audioData = await voiceService.GenerateTtsAsync(request.Text);
     return Results.File(audioData, "audio/wav");
@@ -255,7 +265,7 @@ app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, ICh
 .WithName("ChatStream");
 
 // POST /rag/query
-app.MapPost("/rag/query", async (RagQueryRequest req, IRagService ragService, HttpContext ctx) =>
+app.MapPost("/rag/query", async (RagQueryRequest req, IRagService ragService, HttpContext ctx, IUserContextAccessor user) =>
 {
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
     var answer = await ragService.AnswerAsync(req, userId, ctx.RequestAborted);
@@ -263,21 +273,30 @@ app.MapPost("/rag/query", async (RagQueryRequest req, IRagService ragService, Ht
 });
 
 // Admin endpoints: reindex/reembed
-app.MapPost("/admin/reindex", async (HttpContext ctx) =>
+bool ConfirmDeleteRequired(HttpContext ctx)
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
-    var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
+    var cfg = app.Configuration;
+    var enabled = (cfg["FeatureFlags:ConfirmDelete"] ?? "true").Equals("true", StringComparison.OrdinalIgnoreCase);
+    if (!enabled) return true; // require header if flag true; if missing config, be safe
+    var hdr = ctx.Request.Headers["X-Confirm-Delete"].FirstOrDefault();
+    return !string.IsNullOrWhiteSpace(hdr) && (hdr.Equals("true", StringComparison.OrdinalIgnoreCase) || hdr == "1");
+}
+
+// Admin endpoints: reindex/reembed (Admin + ConfirmDelete)
+app.MapPost("/admin/reindex", async (HttpContext ctx, IUserContextAccessor user, CortexDbContext db, IVectorService vector) =>
+{
+    if (!Rbac.RequireRole(user, "Admin")) return Results.StatusCode(403);
+    if (!ConfirmDeleteRequired(ctx)) return Results.BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
     var notes = await db.Notes.Where(n => !n.IsDeleted && n.UserId == userId).Select(n => n.Id).ToListAsync();
     foreach (var nid in notes) await vector.RemoveNoteAsync(nid);
     return Results.Ok(new { status = "ok", removed = notes.Count });
 });
 
-app.MapPost("/admin/reembed", async (HttpContext ctx) =>
+app.MapPost("/admin/reembed", async (HttpContext ctx, IUserContextAccessor user, CortexDbContext db) =>
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
+    if (!Rbac.RequireRole(user, "Admin")) return Results.StatusCode(403);
+    if (!ConfirmDeleteRequired(ctx)) return Results.BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
     var embeds = db.Set<Embedding>().Where(e => db.NoteChunks.Any(c => c.Id == e.ChunkId && db.Notes.Any(n => n.Id == c.NoteId && n.UserId == userId)));
     db.RemoveRange(embeds);
@@ -285,21 +304,20 @@ app.MapPost("/admin/reembed", async (HttpContext ctx) =>
     return Results.Ok(new { status = "ok" });
 });
 
-app.MapPost("/admin/embed/reindex", async (HttpContext ctx) =>
+app.MapPost("/admin/embed/reindex", async (HttpContext ctx, IUserContextAccessor user, CortexDbContext db, IVectorService vector) =>
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
-    var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
+    if (!Rbac.RequireRole(user, "Admin")) return Results.StatusCode(403);
+    if (!ConfirmDeleteRequired(ctx)) return Results.BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
     var notes = await db.Notes.Where(n => !n.IsDeleted && n.UserId == userId).Select(n => n.Id).ToListAsync();
     foreach (var nid in notes) await vector.RemoveNoteAsync(nid);
     return Results.Ok(new { status = "ok", removed = notes.Count });
 });
 
-app.MapPost("/admin/embed/reembed", async (HttpContext ctx) =>
+app.MapPost("/admin/embed/reembed", async (HttpContext ctx, IUserContextAccessor user, CortexDbContext db) =>
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
+    if (!Rbac.RequireRole(user, "Admin")) return Results.StatusCode(403);
+    if (!ConfirmDeleteRequired(ctx)) return Results.BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
     var embeds = db.Set<Embedding>().Where(e => db.NoteChunks.Any(c => c.Id == e.ChunkId && db.Notes.Any(n => n.Id == c.NoteId && n.UserId == userId)));
     db.RemoveRange(embeds);
@@ -308,12 +326,9 @@ app.MapPost("/admin/embed/reembed", async (HttpContext ctx) =>
 });
 
 // POST /agent/act (Stage1 tools subset)
-app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
+app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx, IUserContextAccessor user, CortexDbContext db, IVectorService vector) =>
 {
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
-    var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
 
     var sw = System.Diagnostics.Stopwatch.StartNew();
     string status = "ok";
@@ -324,9 +339,22 @@ app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
         {
             case "createnote":
             {
+                if (!Rbac.RequireRole(user, "Editor")) { status = "forbidden"; result = new { error = "RBAC" }; break; }
                 var title = req.Args.GetProperty("title").GetString() ?? "Untitled";
                 var content = req.Args.TryGetProperty("content", out var ce) ? ce.GetString() ?? string.Empty : string.Empty;
-                var note = new Note { Title = title, UserId = userId, Content = content, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+                var note = new Note 
+                { 
+                    Title = title, 
+                    UserId = userId, 
+                    Content = content, 
+                    Source = "agent",
+                    OriginalPath = "agent",
+                    FilePath = $"note://{Guid.NewGuid():N}",
+                    FileType = "text",
+                    Sha256Hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(title + "\n" + content))).ToLowerInvariant(),
+                    CreatedAt = DateTime.UtcNow, 
+                    UpdatedAt = DateTime.UtcNow 
+                };
                 var chunks = new List<NoteChunk>();
                 if (!string.IsNullOrWhiteSpace(content))
                 {
@@ -346,6 +374,8 @@ app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
             }
             case "deletenote":
             {
+                if (!Rbac.RequireRole(user, "Editor")) { status = "forbidden"; result = new { error = "RBAC" }; break; }
+                if (!ConfirmDeleteRequired(ctx)) { status = "confirm_required"; result = new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" }; break; }
                 var noteId = req.Args.GetProperty("noteId").GetString() ?? string.Empty;
                 var note = await db.Notes.FirstOrDefaultAsync(n => n.Id == noteId && n.UserId == userId);
                 if (note is null) { status = "not_found"; result = new { ok = false }; break; }
@@ -357,6 +387,7 @@ app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
             }
             case "findnotes":
             {
+                if (!Rbac.RequireRole(user, "Reader")) { status = "forbidden"; result = new { error = "RBAC" }; break; }
                 var q = req.Args.TryGetProperty("q", out var qj) ? qj.GetString() ?? string.Empty : string.Empty;
                 var notes = await db.Notes.Where(n => !n.IsDeleted && n.UserId == userId && (n.Title.Contains(q) || n.Content.Contains(q))).OrderByDescending(n => n.UpdatedAt).Take(20).Select(n => new { n.Id, n.Title }).ToListAsync();
                 result = new { items = notes };
@@ -364,6 +395,7 @@ app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
             }
             case "tagnote":
             {
+                if (!Rbac.RequireRole(user, "Editor")) { status = "forbidden"; result = new { error = "RBAC" }; break; }
                 var noteId = req.Args.GetProperty("noteId").GetString() ?? string.Empty;
                 var tagName = req.Args.GetProperty("tag").GetString() ?? string.Empty;
                 var note = await db.Notes.FirstOrDefaultAsync(n => n.Id == noteId && n.UserId == userId);
@@ -377,6 +409,7 @@ app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
             }
             case "summarisenote":
             {
+                if (!Rbac.RequireRole(user, "Reader")) { status = "forbidden"; result = new { error = "RBAC" }; break; }
                 var noteId = req.Args.GetProperty("noteId").GetString() ?? string.Empty;
                 var note = await db.Notes.Include(n => n.Chunks).FirstOrDefaultAsync(n => n.Id == noteId && n.UserId == userId);
                 if (note is null) { status = "not_found"; result = new { ok = false }; break; }
@@ -415,10 +448,8 @@ app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
             Latency_ms = (int)sw.ElapsedMilliseconds,
             Ts = DateTime.UtcNow
         };
-        using var scope2 = app.Services.CreateScope();
-        var db2 = scope2.ServiceProvider.GetRequiredService<CortexDbContext>();
-        db2.Add(log);
-        await db2.SaveChangesAsync();
+    db.Add(log);
+    await db.SaveChangesAsync();
     }
     catch { }
 
@@ -427,11 +458,9 @@ app.MapPost("/agent/act", async (AgentActRequest req, HttpContext ctx) =>
 
 // Adaptive Cards endpoints (list notes and single note)
 // Cards: Stage1 endpoints as POST
-app.MapPost("/cards/list-notes", async (HttpContext ctx) =>
+app.MapPost("/cards/list-notes", async (HttpContext ctx, CortexDbContext db) =>
 {
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     var items = await db.Notes.Where(n => !n.IsDeleted && n.UserId == userId)
         .OrderByDescending(n => n.UpdatedAt)
         .Take(20)
@@ -450,11 +479,9 @@ app.MapPost("/cards/list-notes", async (HttpContext ctx) =>
     return Results.Ok(card);
 });
 
-app.MapPost("/cards/note/{id}", async (string id, HttpContext ctx) =>
+app.MapPost("/cards/note/{id}", async (string id, HttpContext ctx, CortexDbContext db) =>
 {
     var userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     var note = await db.Notes.Include(n => n.Chunks).FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
     if (note is null) return Results.NotFound();
     var preview = string.Join("\n\n", note.Chunks.OrderBy(c => c.ChunkIndex).Select(c => c.Content.Length > 400 ? c.Content.Substring(0, 400) + "…" : c.Content).Take(3));
@@ -471,9 +498,140 @@ app.MapPost("/cards/note/{id}", async (string id, HttpContext ctx) =>
     return Results.Ok(card);
 });
 
+// ConfirmDelete card (Stage2 safety)
+app.MapPost("/cards/confirm-delete", (HttpContext ctx) =>
+{
+    var action = ctx.Request.Query["action"].FirstOrDefault() ?? "Delete";
+    var card = new
+    {
+        type = "AdaptiveCard",
+        version = "1.6",
+        body = new object[]
+        {
+            new { type = "TextBlock", text = $"Confirm {action}", weight = "Bolder", size = "Medium" },
+            new { type = "TextBlock", text = "This action cannot be undone.", wrap = true }
+        },
+        actions = new object[]
+        {
+            new { type = "Action.Submit", title = "Confirm", data = new { confirm = true } },
+            new { type = "Action.Submit", title = "Cancel", data = new { confirm = false } }
+        }
+    };
+    return Results.Ok(card);
+});
+
 // Health check
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
 .WithName("HealthCheck");
+
+// Dev: /test endpoint to validate basic pipeline
+app.MapPost("/test", async (HttpContext ctx, IUserContextAccessor user, CortexDbContext db, ISearchService search, IVectorService vector) =>
+{
+    var sb = new StringBuilder();
+    bool ok = true;
+
+    void Step(string name, bool pass, string? msg = null)
+    {
+        sb.AppendLine($"- {name}: {(pass ? "OK" : "FAIL")}" + (string.IsNullOrWhiteSpace(msg) ? string.Empty : $" — {msg}"));
+        if (!pass) ok = false;
+    }
+
+    // 1) OpenAPI docs available (in dev)
+    try
+    {
+        var hasSwagger = app.Environment.IsDevelopment();
+        Step("OpenAPI available (dev)", hasSwagger);
+    }
+    catch (Exception ex)
+    {
+        Step("OpenAPI available (dev)", false, ex.Message);
+    }
+
+    // 2) Create a note
+    string userId = ctx.Request.Headers["X-UserId"].FirstOrDefault() ?? "default";
+    string? newNoteId = null;
+    try
+    {
+        var title = "Test Note";
+        var content = "This is a functional test note.";
+        var note = new Note
+        {
+            Title = title,
+            UserId = userId,
+            Content = content,
+            Source = "test",
+            OriginalPath = "test",
+            FilePath = $"note://{Guid.NewGuid():N}",
+            FileType = "text",
+            Sha256Hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(title + "\n" + content))).ToLowerInvariant(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        var chunk = new NoteChunk { NoteId = note.Id, Content = content, Text = content, ChunkIndex = 0, Seq = 0, TokenCount = content.Length };
+        note.Chunks = new List<NoteChunk> { chunk };
+        note.ChunkCount = 1;
+        await db.Notes.AddAsync(note);
+        await db.SaveChangesAsync();
+        // enqueue vector (best-effort)
+        await vector.EnqueueEmbedAsync(note, chunk);
+        newNoteId = note.Id;
+        Step("Create note", true, note.Id);
+    }
+    catch (Exception ex)
+    {
+        Step("Create note", false, ex.Message);
+    }
+
+    // 3) Tag/Classification placeholders (ClassificationService is empty)
+    try
+    {
+        // Minimal tag via NoteTag/Tag
+        if (newNoteId is not null)
+        {
+            var tag = await db.Set<Tag>().FirstOrDefaultAsync(t => t.Name == "test") ?? new Tag { Name = "test" };
+            if (tag.Id == 0) db.Add(tag);
+            db.Add(new NoteTag { NoteId = newNoteId, Tag = tag });
+            await db.SaveChangesAsync();
+        }
+        Step("Tag note", true);
+    }
+    catch (Exception ex)
+    {
+        Step("Tag note", false, ex.Message);
+    }
+
+    try
+    {
+        if (newNoteId is not null)
+        {
+            db.Add(new Classification { NoteId = newNoteId, Label = "demo", Score = 0.9, Model = "stub" });
+            await db.SaveChangesAsync();
+        }
+        Step("Classify note", true);
+    }
+    catch (Exception ex)
+    {
+        Step("Classify note", false, ex.Message);
+    }
+
+    // 4) Search (BM25 path)
+    try
+    {
+        var req = new SearchRequest { Q = "functional", K = 5, Mode = "bm25" };
+        var resp = await search.SearchHybridAsync(req, userId);
+        var found = resp.Hits.Any(h => h.NoteId == newNoteId);
+        Step("Search note (bm25)", found, found ? "hit found" : "no hit");
+    }
+    catch (Exception ex)
+    {
+        Step("Search note (bm25)", false, ex.Message);
+    }
+
+    var summary = sb.ToString().TrimEnd();
+    var body = new { ok, summary };
+    return ok ? Results.Ok(body) : Results.BadRequest(body);
+})
+.WithName("DevSelfTest");
 
 app.Run();
 

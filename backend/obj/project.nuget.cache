@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "KzMO8cYvg0E=",
+  "dgSpecHash": "C2iBEbcFF3s=",
   "success": true,
-  "projectFilePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+  "projectFilePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\jaska\\.nuget\\packages\\bouncycastle\\1.8.9\\bouncycastle.1.8.9.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\documentformat.openxml\\3.0.0\\documentformat.openxml.3.0.0.nupkg.sha512",
@@ -107,9 +107,9 @@
       "code": "NU1603",
       "level": "Warning",
       "message": "CortexApi depends on Microsoft.ML.Tokenizers (>= 0.21.0-preview.24378.1) but Microsoft.ML.Tokenizers 0.21.0-preview.24378.1 was not found. Microsoft.ML.Tokenizers 0.21.0 was resolved instead.",
-      "projectPath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectPath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "warningLevel": 1,
-      "filePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "filePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "libraryId": "Microsoft.ML.Tokenizers",
       "targetGraphs": [
         "net8.0"
@@ -119,9 +119,9 @@
       "code": "NU1701",
       "level": "Warning",
       "message": "Package 'BouncyCastle 1.8.9' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework 'net8.0'. This package may not be fully compatible with your project.",
-      "projectPath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectPath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "warningLevel": 1,
-      "filePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "filePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "libraryId": "BouncyCastle",
       "targetGraphs": [
         "net8.0"
@@ -131,9 +131,9 @@
       "code": "NU1701",
       "level": "Warning",
       "message": "Package 'iTextSharp 5.5.13.3' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework 'net8.0'. This package may not be fully compatible with your project.",
-      "projectPath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectPath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "warningLevel": 1,
-      "filePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "filePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "libraryId": "iTextSharp",
       "targetGraphs": [
         "net8.0"
