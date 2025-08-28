@@ -9,6 +9,8 @@ using Microsoft.Data.Sqlite;
 using CortexApi.Security;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -47,17 +49,46 @@ builder.Services.AddScoped<IRagService, RagService>();
 builder.Services.AddScoped<IPiiDetectionService, PiiDetectionService>();
 builder.Services.AddScoped<ISecretsDetectionService, SecretsDetectionService>();
 builder.Services.AddScoped<IClassificationService, ClassificationService>();
-// Redaction service for Stage 2C
-builder.Services.AddScoped<IRedactionService, RedactionService>();
-// Stage 3 services
-builder.Services.AddScoped<INerService, NerService>();
-builder.Services.AddScoped<IGraphService, GraphService>();
-builder.Services.AddScoped<IChatToolsService, ChatToolsService>();
-builder.Services.AddScoped<ISuggestionsService, SuggestionsService>();
-builder.Services.AddScoped<IAuditService, AuditService>();
+// Seed data service for new users
+builder.Services.AddScoped<ISeedDataService, SeedDataService>();
 // User context / RBAC
 builder.Services.AddScoped<UserContextAccessor>();
 builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());
+
+// Add Authentication with JWT Bearer (MSAL.js integration)
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        // Microsoft identity platform configuration
+        options.Authority = builder.Configuration["Authentication:Authority"] ?? "https://login.microsoftonline.com/common/v2.0";
+        options.Audience = builder.Configuration["Authentication:ClientId"];
+        
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false, // Allow multiple tenants
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ClockSkew = TimeSpan.FromMinutes(5)
+        };
+
+        // For development, allow anonymous access
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = context =>
+            {
+                if (builder.Environment.IsDevelopment())
+                {
+                    context.HandleResponse();
+                    context.Response.StatusCode = 200;
+                    return Task.CompletedTask;
+                }
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 // Add CORS (configurable via CORS_ORIGINS or Server:CorsOrigins)
 var corsOrigins = builder.Configuration["CORS_ORIGINS"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -114,9 +145,13 @@ if (string.IsNullOrWhiteSpace(urlsEnv))
 }
 
 app.UseCors("AllowFrontend");
+
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseWebSockets();
-// Inject per-request user context before endpoints
-app.UseMiddleware<UserContextMiddleware>();
+// Inject per-request user context before endpoints (comment out for now)
+// app.UseMiddleware<UserContextMiddleware>();
 
 // Ensure database is created
 using (var scope = app.Services.CreateScope())

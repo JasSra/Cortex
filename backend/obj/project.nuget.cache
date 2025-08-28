@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "9HESIT626tE=",
+  "dgSpecHash": "VxjER8L+ebY=",
   "success": true,
-  "projectFilePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+  "projectFilePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\jaska\\.nuget\\packages\\bouncycastle\\1.8.9\\bouncycastle.1.8.9.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\documentformat.openxml\\3.0.0\\documentformat.openxml.3.0.0.nupkg.sha512",
@@ -14,6 +14,7 @@
     "C:\\Users\\jaska\\.nuget\\packages\\itextsharp\\5.5.13.3\\itextsharp.5.5.13.3.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\markdig\\0.33.0\\markdig.0.33.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\methodboundaryaspect.fody\\2.0.149\\methodboundaryaspect.fody.2.0.149.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\microsoft.aspnetcore.authentication.jwtbearer\\8.0.8\\microsoft.aspnetcore.authentication.jwtbearer.8.0.8.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\6.0.0\\microsoft.bcl.asyncinterfaces.6.0.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.codeanalysis.analyzers\\3.3.3\\microsoft.codeanalysis.analyzers.3.3.3.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.codeanalysis.common\\4.5.0\\microsoft.codeanalysis.common.4.5.0.nupkg.sha512",
@@ -39,6 +40,12 @@
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.0\\microsoft.extensions.logging.abstractions.8.0.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.extensions.options\\8.0.0\\microsoft.extensions.options.8.0.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.extensions.primitives\\8.0.0\\microsoft.extensions.primitives.8.0.0.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\microsoft.identitymodel.abstractions\\7.1.2\\microsoft.identitymodel.abstractions.7.1.2.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\microsoft.identitymodel.jsonwebtokens\\7.1.2\\microsoft.identitymodel.jsonwebtokens.7.1.2.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\microsoft.identitymodel.logging\\7.1.2\\microsoft.identitymodel.logging.7.1.2.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\microsoft.identitymodel.protocols\\7.1.2\\microsoft.identitymodel.protocols.7.1.2.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\microsoft.identitymodel.protocols.openidconnect\\7.1.2\\microsoft.identitymodel.protocols.openidconnect.7.1.2.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\microsoft.identitymodel.tokens\\7.1.2\\microsoft.identitymodel.tokens.7.1.2.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.ml\\3.0.1\\microsoft.ml.3.0.1.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.ml.cpumath\\3.0.1\\microsoft.ml.cpumath.3.0.1.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\microsoft.ml.dataview\\3.0.1\\microsoft.ml.dataview.3.0.1.nupkg.sha512",
@@ -93,6 +100,7 @@
     "C:\\Users\\jaska\\.nuget\\packages\\system.diagnostics.debug\\4.3.0\\system.diagnostics.debug.4.3.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\system.diagnostics.tracing\\4.3.0\\system.diagnostics.tracing.4.3.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\system.globalization\\4.3.0\\system.globalization.4.3.0.nupkg.sha512",
+    "C:\\Users\\jaska\\.nuget\\packages\\system.identitymodel.tokens.jwt\\7.1.2\\system.identitymodel.tokens.jwt.7.1.2.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\system.io\\4.3.0\\system.io.4.3.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\system.io.packaging\\8.0.0\\system.io.packaging.8.0.0.nupkg.sha512",
     "C:\\Users\\jaska\\.nuget\\packages\\system.io.pipelines\\7.0.0\\system.io.pipelines.7.0.0.nupkg.sha512",
@@ -129,9 +137,9 @@
       "code": "NU1603",
       "level": "Warning",
       "message": "CortexApi depends on Microsoft.ML.Tokenizers (>= 0.21.0-preview.24378.1) but Microsoft.ML.Tokenizers 0.21.0-preview.24378.1 was not found. Microsoft.ML.Tokenizers 0.21.0 was resolved instead.",
-      "projectPath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectPath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "warningLevel": 1,
-      "filePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "filePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "libraryId": "Microsoft.ML.Tokenizers",
       "targetGraphs": [
         "net8.0"
@@ -141,9 +149,9 @@
       "code": "NU1701",
       "level": "Warning",
       "message": "Package 'BouncyCastle 1.8.9' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework 'net8.0'. This package may not be fully compatible with your project.",
-      "projectPath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectPath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "warningLevel": 1,
-      "filePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "filePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "libraryId": "BouncyCastle",
       "targetGraphs": [
         "net8.0"
@@ -153,9 +161,9 @@
       "code": "NU1701",
       "level": "Warning",
       "message": "Package 'iTextSharp 5.5.13.3' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework 'net8.0'. This package may not be fully compatible with your project.",
-      "projectPath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "projectPath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "warningLevel": 1,
-      "filePath": "C:\\Code\\Cortex\\backend\\CortexApi.csproj",
+      "filePath": "c:\\Code\\Cortex\\backend\\CortexApi.csproj",
       "libraryId": "iTextSharp",
       "targetGraphs": [
         "net8.0"

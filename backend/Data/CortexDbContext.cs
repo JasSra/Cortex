@@ -21,6 +21,7 @@ public class CortexDbContext : DbContext
     public DbSet<NoteTag> NoteTags { get; set; }
     public DbSet<Classification> Classifications { get; set; }
     public DbSet<ActionLog> ActionLogs { get; set; }
+    public DbSet<UserProfile> UserProfiles { get; set; }
     
     // Stage 2 DbSets
     public DbSet<Entity> Entities { get; set; }
@@ -184,6 +185,23 @@ public class CortexDbContext : DbContext
                   .WithMany(en => en.IncomingEdges)
                   .HasForeignKey(e => e.ToEntityId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // UserProfile Configuration
+        modelBuilder.Entity<UserProfile>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SubjectId).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Email).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Bio).HasMaxLength(1000);
+            entity.Property(e => e.Avatar).HasMaxLength(2000); // Allow for base64 or URL
+            entity.Property(e => e.Preferences).HasDefaultValue("{}");
+            
+            // Unique constraint on SubjectId (each B2C user can have only one profile)
+            entity.HasIndex(e => e.SubjectId).IsUnique();
+            entity.HasIndex(e => e.Email);
+            entity.HasIndex(e => e.CreatedAt);
         });
     }
 }

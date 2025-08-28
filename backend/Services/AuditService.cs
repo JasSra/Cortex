@@ -43,8 +43,8 @@ public class AuditService : IAuditService
                 ResourceType = resourceType,
                 ResourceId = resourceId,
                 Details = details != null ? JsonSerializer.Serialize(details) : null,
-                IpAddress = _userContext.IpAddress ?? "unknown",
-                UserAgent = _userContext.UserAgent ?? "unknown",
+                IpAddress = "unknown", // TODO: Get from HttpContext if needed
+                UserAgent = "unknown", // TODO: Get from HttpContext if needed
                 Timestamp = DateTime.UtcNow
             };
 
