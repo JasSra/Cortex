@@ -4,6 +4,7 @@
   "documentGenerator": {
     "aspNetCoreToOpenApi": {
       "project": "CortexApi.csproj",
+      "documentName": "v1",
       "msBuildProjectExtensionsPath": null,
       "configuration": null,
       "runtime": null,
@@ -25,7 +26,8 @@
       "typeScriptVersion": 4.3,
       "template": "Fetch",
       "promiseType": "Promise",
-      "httpClass": "HttpClass",
+      "httpClass": "HttpClient",
+      "withCredentials": false,
       "useSingletonProvider": false,
       "injectionTokenType": "OpaqueToken",
       "rxJsVersion": 6.0,
@@ -51,6 +53,8 @@
       "markOptionalProperties": true,
       "generateCloneMethod": false,
       "typeStyle": "Class",
+      "enumStyle": "Enum",
+      "useLeafType": false,
       "classTypes": [],
       "extendedClasses": [],
       "extensionCode": null,
@@ -58,6 +62,7 @@
       "excludedTypeNames": [],
       "excludedParameterNames": [],
       "handleReferences": false,
+      "generateTypeCheckFunctions": false,
       "generateConstructorInterface": true,
       "convertConstructorInterfaceData": false,
       "importRequiredTypes": true,
@@ -68,8 +73,11 @@
       "inlineNamedDictionaries": false,
       "inlineNamedAny": false,
       "includeHttpContext": false,
-      "treatAnyAsString": false,
-      "output": "../frontend/src/api/cortex-api-client.ts"
+      "templateDirectory": null,
+      "serviceHost": null,
+      "serviceSchemes": null,
+      "output": "../frontend/src/api/cortex-api-client.ts",
+      "newLineBehavior": "Auto"
     }
   }
 }

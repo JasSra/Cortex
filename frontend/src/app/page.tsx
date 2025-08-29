@@ -1,15 +1,15 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { useCortexStore } from '../store/cortexStore'
-import { useAuth } from '../contexts/AuthContext'
-import { useNotesApi } from '../services/apiClient'
-import ModernLayout from '../components/layout/ModernLayout'
-import ModernDashboard from '../components/dashboard/ModernDashboard'
-import ModernChatInterface from '../components/chat/ModernChatInterface'
-import KnowledgeGraphVisualizer from '../components/graph/KnowledgeGraphVisualizer'
-import EnhancedSearchPage from '../components/EnhancedSearchPage'
-import { UserProfile } from '../components/UserProfile'
+import { useCortexStore } from '@/store/cortexStore'
+import { useAuth } from '@/contexts/AuthContext'
+import { useNotesApi } from '@/services/apiClient'
+import ModernLayout from '@/components/layout/ModernLayout'
+import ModernDashboard from '@/components/dashboard/ModernDashboard'
+import ModernChatInterface from '@/components/chat/ModernChatInterface'
+import KnowledgeGraphVisualizer from '@/components/graph/KnowledgeGraphVisualizer'
+import EnhancedSearchPage from '@/components/EnhancedSearchPage'
+import { UserProfile } from '@/components/UserProfile'
 
 export default function Home() {
   const [activeView, setActiveView] = useState('dashboard')
@@ -30,15 +30,7 @@ export default function Home() {
     try {
       setIsLoading(true)
       // Load user's notes
-      const userNotes = await notesApi.getNotes()
-      
-      // If user has no notes, create seed data
-      if (userNotes.length === 0) {
-        console.log('Creating seed data for new user...')
-        await notesApi.createSeedData()
-        // Reload notes after seed data creation
-        await notesApi.getNotes()
-      }
+  await notesApi.getNotes()
     } catch (error) {
       console.error('Failed to load initial data:', error)
     } finally {

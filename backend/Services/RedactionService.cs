@@ -70,11 +70,11 @@ public class RedactionService : IRedactionService
         };
     }
 
-    public async Task<string> RedactTextAsync(string text, int sensitivityLevel, List<TextSpan> spans)
+    public Task<string> RedactTextAsync(string text, int sensitivityLevel, List<TextSpan> spans)
     {
         if (string.IsNullOrEmpty(text) || !spans.Any())
         {
-            return text;
+            return Task.FromResult(text);
         }
 
         var policy = _policies.GetValueOrDefault(sensitivityLevel, _policies[2]); // Default to Confidential
@@ -98,16 +98,15 @@ public class RedactionService : IRedactionService
             }
         }
 
-        return result;
+    return Task.FromResult(result);
     }
 
     public async Task<bool> VerifyVoicePinAsync(string pin, string userId = "default")
     {
         try
         {
-            // In a real implementation, you'd store the hashed PIN in the database
-            // For now, we'll use a simple hash check
-            var storedPinHash = await GetStoredPinHashAsync(userId);
+            var profile = await GetOrCreateProfileAsync(userId);
+            var storedPinHash = profile.VoicePinHash;
             if (string.IsNullOrEmpty(storedPinHash))
             {
                 return false; // No PIN set
@@ -127,11 +126,9 @@ public class RedactionService : IRedactionService
     {
         try
         {
-            var hashedPin = HashPin(pin);
-            // In a real implementation, store this in a UserSettings table
-            // For now, we'll use a simple file-based approach
-            var pinFile = Path.Combine("Data", $"pin_{userId}.txt");
-            await File.WriteAllTextAsync(pinFile, hashedPin);
+            var profile = await GetOrCreateProfileAsync(userId);
+            profile.VoicePinHash = HashPin(pin);
+            await _context.SaveChangesAsync();
         }
         catch (Exception ex)
         {
@@ -248,21 +245,23 @@ public class RedactionService : IRedactionService
         };
     }
 
-    private async Task<string?> GetStoredPinHashAsync(string userId)
+    private async Task<UserProfile> GetOrCreateProfileAsync(string userId)
     {
-        try
+        var profile = await _context.UserProfiles.FirstOrDefaultAsync(u => u.SubjectId == userId);
+        if (profile == null)
         {
-            var pinFile = Path.Combine("Data", $"pin_{userId}.txt");
-            if (File.Exists(pinFile))
+            profile = new UserProfile
             {
-                return await File.ReadAllTextAsync(pinFile);
-            }
-            return null;
+                SubjectId = userId,
+                Email = $"{userId}@local",
+                Name = userId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _context.UserProfiles.Add(profile);
+            await _context.SaveChangesAsync();
         }
-        catch
-        {
-            return null;
-        }
+        return profile;
     }
 
     private string HashPin(string pin)

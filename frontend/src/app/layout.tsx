@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { ThemeProvider } from "../contexts/ThemeContext";
-import { AuthProvider } from "../contexts/AuthContext";
-import { MascotProvider } from "../contexts/MascotContext";
-import { AuthWrapper } from "../components/AuthWrapper";
-import { StructuredData } from "../components/StructuredData";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { MascotProvider } from "@/contexts/MascotContext";
+import { AuthWrapper } from "@/components/AuthWrapper";
+import { StructuredData } from "@/components/StructuredData";
 
 const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
 

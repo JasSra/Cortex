@@ -147,6 +147,9 @@ public class UserProfile
     /// Navigation for user achievements
     /// </summary>
     public virtual ICollection<UserAchievement> UserAchievements { get; set; } = new List<UserAchievement>();
+
+    // Security: hashed voice PIN for TTS/STT confirmation
+    public string? VoicePinHash { get; set; }
 }
 
 /// <summary>
