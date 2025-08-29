@@ -78,7 +78,7 @@ public class NotesController : ControllerBase
     /// Delete a note (Editor role required + confirmation)
     /// </summary>
     [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteNote(string id)
+    public IActionResult DeleteNote(string id)
     {
         if (!Rbac.RequireRole(_userContext, "Editor"))
             return StatusCode(403, "Editor role required");
@@ -91,9 +91,9 @@ public class NotesController : ControllerBase
             return BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
         }
 
-        _logger.LogWarning("Deleting note {NoteId} for user {UserId}", id, _userContext.UserId);
+    _logger.LogWarning("Deleting note {NoteId} for user {UserId}", id, _userContext.UserId);
 
-        // Implementation would go here - for now, return placeholder
-        return Ok(new { message = "Note deletion not yet implemented", noteId = id });
+    // Implementation would go here - for now, return placeholder
+    return Ok(new { message = "Note deletion not yet implemented", noteId = id });
     }
 }

@@ -88,15 +88,20 @@ public class VectorService : IVectorService
     {
     EnsureConnected();
     if (!_connected || _db is null) return;
-    var payload = new
+        // Publish embedding job to unified stream used by BackgroundJobService
+        var job = new
         {
-            noteId = note.Id,
-            userId = note.UserId,
-            chunkId = chunk.Id,
-            text = chunk.Content
+            ChunkId = chunk.Id,
+            NoteId = note.Id,
+            UserId = note.UserId
         };
-        var json = JsonSerializer.Serialize(payload);
-        await _db.StreamAddAsync("stream:embed", new[] { new NameValueEntry("data", json) });
+        var fields = new NameValueEntry[]
+        {
+            new("type", "embedding"),
+            new("payload", JsonSerializer.Serialize(job)),
+            new("enqueued_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+        };
+        await _db.StreamAddAsync("jobs:embedding", fields);
     }
 
     public async Task UpsertChunkAsync(Note note, NoteChunk chunk, float[] embedding, CancellationToken ct = default)
@@ -192,18 +197,28 @@ public class VectorService : IVectorService
     public async Task RemoveNoteAsync(string noteId, CancellationToken ct = default)
     {
     EnsureConnected();
-    if (!_connected || _redis is null) return;
+    if (!_connected || _db is null) return;
         try
         {
-            var server = _redis.GetServer(_redis.GetEndPoints()[0]);
-            var keys = server.Keys(pattern: $"chunk:*").ToArray();
-            foreach (var key in keys)
+            // Use FT.SEARCH to find chunk keys by TAG noteId and delete them
+            var args = new List<object?>
             {
-                // naive: read JSON and check noteId
-                var raw = await _db!.ExecuteAsync("JSON.GET", key.ToString(), "$");
-                var str = raw.ToString();
-                if (string.IsNullOrEmpty(str)) continue;
-                if (str.Contains($"\"noteId\":\"{noteId}\""))
+                "idx:chunks",
+                $"@noteId:{{{noteId}}}",
+                "RETURN","0",
+                "LIMIT","0","10000",
+                "DIALECT","2"
+            };
+            var res = await _db.ExecuteAsync("FT.SEARCH", args.ToArray() as object[] ?? args.Cast<object>().ToArray());
+            if (res.IsNull) return;
+
+            var arr = (StackExchange.Redis.RedisResult[]?)res;
+            if (arr == null || arr.Length <= 1) return; // first element is total count
+
+            for (int i = 1; i < arr.Length; i += 2)
+            {
+                var key = arr[i].ToString();
+                if (!string.IsNullOrEmpty(key))
                 {
                     await _db.KeyDeleteAsync(key);
                 }

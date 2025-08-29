@@ -38,25 +38,10 @@ public class GraphService : IGraphService
         _config = config;
         _nerService = nerService;
         
-        _useNeo4j = _config.GetValue<string>("Graph:Backend", "postgres") == "neo4j";
-        
-        if (_useNeo4j)
-        {
-            var neo4jUri = _config.GetConnectionString("Neo4j");
-            if (!string.IsNullOrEmpty(neo4jUri))
-            {
-                _neo4jDriver = GraphDatabase.Driver(neo4jUri);
-                _logger.LogInformation("Connected to Neo4j graph database");
-            }
-            else
-            {
-                _logger.LogWarning("Neo4j connection string not found, falling back to Postgres");
-                _useNeo4j = false;
-            }
-        }
-        
-        _logger.LogInformation("Graph Service initialized with backend: {Backend}", 
-            _useNeo4j ? "Neo4j" : "Postgres");
+    // Explicitly disable Neo4j backend until implemented to avoid confusion
+    _useNeo4j = false;
+    _neo4jDriver = null; // not used while Neo4j path is disabled
+    _logger.LogInformation("Graph Service initialized with backend: Postgres");
     }
 
     public async Task<GraphResponse> GetGraphAsync(GraphRequest request)

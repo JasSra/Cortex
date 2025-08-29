@@ -1,6 +1,6 @@
 'use client'
 
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '@/contexts/AuthContext'
 
 const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
 

@@ -37,7 +37,7 @@ public class ClassificationService : IClassificationService
         _modelsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Models");
         Directory.CreateDirectory(_modelsPath);
         
-        LoadModelsAsync();
+    _ = LoadModelsAsync();
     }
 
     public async Task<ClassificationResult> ClassifyTextAsync(string text, string? noteId = null)
@@ -89,12 +89,12 @@ public class ClassificationService : IClassificationService
         return result;
     }
 
-    public async Task TrainTopicModelAsync(List<TrainingData> trainingData)
+    public Task TrainTopicModelAsync(List<TrainingData> trainingData)
     {
         if (!trainingData.Any())
         {
             _logger.LogWarning("No training data provided for topic model");
-            return;
+            return Task.CompletedTask;
         }
 
         try
@@ -121,20 +121,21 @@ public class ClassificationService : IClassificationService
             _mlContext.Model.Save(_topicModel, dataView.Schema, topicModelPath);
             
             _logger.LogInformation("Topic model trained and saved to {Path}", topicModelPath);
-        }
+    }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error training topic model");
             throw;
         }
+    return Task.CompletedTask;
     }
 
-    public async Task TrainSensitivityModelAsync(List<SensitivityTrainingData> trainingData)
+    public Task TrainSensitivityModelAsync(List<SensitivityTrainingData> trainingData)
     {
         if (!trainingData.Any())
         {
             _logger.LogWarning("No training data provided for sensitivity model");
-            return;
+        return Task.CompletedTask;
         }
 
         try
@@ -159,12 +160,13 @@ public class ClassificationService : IClassificationService
             _mlContext.Model.Save(_sensitivityModel, dataView.Schema, sensitivityModelPath);
             
             _logger.LogInformation("Sensitivity model trained and saved to {Path}", sensitivityModelPath);
-        }
+    }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error training sensitivity model");
             throw;
         }
+    return Task.CompletedTask;
     }
 
     public async Task<List<string>> PredictTagsAsync(string text)
@@ -243,7 +245,7 @@ public class ClassificationService : IClassificationService
         }
     }
 
-    private async void LoadModelsAsync()
+    private Task LoadModelsAsync()
     {
         try
         {
@@ -273,6 +275,7 @@ public class ClassificationService : IClassificationService
         {
             _logger.LogError(ex, "Error loading ML models");
         }
+    return Task.CompletedTask;
     }
 
     private List<string> ExtractTopTags(float[] scores, string predictedLabel)

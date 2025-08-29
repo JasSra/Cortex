@@ -22,17 +22,17 @@ public class JobStats
 
 public class EmbeddingJobPayload
 {
-    public int ChunkId { get; set; }
+	public string ChunkId { get; set; } = string.Empty;
 }
 
 public class ClassificationJobPayload
 {
-    public int NoteId { get; set; }
+	public string NoteId { get; set; } = string.Empty;
 }
 
 public class PiiDetectionJobPayload
 {
-    public int NoteId { get; set; }
+	public string NoteId { get; set; } = string.Empty;
 }
 
 public class BackgroundJobService : BackgroundService, IBackgroundJobService
@@ -373,7 +373,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
 		var embed = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
 
-		var chunk = await db.NoteChunks.Include(c => c.Note).FirstOrDefaultAsync(c => c.Id == payload.ChunkId.ToString(), stoppingToken);
+		var chunk = await db.NoteChunks.Include(c => c.Note).FirstOrDefaultAsync(c => c.Id == payload.ChunkId, stoppingToken);
 		if (chunk == null) return;
 
 		var embedding = await embed.EmbedAsync(chunk.Content, stoppingToken);
@@ -407,7 +407,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
 		var classification = scope.ServiceProvider.GetRequiredService<IClassificationService>();
 
-		var note = await db.Notes.FindAsync(new object[] { payload.NoteId.ToString() }, stoppingToken);
+		var note = await db.Notes.FindAsync(new object[] { payload.NoteId }, stoppingToken);
 		if (note == null) return;
 
 		var result = await classification.ClassifyTextAsync(note.Content);
@@ -430,7 +430,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
 		var piiDetection = scope.ServiceProvider.GetRequiredService<IPiiDetectionService>();
 
-		var note = await db.Notes.FindAsync(new object[] { payload.NoteId.ToString() }, stoppingToken);
+		var note = await db.Notes.FindAsync(new object[] { payload.NoteId }, stoppingToken);
 		if (note == null) return;
 
 		var piiSpans = await piiDetection.DetectPiiAsync(note.Content);

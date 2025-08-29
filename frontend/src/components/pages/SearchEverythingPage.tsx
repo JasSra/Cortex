@@ -13,8 +13,8 @@ import {
   FunnelIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline'
-import { useMascot } from '../../contexts/MascotContext'
-import { useApiClient } from '../../services/apiClient'
+import { useMascot } from '@/contexts/MascotContext'
+import { useSearchApi } from '@/services/apiClient'
 
 interface SearchResult {
   id: string
@@ -64,7 +64,7 @@ const SearchEverythingPage: React.FC = () => {
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   
   const { speak, listen, think, idle, suggest } = useMascot()
-  const apiClient = useApiClient()
+  const { searchGet } = useSearchApi()
 
   // Load recent searches from localStorage
   useEffect(() => {
@@ -125,17 +125,8 @@ const SearchEverythingPage: React.FC = () => {
     think()
 
     try {
-      // Build search request
-      const searchRequest = {
-        q: searchQuery,
-        k: 20,
-        mode: 'hybrid',
-        alpha: 0.6,
-        ...filters
-      }
-
       const startTime = Date.now()
-      const response: any = await apiClient.get(`/api/search?q=${encodeURIComponent(searchQuery)}&k=20&mode=hybrid&alpha=0.6`)
+  const response: any = await searchGet(searchQuery, 20, 'hybrid', 0.6)
       const executionTime = Date.now() - startTime
 
       setResults(response.hits || [])
@@ -163,7 +154,7 @@ const SearchEverythingPage: React.FC = () => {
       setIsSearching(false)
       idle()
     }
-  }, [query, filters, apiClient, speak, think, idle, suggest, recentSearches])
+  }, [query, filters, searchGet, speak, think, idle, suggest, recentSearches])
 
   // Handle search form submission
   const handleSearch = (e: React.FormEvent) => {

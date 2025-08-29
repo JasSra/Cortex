@@ -21,9 +21,9 @@ import {
   XMarkIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
-import { useMascot } from '../../contexts/MascotContext'
-import { useApiClient } from '../../services/apiClient'
-import { useAuth } from '../../contexts/AuthContext'
+import { useMascot } from '@/contexts/MascotContext'
+import { useAppAuth } from '@/hooks/useAppAuth'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface UserSettings {
   // Account settings
@@ -93,7 +93,8 @@ const SettingsPage: React.FC = () => {
   const [showConfirmation, setShowConfirmation] = useState<string | null>(null)
 
   const { speak, suggest, celebrate, think, idle } = useMascot()
-  const apiClient = useApiClient()
+  const { getAccessToken } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
   const { isAuthenticated } = useAuth()
 
   const sections: SettingsSection[] = [
@@ -156,7 +157,10 @@ const SettingsPage: React.FC = () => {
       think()
 
       try {
-        const response: any = await apiClient.get('/api/user/settings')
+        const token = await getAccessToken()
+        const headers = new Headers({ 'Content-Type': 'application/json' })
+        if (token) headers.set('Authorization', `Bearer ${token}`)
+        const response: any = await fetch(`${baseUrl}/api/user/settings`, { headers }).then(r => r.ok ? r.json() : {})
         
         // Provide defaults for missing settings
         const defaultSettings: UserSettings = {
@@ -249,7 +253,7 @@ const SettingsPage: React.FC = () => {
     }
 
     loadSettings()
-  }, [isAuthenticated, apiClient, speak, think, idle])
+  }, [isAuthenticated, speak, think, idle, getAccessToken])
 
   // Save settings
   const saveSettings = async () => {
@@ -259,7 +263,10 @@ const SettingsPage: React.FC = () => {
     think()
 
     try {
-      await apiClient.put('/api/user/settings', settings)
+      const token = await getAccessToken()
+      const headers = new Headers({ 'Content-Type': 'application/json' })
+      if (token) headers.set('Authorization', `Bearer ${token}`)
+      await fetch(`${baseUrl}/api/user/settings`, { method: 'PUT', headers, body: JSON.stringify(settings) })
       setSavedRecently(true)
       celebrate()
       speak('Settings saved successfully!', 'responding')

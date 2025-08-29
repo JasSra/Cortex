@@ -12,8 +12,8 @@ import {
   InformationCircleIcon,
   ShareIcon
 } from '@heroicons/react/24/outline'
-import { useMascot } from '../../contexts/MascotContext'
-import { useApiClient } from '../../services/apiClient'
+import { useMascot } from '@/contexts/MascotContext'
+import { useGraphApi } from '@/services/apiClient'
 
 interface GraphNode {
   id: string
@@ -70,7 +70,7 @@ const KnowledgeGraphPage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null)
   
   const { speak, think, idle, suggest } = useMascot()
-  const apiClient = useApiClient()
+  const { getGraph, getConnectedEntities, getEntitySuggestions } = useGraphApi()
 
   // Load initial graph
   useEffect(() => {
@@ -90,7 +90,13 @@ const KnowledgeGraphPage: React.FC = () => {
       if (filters.toDate) params.append('toDate', filters.toDate)
       filters.entityTypes.forEach(type => params.append('entityTypes', type))
 
-      const response: any = await apiClient.get(`/api/graph?${params.toString()}`)
+      const response: any = await getGraph(
+        focus,
+        parseInt(params.get('depth') || '2', 10),
+        params.getAll('entityTypes'),
+        params.get('fromDate') || undefined,
+        params.get('toDate') || undefined
+      )
       
       // Process and layout nodes
       const processedData = processGraphData(response)
@@ -114,7 +120,7 @@ const KnowledgeGraphPage: React.FC = () => {
       setIsLoading(false)
       idle()
     }
-  }, [filters, apiClient, speak, think, idle])
+  }, [filters, getGraph, speak, think, idle])
 
   // Process graph data for visualization
   const processGraphData = (data: any): GraphData => {
@@ -165,7 +171,7 @@ const KnowledgeGraphPage: React.FC = () => {
     speak(`Selected ${node.name}. Loading connected entities...`)
     
     try {
-      const connectedEntities: any = await apiClient.get(`/api/graph/entities/${node.id}/connected?depth=1`)
+  const connectedEntities: any = await getConnectedEntities(node.id, 1)
       // You could expand the graph here or show related entities
       console.log('Connected entities:', connectedEntities)
     } catch (error) {
@@ -189,7 +195,7 @@ const KnowledgeGraphPage: React.FC = () => {
       })
       filters.entityTypes.forEach(type => params.append('types', type))
 
-      const results: any = await apiClient.get(`/api/graph/search?${params.toString()}`)
+  const results: any = await getEntitySuggestions(searchQuery)
       
       if (results?.length > 0) {
         // Highlight found entities in the graph
@@ -212,7 +218,7 @@ const KnowledgeGraphPage: React.FC = () => {
       setIsLoading(false)
       idle()
     }
-  }, [searchQuery, filters.entityTypes, graphData.nodes, apiClient, speak, think, idle, suggest])
+  }, [searchQuery, filters.entityTypes, graphData.nodes, getEntitySuggestions, speak, think, idle, suggest])
 
   // Handle zoom
   const handleZoom = (delta: number) => {

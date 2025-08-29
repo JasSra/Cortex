@@ -11,10 +11,10 @@ import {
   SunIcon,
   MoonIcon
 } from '@heroicons/react/24/outline'
-import { useAuth } from '../contexts/AuthContext'
-import { useAppAuth } from '../hooks/useAppAuth'
-import { useTheme } from '../contexts/ThemeContext'
-import { useGamificationApi } from '../services/apiClient'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppAuth } from '@/hooks/useAppAuth'
+import { useTheme } from '@/contexts/ThemeContext'
+import { useGamificationApi } from '@/services/apiClient'
 
 interface UserProfileDropdownProps {
   onNavigate?: (page: string) => void

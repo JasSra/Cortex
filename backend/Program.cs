@@ -37,8 +37,11 @@ builder.Services.AddScoped<IIngestService, IngestService>();
 builder.Services.AddScoped<ISearchService, SearchService>();
 builder.Services.AddScoped<IVoiceService, VoiceService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IChatToolsService, ChatToolsService>();
 builder.Services.AddSingleton<IVectorService, VectorService>();
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
+builder.Services.AddScoped<INerService, NerService>();
+builder.Services.AddScoped<IGraphService, GraphService>();
 // Background job service temporarily disabled for testing
 // builder.Services.AddSingleton<BackgroundJobService>();
 // builder.Services.AddHostedService<BackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
@@ -49,6 +52,7 @@ builder.Services.AddScoped<IRagService, RagService>();
 builder.Services.AddScoped<IPiiDetectionService, PiiDetectionService>();
 builder.Services.AddScoped<ISecretsDetectionService, SecretsDetectionService>();
 builder.Services.AddScoped<IClassificationService, ClassificationService>();
+builder.Services.AddScoped<IRedactionService, RedactionService>();
 // Seed data service for new users
 builder.Services.AddScoped<ISeedDataService, SeedDataService>();
 // Gamification service for achievements and stats
@@ -183,7 +187,7 @@ app.UseWebSockets();
 // Inject per-request user context before endpoints
 app.UseMiddleware<UserContextMiddleware>();
 
-// Ensure database is created
+// Ensure database is up-to-date (use EF Core migrations)
 using (var scope = app.Services.CreateScope())
 {
     // Ensure data directory exists for SQLite (based on absolute DataSource path)
@@ -195,55 +199,16 @@ using (var scope = app.Services.CreateScope())
     catch { /* ignore */ }
 
     var context = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
-    // In Development, force-recreate to keep schema in sync with model (no migrations used yet)
-    if (app.Environment.IsDevelopment())
-    {
-        try { context.Database.EnsureDeleted(); } catch { }
-    }
-    context.Database.EnsureCreated();
-
-    // Dev safety: if new tables were added after DB existed (EnsureCreated won't add), reset DB file
     try
     {
-        var conn = context.Database.GetDbConnection();
-        await conn.OpenAsync();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name IN ('Embeddings','Tags','NoteTags','Classifications','ActionLogs')";
-        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync());
-        // Debug: list tables present
-        try
-        {
-            using var listCmd = conn.CreateCommand();
-            listCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
-            using var r = await listCmd.ExecuteReaderAsync();
-            var tbls = new List<string>();
-            while (await r.ReadAsync()) tbls.Add(r.GetString(0));
-            Console.WriteLine($"[DB] Tables: {string.Join(", ", tbls)}");
-        }
-        catch { }
-        await conn.CloseAsync();
-        if (count < 5)
-        {
-            var fullPath = csb.DataSource;
-            try { if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath)) File.Delete(fullPath); } catch { }
-            context.Database.EnsureCreated();
-            // Log again after recreate
-            try
-            {
-                var conn2 = context.Database.GetDbConnection();
-                await conn2.OpenAsync();
-                using var listCmd2 = conn2.CreateCommand();
-                listCmd2.CommandText = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
-                using var r2 = await listCmd2.ExecuteReaderAsync();
-                var tbls2 = new List<string>();
-                while (await r2.ReadAsync()) tbls2.Add(r2.GetString(0));
-                Console.WriteLine($"[DB] After recreate tables: {string.Join(", ", tbls2)}");
-                await conn2.CloseAsync();
-            }
-            catch { }
-        }
+        context.Database.Migrate();
     }
-    catch { /* ignore */ }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[DB] Migration failed: {ex.Message}");
+        // As a last resort in local dev, create DB if it doesn't exist
+        try { context.Database.EnsureCreated(); } catch { }
+    }
 
     // Ensure vector index exists
     try

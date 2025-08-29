@@ -1,32 +1,8 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
+import { Note, GraphNode, GraphEdge } from '@/api/cortex-api-client'
 
-// Types for our store
-export interface Note {
-  id: string
-  title: string
-  content: string
-  createdAt: string
-  fileType: string
-  filePath: string
-  tags: string[]
-}
-
-export interface GraphNode {
-  id: string
-  type: string
-  value: string
-  connectionCount: number
-  lastSeen: string
-}
-
-export interface GraphEdge {
-  id: string
-  fromId: string
-  toId: string
-  relationType: string
-  confidence: number
-}
+// Types for our store - reuse generated API models
 
 export interface ChatMessage {
   id: string

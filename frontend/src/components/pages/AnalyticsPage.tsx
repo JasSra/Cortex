@@ -18,9 +18,10 @@ import {
   UserGroupIcon,
   GlobeAltIcon
 } from '@heroicons/react/24/outline'
-import { useGamificationApi, useApiClient } from '../../services/apiClient'
-import { useAuth } from '../../contexts/AuthContext'
-import { useMascot } from '../../contexts/MascotContext'
+import { useGamificationApi } from '@/services/apiClient'
+import { useAppAuth } from '@/hooks/useAppAuth'
+import { useAuth } from '@/contexts/AuthContext'
+import { useMascot } from '@/contexts/MascotContext'
 
 interface AnalyticsData {
   totalNotes: number
@@ -71,7 +72,8 @@ const AnalyticsPage: React.FC = () => {
   const { getUserStats, getUserProgress, getAllAchievements, getMyAchievements } = useGamificationApi()
   const { isAuthenticated } = useAuth()
   const { speak, celebrate, suggest, idle, think } = useMascot()
-  const apiClient = useApiClient()
+  const { getAccessToken } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
 
   // Date range presets
   const dateRanges: DateRange[] = [
@@ -112,10 +114,16 @@ const AnalyticsPage: React.FC = () => {
       ])
 
       // Load additional analytics data
+      const token = await getAccessToken()
+      const makeHeaders = () => {
+        const h = new Headers({ 'Content-Type': 'application/json' })
+        if (token) h.set('Authorization', `Bearer ${token}`)
+        return h
+      }
       const [searchAnalytics, graphStats, activityData] = await Promise.all([
-        apiClient.get('/api/search/analytics').catch(() => ({})),
-        apiClient.get('/api/graph/stats').catch(() => ({})),
-        apiClient.get(`/api/user/activity?start=${dateRange.start.toISOString()}&end=${dateRange.end.toISOString()}`).catch(() => ({}))
+        fetch(`${baseUrl}/api/search/analytics`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({})),
+        fetch(`${baseUrl}/api/graph/stats`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({})),
+        fetch(`${baseUrl}/api/user/activity?start=${dateRange.start.toISOString()}&end=${dateRange.end.toISOString()}`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({}))
       ])
 
       const searchData = searchAnalytics as any
@@ -219,7 +227,7 @@ const AnalyticsPage: React.FC = () => {
       setLoading(false)
       idle()
     }
-  }, [isAuthenticated, dateRange, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, apiClient, speak, celebrate, think, idle])
+  }, [isAuthenticated, dateRange, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, speak, celebrate, think, idle, getAccessToken])
 
   useEffect(() => {
     loadAnalytics()

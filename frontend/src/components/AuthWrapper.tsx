@@ -1,8 +1,8 @@
 'use client'
 
 import { ReactNode } from 'react'
-import { useAuth } from '../contexts/AuthContext'
-import { useAppAuth } from '../hooks/useAppAuth'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppAuth } from '@/hooks/useAppAuth'
 import { LoginPage } from './LoginPage'
 
 interface AuthWrapperProps {

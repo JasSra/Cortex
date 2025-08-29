@@ -9,14 +9,17 @@ import {
   CalendarIcon,
   GiftIcon
 } from '@heroicons/react/24/outline'
-import { useGamificationApi, Achievement, UserAchievement } from '../../services/apiClient'
+import { useGamificationApi } from '@/services/apiClient'
+import type { IAchievement, UserAchievement } from '@/api/cortex-api-client'
 
 interface AchievementsPanelProps {
   className?: string
 }
 
+type AchievementView = IAchievement & { isUnlocked?: boolean; unlockedAt?: string }
+
 export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
-  const [achievements, setAchievements] = useState<Achievement[]>([])
+  const [achievements, setAchievements] = useState<AchievementView[]>([])
   const [userAchievements, setUserAchievements] = useState<UserAchievement[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -37,11 +40,11 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
       ])
       
       // Mark achievements as unlocked
-      const unlockedIds = new Set(unlockedAchievements.map(ua => ua.achievementId))
-      const achievementsWithStatus = allAchievements.map(achievement => ({
+      const unlockedIds = new Set((unlockedAchievements as UserAchievement[]).map((ua: UserAchievement) => ua.achievementId || ''))
+      const achievementsWithStatus: AchievementView[] = (allAchievements as IAchievement[]).map((achievement: IAchievement) => ({
         ...achievement,
-        isUnlocked: unlockedIds.has(achievement.id),
-        unlockedAt: unlockedAchievements.find(ua => ua.achievementId === achievement.id)?.unlockedAt
+        isUnlocked: unlockedIds.has(achievement.id || ''),
+        unlockedAt: ((unlockedAchievements as UserAchievement[]).find((ua: UserAchievement) => ua.achievementId === achievement.id)?.earnedAt || undefined)?.toString()
       }))
       
       setAchievements(achievementsWithStatus)
@@ -119,7 +122,7 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
           <div className="flex items-center space-x-2">
             <GiftIcon className="w-5 h-5 text-purple-500" />
             <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
-              {achievements.reduce((sum, a) => sum + (a.isUnlocked ? a.points : 0), 0)} XP earned
+              {achievements.reduce((sum, a) => sum + (a.isUnlocked ? (a.points || 0) : 0), 0)} XP earned
             </span>
           </div>
         </div>

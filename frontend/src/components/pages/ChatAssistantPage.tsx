@@ -12,8 +12,9 @@ import {
   StopIcon,
   PlayIcon
 } from '@heroicons/react/24/outline'
-import { useMascot } from '../../contexts/MascotContext'
-import { useApiClient } from '../../services/apiClient'
+import { useMascot } from '@/contexts/MascotContext'
+import { useChatToolsApi } from '@/services/apiClient'
+import { useAppAuth } from '@/hooks/useAppAuth'
 
 interface Message {
   id: string
@@ -58,7 +59,9 @@ const ChatAssistantPage: React.FC = () => {
   const speechSynthesisRef = useRef<SpeechSynthesis | null>(null)
   
   const { speak, listen, think, respond, idle, suggest } = useMascot()
-  const apiClient = useApiClient()
+  const { processChat, executeTool, getAvailableTools } = useChatToolsApi()
+  const { getAccessToken } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
 
   // Initialize speech synthesis
   useEffect(() => {
@@ -76,7 +79,7 @@ const ChatAssistantPage: React.FC = () => {
   useEffect(() => {
     const loadTools = async () => {
       try {
-        const tools: any = await apiClient.get('/api/chat/tools')
+        const tools: any = await getAvailableTools()
         setAvailableTools(Array.isArray(tools) ? tools : [])
       } catch (error) {
         console.error('Failed to load tools:', error)
@@ -85,7 +88,7 @@ const ChatAssistantPage: React.FC = () => {
     }
     
     loadTools()
-  }, [apiClient])
+  }, [getAvailableTools])
 
   // Initialize conversation with greeting
   useEffect(() => {
@@ -166,7 +169,16 @@ const ChatAssistantPage: React.FC = () => {
 
     try {
       // Try using backend TTS first
-      const audioResponse = await apiClient.post('/api/voice/tts', { text })
+      const token = await getAccessToken()
+      const res = await fetch(`${baseUrl}/api/voice/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ text })
+      })
+      const audioResponse = await res.blob()
       
       if (audioResponse instanceof Blob) {
         const audioUrl = URL.createObjectURL(audioResponse)
@@ -197,7 +209,7 @@ const ChatAssistantPage: React.FC = () => {
     }
 
     speechSynthesisRef.current.speak(utterance)
-  }, [apiClient, respond, idle])
+  }, [getAccessToken, baseUrl, respond, idle])
 
   // Stop speaking
   const stopSpeaking = () => {
@@ -232,12 +244,21 @@ const ChatAssistantPage: React.FC = () => {
       }))
 
       // Send to RAG endpoint
-      const response: any = await apiClient.post('/api/rag/query', {
-        messages: conversationMessages,
-        temperature: 0.7,
-        maxTokens: 500,
-        useRag: true
+      const token = await getAccessToken()
+      const res = await fetch(`${baseUrl}/api/Rag/query`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          messages: conversationMessages,
+          temperature: 0.7,
+          maxTokens: 500,
+          useRag: true
+        })
       })
+      const response: any = await res.json()
 
       const assistantMessage: Message = {
         id: Date.now().toString() + '_assistant',

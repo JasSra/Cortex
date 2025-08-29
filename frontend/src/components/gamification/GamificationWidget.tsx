@@ -10,7 +10,8 @@ import {
   FireIcon
 } from '@heroicons/react/24/outline'
 import { TrophyIcon as TrophyIconSolid } from '@heroicons/react/24/solid'
-import { useGamificationApi, Achievement, UserStats, UserProgress } from '../../services/apiClient'
+import { useGamificationApi } from '@/services/apiClient'
+import { Achievement } from '@/api/cortex-api-client'
 
 interface GamificationWidgetProps {
   compact?: boolean
@@ -18,8 +19,8 @@ interface GamificationWidgetProps {
 }
 
 export function GamificationWidget({ compact = false, className = '' }: GamificationWidgetProps) {
-  const [userStats, setUserStats] = useState<UserStats | null>(null)
-  const [userProgress, setUserProgress] = useState<UserProgress | null>(null)
+  const [userStats, setUserStats] = useState<any>(null)
+  const [userProgress, setUserProgress] = useState<any>(null)
   const [recentAchievements, setRecentAchievements] = useState<Achievement[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isExpanded, setIsExpanded] = useState(!compact)
@@ -44,12 +45,12 @@ export function GamificationWidget({ compact = false, className = '' }: Gamifica
 
       // Load recent achievements (unlocked ones)
       try {
-        const achievements = await gamificationApi.getMyAchievements()
+        const achievements: any[] = await gamificationApi.getMyAchievements()
         // Get the 3 most recent achievements
         const recent = achievements
-          .sort((a, b) => new Date(b.unlockedAt).getTime() - new Date(a.unlockedAt).getTime())
+          .sort((a: any, b: any) => new Date(b.earnedAt || b.unlockedAt || 0).getTime() - new Date(a.earnedAt || a.unlockedAt || 0).getTime())
           .slice(0, 3)
-          .map(ua => ({ ...ua.achievement!, isUnlocked: true, unlockedAt: ua.unlockedAt }))
+          .map((ua: any) => ({ ...ua.achievement!, isUnlocked: true, unlockedAt: ua.earnedAt || ua.unlockedAt }))
         
         setRecentAchievements(recent)
       } catch (error) {

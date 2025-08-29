@@ -82,9 +82,9 @@ public class RagController : ControllerBase
         _logger.LogInformation("RAG streaming query from user {UserId}", _userContext.UserId);
 
         // Set up Server-Sent Events response
-        Response.Headers.Add("Content-Type", "text/event-stream");
-        Response.Headers.Add("Cache-Control", "no-cache");
-        Response.Headers.Add("Connection", "keep-alive");
+    Response.Headers.Append("Content-Type", "text/event-stream");
+    Response.Headers.Append("Cache-Control", "no-cache");
+    Response.Headers.Append("Connection", "keep-alive");
 
         try
         {
