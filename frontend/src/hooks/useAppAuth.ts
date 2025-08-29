@@ -24,7 +24,7 @@ const mockDevAuth: DevAuth = {
 }
 
 export function useAppAuth() {
-  const prodAuth = isDevelopment ? null : useAuth()
+  const prodAuth = useAuth()
   
-  return isDevelopment ? mockDevAuth : prodAuth!
+  return isDevelopment ? mockDevAuth : prodAuth
 }

@@ -12,8 +12,12 @@ interface AuthWrapperProps {
 const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
 
 export function AuthWrapper({ children }: AuthWrapperProps) {
-  // Use appropriate auth based on development mode
-  const auth = isDevelopment ? useAppAuth() : useAuth()
+  // Always call both hooks to comply with rules of hooks
+  const prodAuth = useAuth()
+  const devAuth = useAppAuth()
+  
+  // Select the appropriate auth based on development mode
+  const auth = isDevelopment ? devAuth : prodAuth
   const { isAuthenticated, loading } = auth
 
   if (loading) {

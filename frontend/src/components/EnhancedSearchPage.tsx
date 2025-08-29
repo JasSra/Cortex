@@ -407,7 +407,7 @@ export default function SearchPage({ onNoteSelect }: SearchPageProps) {
         {results.length === 0 && !loading && query && (
           <div className="text-center py-12 text-gray-500">
             <FontAwesomeIcon icon={faSearch} className="text-4xl mb-4" />
-            <p>No results found for "{query}"</p>
+            <p>No results found for &quot;{query}&quot;</p>
             <p className="text-sm">Try adjusting your search terms or filters</p>
           </div>
         )}

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useCortexStore } from '@/store/cortexStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotesApi } from '@/services/apiClient'
@@ -19,24 +19,24 @@ export default function Home() {
   const notesApi = useNotesApi()
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load initial data when authenticated
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      loadInitialData()
-    }
-  }, [isAuthenticated, user])
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true)
       // Load user's notes
-  await notesApi.getNotes()
+      await notesApi.getNotes()
     } catch (error) {
       console.error('Failed to load initial data:', error)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [notesApi])
+
+  // Load initial data when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      loadInitialData()
+    }
+  }, [isAuthenticated, user, loadInitialData])
 
   const renderActiveView = () => {
     if (isLoading) {

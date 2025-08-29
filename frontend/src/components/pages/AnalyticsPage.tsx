@@ -324,7 +324,7 @@ const AnalyticsPage: React.FC = () => {
                 New Achievement!
               </h2>
               <p className="text-gray-600 dark:text-gray-400">
-                You're making great progress!
+                You&apos;re making great progress!
               </p>
             </motion.div>
           </motion.div>
@@ -668,7 +668,7 @@ const AnalyticsPage: React.FC = () => {
                 <TrophyIcon className="w-8 h-8 text-yellow-300" />
                 <div>
                   <h3 className="text-xl font-semibold">Achievement Progress</h3>
-                  <p className="text-purple-100">You're doing amazing!</p>
+                  <p className="text-purple-100">You&apos;re doing amazing!</p>
                 </div>
               </div>
               <div className="text-right">
