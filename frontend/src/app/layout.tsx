@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { AuthProvider } from "../contexts/AuthContext";
+import { MascotProvider } from "../contexts/MascotContext";
 import { AuthWrapper } from "../components/AuthWrapper";
 import { StructuredData } from "../components/StructuredData";
 
@@ -104,9 +105,11 @@ export default function RootLayout({
       <body className="antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
         <ThemeProvider>
           <AuthProvider>
-            <AuthWrapper>
-              {children}
-            </AuthWrapper>
+            <MascotProvider position="bottom-right" size="medium">
+              <AuthWrapper>
+                {children}
+              </AuthWrapper>
+            </MascotProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

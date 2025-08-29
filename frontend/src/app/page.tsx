@@ -113,9 +113,7 @@ export default function Home() {
         onViewChange={setActiveView}
         sidebarOpen={sidebarOpen}
         onSidebarToggle={() => setSidebarOpen(!sidebarOpen)}
-      >
-        {renderActiveView()}
-      </ModernLayout>
+      />
     </div>
   )
 }
