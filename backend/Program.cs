@@ -81,17 +81,23 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             RoleClaimType = "extension_Role"
         };
 
-        // For development, allow anonymous access
+        // Support tokens in query for WebSocket and media elements (e.g., /voice/stt and /api/Voice/tts/stream)
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"].ToString();
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    (path.StartsWithSegments("/voice/stt") || path.StartsWithSegments("/api/Voice/tts/stream")))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
+            // Keep dev-friendly challenge but do not convert to 200 for protected endpoints
             OnChallenge = context =>
             {
-                if (builder.Environment.IsDevelopment())
-                {
-                    context.HandleResponse();
-                    context.Response.StatusCode = 200;
-                    return Task.CompletedTask;
-                }
                 return Task.CompletedTask;
             }
         };
@@ -226,6 +232,12 @@ app.MapControllers();
 // WebSocket endpoint for STT (requires special handling)
 app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
 {
+    // Enforce authentication for WebSocket STT
+    if (!(context.User?.Identity?.IsAuthenticated ?? false))
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
     if (context.WebSockets.IsWebSocketRequest)
     {
         var webSocket = await context.WebSockets.AcceptWebSocketAsync();

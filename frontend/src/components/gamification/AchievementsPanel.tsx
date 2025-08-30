@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   TrophyIcon, 
@@ -24,12 +24,9 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const gamificationApi = useGamificationApi()
+  const [showCelebrate, setShowCelebrate] = useState(false)
 
-  useEffect(() => {
-    loadAchievements()
-  }, [])
-
-  const loadAchievements = async () => {
+  const loadAchievements = useCallback(async () => {
     try {
       setIsLoading(true)
       
@@ -47,14 +44,23 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
         unlockedAt: ((unlockedAchievements as UserAchievement[]).find((ua: UserAchievement) => ua.achievementId === achievement.id)?.earnedAt || undefined)?.toString()
       }))
       
+      const wasUnlocked = achievementsWithStatus.some(a => a.isUnlocked)
       setAchievements(achievementsWithStatus)
+      if (wasUnlocked) {
+        setShowCelebrate(true)
+        setTimeout(() => setShowCelebrate(false), 1800)
+      }
       setUserAchievements(unlockedAchievements)
     } catch (error) {
       console.error('Failed to load achievements:', error)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [gamificationApi])
+
+  useEffect(() => {
+    loadAchievements()
+  }, [loadAchievements])
 
   const categories = [
     { id: 'all', name: 'All', icon: TrophyIcon },
@@ -163,8 +169,27 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
         </div>
       </div>
 
+      {/* Sub-header actions */}
+      <div className="px-6 pt-4 flex items-center justify-between">
+        <div />
+        <button
+          onClick={() => gamificationApi.seedAchievements().then(loadAchievements)}
+          className="text-xs px-3 py-1.5 rounded bg-purple-600 text-white hover:bg-purple-700"
+        >
+          Seed demo achievements
+        </button>
+      </div>
+
       {/* Achievements Grid */}
       <div className="p-6">
+        {showCelebrate && (
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mb-3">
+            <div className="p-3 rounded-xl bg-gradient-to-r from-yellow-100 to-orange-100 dark:from-yellow-900/20 dark:to-orange-900/20 border border-yellow-200 dark:border-yellow-700 flex items-center gap-2">
+              <TrophyIcon className="w-5 h-5 text-amber-600" />
+              <span className="text-sm text-amber-800 dark:text-amber-300">New achievement unlocked!</span>
+            </div>
+          </motion.div>
+        )}
         <AnimatePresence mode="wait">
           <motion.div
             key={selectedCategory}
@@ -250,6 +275,14 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
                 : "No achievements found."
               }
             </p>
+            {selectedCategory !== 'locked' && (
+              <button
+                onClick={() => gamificationApi.seedAchievements().then(loadAchievements)}
+                className="mt-4 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Try demo unlocks
+              </button>
+            )}
           </div>
         )}
       </div>

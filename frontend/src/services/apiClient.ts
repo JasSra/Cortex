@@ -3,39 +3,54 @@
 import { useAppAuth } from '@/hooks/useAppAuth'
 import { CortexApiClient } from '@/api/cortex-api-client'
 
-function createAuthedFetch(getAccessToken: () => Promise<string | null>) {
+function createAuthedFetch(
+  getAccessToken: () => Promise<string | null>,
+  onUnauthorized?: () => void
+) {
+  let handling401 = false
   return async (url: RequestInfo, init?: RequestInit) => {
     const token = await getAccessToken()
     const headers = new Headers(init?.headers || {})
     if (!headers.has('Content-Type') && (!init || init?.body)) headers.set('Content-Type', 'application/json')
     if (token) headers.set('Authorization', `Bearer ${token}`)
-    return fetch(url, { ...(init || {}), headers })
+    const res = await fetch(url, { ...(init || {}), headers })
+  if ((res.status === 401 || res.status === 403) && !handling401) {
+      handling401 = true
+      try { onUnauthorized && onUnauthorized() } finally { handling401 = false }
+    }
+    return res
   }
 }
 
 // Main hook: use the generated CortexApiClient everywhere
 export function useCortexApiClient(): CortexApiClient {
-  const { getAccessToken } = useAppAuth()
+  const { getAccessToken, logout } = useAppAuth()
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
-  return new CortexApiClient(baseUrl, { fetch: createAuthedFetch(getAccessToken) })
+  return new CortexApiClient(baseUrl, { fetch: createAuthedFetch(getAccessToken, logout) })
 }
 
 // For endpoints not fully typed in OpenAPI, use a minimal authed fetch wrapper
 function useAuthedFetch() {
-  const { getAccessToken } = useAppAuth()
+  const { getAccessToken, logout } = useAppAuth()
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
-  const authedFetch = createAuthedFetch(getAccessToken)
+  const authedFetch = createAuthedFetch(getAccessToken, logout)
   return {
     get: async <T>(path: string): Promise<T> => {
       const res = await authedFetch(`${baseUrl}${path}`)
       if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
-      return res.json() as Promise<T>
+      const text = await res.text()
+      return (text ? JSON.parse(text) : undefined) as T
     },
     post: async <T>(path: string, body?: any): Promise<T> => {
       const res = await authedFetch(`${baseUrl}${path}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined })
       if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
-      return res.json() as Promise<T>
+      const text = await res.text()
+      return (text ? JSON.parse(text) : undefined) as T
     },
+    del: async (path: string): Promise<void> => {
+      const res = await authedFetch(`${baseUrl}${path}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
+    }
   }
 }
 
@@ -82,7 +97,6 @@ export function useAdminApi() {
     reembed: () => client.reembed(),
     healthCheck: () => client.health(),
     getSystemStats: () => client.stats(), // Embedding stats
-    getDatabaseStats: () => client.statistics(), // Graph statistics
   }
 }
 
@@ -137,11 +151,20 @@ export function useChatToolsApi() {
 }
 
 // User profile API (not fully present in generated client yet)
+// User profile API via generated CortexApiClient (prefer generated client over ad-hoc fetch)
 export function useUserApi() {
-  const http = useAuthedFetch()
+  const client = useCortexApiClient()
   return {
-    getProfile: () => http.get<any>('/api/User/profile'),
-    createOrUpdateProfile: (body: any) => http.post<any>('/api/User/profile', body),
+    getProfile: () => client.profileGET() as any,
+  createOrUpdateProfile: (body: any) => client.profilePUT(body) as any,
+    deleteProfile: () => client.profileDELETE() as any,
+  // Typed settings persisted in UserProfile.Preferences
+  getSettings: () => client.settingsGET() as any,
+  updateSettings: (settings: any) => client.settingsPUT(settings) as any,
+  // Account lifecycle endpoints (now available in generated client)
+  exportAccountData: () => client.export() as unknown as Promise<any>,
+  deleteAccountData: () => client.data(),
+  deleteAccount: () => client.account(),
   }
 }
 
@@ -170,6 +193,13 @@ export function useVoiceApi() {
       })
       if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`)
       return await resp.blob()
+    },
+    ttsStreamUrl: async (text: string) => {
+      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+      const token = await getAccessToken()
+      const params = new URLSearchParams({ text })
+      if (token) params.set('access_token', token)
+      return `${baseUrl}/api/Voice/tts/stream?${params.toString()}`
     }
   }
 }

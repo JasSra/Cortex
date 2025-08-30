@@ -10,7 +10,7 @@
     "test": "playwright test"
   },
   "dependencies": {
-    "adaptivecards": "^3.1.0",
+  "adaptivecards": "^3.0.5",
     "@azure/msal-browser": "^4.21.1",
     "@azure/msal-react": "^3.0.19",
     "@fortawesome/fontawesome-svg-core": "^6.5.1",

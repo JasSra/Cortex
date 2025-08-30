@@ -97,8 +97,8 @@ namespace CortexApi.Controllers
                 var profile = new UserProfile
                 {
                     SubjectId = userSubjectId ?? request.SubjectId ?? userId,
-                    Email = request.Email ?? _userContext.UserEmail,
-                    Name = request.Name ?? _userContext.UserName,
+                    Email = request.Email ?? _userContext.UserEmail ?? string.Empty,
+                    Name = request.Name ?? _userContext.UserName ?? string.Empty,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -195,6 +195,239 @@ namespace CortexApi.Controllers
                 return StatusCode(500, new { message = "Internal server error" });
             }
         }
+
+        /// <summary>
+        /// Get typed user settings stored in UserProfile.Preferences
+        /// </summary>
+        [HttpGet("settings")]
+        [ProducesResponseType(typeof(UserSettingsDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetUserSettings()
+        {
+            try
+            {
+                var subjectId = _userContext.UserSubjectId;
+                if (string.IsNullOrEmpty(subjectId)) return Unauthorized();
+
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.SubjectId == subjectId);
+                if (profile == null) return NotFound(new { message = "User profile not found" });
+
+                var dto = string.IsNullOrWhiteSpace(profile.Preferences)
+                    ? new UserSettingsDto()
+                    : System.Text.Json.JsonSerializer.Deserialize<UserSettingsDto>(profile.Preferences) ?? new UserSettingsDto();
+
+                return Ok(dto);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user settings");
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// Update typed user settings stored in UserProfile.Preferences
+        /// </summary>
+        [HttpPut("settings")]
+        [ProducesResponseType(typeof(UserSettingsDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateUserSettings([FromBody] UserSettingsDto request)
+        {
+            try
+            {
+                var subjectId = _userContext.UserSubjectId;
+                if (string.IsNullOrEmpty(subjectId)) return Unauthorized();
+
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.SubjectId == subjectId);
+                if (profile == null) return NotFound(new { message = "User profile not found" });
+
+                profile.Preferences = System.Text.Json.JsonSerializer.Serialize(request);
+                profile.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(request);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user settings");
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// Export all account data for the current user as JSON
+        /// </summary>
+    [HttpGet("account/export")]
+    [ProducesResponseType(typeof(AccountExportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ExportAccountData()
+        {
+            try
+            {
+                var subjectId = _userContext.UserSubjectId;
+                if (string.IsNullOrEmpty(subjectId)) return Unauthorized();
+
+                var profile = await _context.UserProfiles
+                    .Include(up => up.UserAchievements)
+                    .FirstOrDefaultAsync(p => p.SubjectId == subjectId);
+                if (profile == null) return NotFound(new { message = "User profile not found" });
+
+                // Gather related data for export scoped by user
+                var notes = await _context.Notes.Where(n => n.UserId == (_userContext.UserId ?? subjectId)).ToListAsync();
+                var noteIds = notes.Select(n => n.Id).ToList();
+                var chunks = await _context.NoteChunks.Where(c => noteIds.Contains(c.NoteId)).ToListAsync();
+                var classifications = await _context.Classifications.Where(c => noteIds.Contains(c.NoteId)).ToListAsync();
+                var tags = await _context.NoteTags.Where(nt => noteIds.Contains(nt.NoteId)).ToListAsync();
+
+                var userAchievementDetails = await _context.UserAchievements
+                    .Where(ua => ua.UserProfileId == profile.Id)
+                    .Include(ua => ua.Achievement)
+                    .ToListAsync();
+
+                var export = new AccountExportResponse
+                {
+                    Profile = profile,
+                    Notes = notes,
+                    Chunks = chunks,
+                    Classifications = classifications,
+                    NoteTags = tags,
+                    Achievements = userAchievementDetails.Select(ua => new UserAchievementExport
+                    {
+                        Id = ua.Id,
+                        EarnedAt = ua.EarnedAt,
+                        Progress = ua.Progress,
+                        HasSeen = ua.HasSeen,
+                        Achievement = ua.Achievement
+                    }).ToList()
+                };
+
+                return Ok(export);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error exporting account data");
+                return StatusCode(500, new { message = "Failed to export account data" });
+            }
+        }
+
+        /// <summary>
+        /// Delete all user-owned content but keep the account/profile
+        /// </summary>
+    [HttpDelete("account/data")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteAccountData()
+        {
+            try
+            {
+                var subjectId = _userContext.UserSubjectId;
+                if (string.IsNullOrEmpty(subjectId)) return Unauthorized();
+
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.SubjectId == subjectId);
+                if (profile == null) return NotFound(new { message = "User profile not found" });
+
+                var notes = await _context.Notes.Where(n => n.UserId == (_userContext.UserId ?? subjectId)).ToListAsync();
+                var noteIds = notes.Select(n => n.Id).ToList();
+
+                // Remove dependent data first where needed
+                var chunks = _context.NoteChunks.Where(c => noteIds.Contains(c.NoteId));
+                _context.NoteChunks.RemoveRange(chunks);
+
+                var classifications = _context.Classifications.Where(c => noteIds.Contains(c.NoteId));
+                _context.Classifications.RemoveRange(classifications);
+
+                var noteTags = _context.NoteTags.Where(nt => noteIds.Contains(nt.NoteId));
+                _context.NoteTags.RemoveRange(noteTags);
+
+                // Remove notes
+                _context.Notes.RemoveRange(notes);
+
+                // Optionally clear achievements progress
+                var userAchievements = _context.UserAchievements.Where(ua => ua.UserProfileId == profile.Id);
+                _context.UserAchievements.RemoveRange(userAchievements);
+
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Deleted all account data for subject {SubjectId}", subjectId);
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting account data");
+                return StatusCode(500, new { message = "Failed to delete account data" });
+            }
+        }
+
+        /// <summary>
+        /// Delete the account/profile itself (and all associated data via cascade)
+        /// </summary>
+    [HttpDelete("account")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteAccount()
+        {
+            try
+            {
+                var subjectId = _userContext.UserSubjectId;
+                if (string.IsNullOrEmpty(subjectId)) return Unauthorized();
+
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.SubjectId == subjectId);
+                if (profile == null) return NotFound(new { message = "User profile not found" });
+
+                // Remove all user-owned content first (same as DeleteAccountData)
+                var notes = await _context.Notes.Where(n => n.UserId == (_userContext.UserId ?? subjectId)).ToListAsync();
+                var noteIds = notes.Select(n => n.Id).ToList();
+
+                var chunks = _context.NoteChunks.Where(c => noteIds.Contains(c.NoteId));
+                _context.NoteChunks.RemoveRange(chunks);
+
+                var classifications = _context.Classifications.Where(c => noteIds.Contains(c.NoteId));
+                _context.Classifications.RemoveRange(classifications);
+
+                var noteTags = _context.NoteTags.Where(nt => noteIds.Contains(nt.NoteId));
+                _context.NoteTags.RemoveRange(noteTags);
+
+                _context.Notes.RemoveRange(notes);
+
+                var userAchievements = _context.UserAchievements.Where(ua => ua.UserProfileId == profile.Id);
+                _context.UserAchievements.RemoveRange(userAchievements);
+
+                // Finally remove the profile
+                _context.UserProfiles.Remove(profile);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Deleted account for subject {SubjectId}", subjectId);
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting account");
+                return StatusCode(500, new { message = "Failed to delete account" });
+            }
+        }
+    }
+
+    public class AccountExportResponse
+    {
+        public UserProfile? Profile { get; set; }
+        public List<Note>? Notes { get; set; }
+        public List<NoteChunk>? Chunks { get; set; }
+        public List<Classification>? Classifications { get; set; }
+        public List<NoteTag>? NoteTags { get; set; }
+        public List<UserAchievementExport>? Achievements { get; set; }
+    }
+
+    public class UserAchievementExport
+    {
+        public string? Id { get; set; }
+        public DateTime EarnedAt { get; set; }
+        public int Progress { get; set; }
+        public bool HasSeen { get; set; }
+        public Achievement? Achievement { get; set; }
     }
 
     public class CreateUserProfileRequest
@@ -212,5 +445,51 @@ namespace CortexApi.Controllers
         public string? Name { get; set; }
         public string? Bio { get; set; }
         public string? Avatar { get; set; }
+    }
+
+    /// <summary>
+    /// Typed settings persisted in UserProfile.Preferences
+    /// </summary>
+    public class UserSettingsDto
+    {
+        // Account
+        public string Timezone { get; set; } = System.TimeZoneInfo.Utc.Id;
+        public string Language { get; set; } = "en";
+        // Privacy
+        public string ProfileVisibility { get; set; } = "private"; // public|private|friends
+        public bool DataSharing { get; set; } = false;
+        public bool AnalyticsOptIn { get; set; } = true;
+        public bool SearchHistory { get; set; } = true;
+        // Voice
+        public bool VoiceEnabled { get; set; } = true;
+        public string WakeWord { get; set; } = "Hey Cortex";
+        public string VoiceLanguage { get; set; } = "en-US";
+        public double VoiceSpeed { get; set; } = 1.0;
+        public double VoiceVolume { get; set; } = 0.8;
+        public double MicrophoneSensitivity { get; set; } = 0.7;
+        public bool ContinuousListening { get; set; } = false;
+        // Mascot
+        public bool MascotEnabled { get; set; } = true;
+        public string MascotPersonality { get; set; } = "friendly"; // friendly|professional|playful|minimal
+        public bool MascotAnimations { get; set; } = true;
+        public bool MascotVoice { get; set; } = true;
+        public double MascotProactivity { get; set; } = 0.5;
+        // Appearance
+        public string Theme { get; set; } = "auto"; // light|dark|auto
+        public string PrimaryColor { get; set; } = "#7c3aed";
+        public string FontSize { get; set; } = "medium"; // small|medium|large
+        public bool ReducedMotion { get; set; } = false;
+        public bool HighContrast { get; set; } = false;
+        // Notifications
+        public bool EmailNotifications { get; set; } = true;
+        public bool PushNotifications { get; set; } = true;
+        public bool AchievementNotifications { get; set; } = true;
+        public bool WeeklyDigest { get; set; } = true;
+        public bool MaintenanceAlerts { get; set; } = true;
+        // Security
+        public bool TwoFactorEnabled { get; set; } = false;
+        public bool LoginAlerts { get; set; } = true;
+        public int SessionTimeout { get; set; } = 30;
+        public bool DataEncryption { get; set; } = true;
     }
 }

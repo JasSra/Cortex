@@ -74,7 +74,6 @@ const AnalyticsPage: React.FC = () => {
   const { isAuthenticated } = useAuth()
   const { speak, celebrate, suggest, idle, think } = useMascot()
   const { getAccessToken } = useAppAuth()
-  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
 
   // Date range presets
   const dateRanges: DateRange[] = [
@@ -101,26 +100,25 @@ const AnalyticsPage: React.FC = () => {
   ]
 
   const loadAnalytics = useCallback(async () => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated) {
+      setAnalytics(null)
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
       think()
 
       const [userStats, userProgress, allAchievements, userAchievements] = await Promise.all([
-        getUserStats(),
-        getUserProgress(),
-        getAllAchievements(),
-        getMyAchievements()
+        getUserStats().catch(() => ({ totalNotes: 0, totalXp: 0, level: 1, loginStreak: 0 })),
+        getUserProgress().catch(() => ({ currentLevel: 1, currentXp: 0, progressToNext: 0 })),
+        getAllAchievements().catch(() => [] as any[]),
+        getMyAchievements().catch(() => [] as any[])
       ])
 
       // Load additional analytics data
-      const token = await getAccessToken()
-      const makeHeaders = () => {
-        const h = new Headers({ 'Content-Type': 'application/json' })
-        if (token) h.set('Authorization', `Bearer ${token}`)
-        return h
-      }
+  const token = await getAccessToken().catch(() => null)
       // Use existing typed endpoints; the specific analytics endpoints don't exist server-side yet
       const [graphStatistics] = await Promise.all([
         getStatistics().catch(() => ({}))
@@ -173,7 +171,7 @@ const AnalyticsPage: React.FC = () => {
         { action: 'Voice session: 15 minutes', date: '5 days ago', xp: 12, type: 'voice' as const }
       ]
 
-      setAnalytics({
+  setAnalytics({
         totalNotes: userStats.totalNotes || 0,
   totalXp: userStats.totalXp || 0,
         level: userStats.level || 1,
@@ -222,12 +220,37 @@ const AnalyticsPage: React.FC = () => {
 
     } catch (error) {
       console.error('Failed to load analytics:', error)
-      speak('Failed to load your analytics. Let me try again shortly.', 'error')
+      // Provide minimal fallback analytics to avoid empty UI
+      setAnalytics({
+        totalNotes: 0,
+        totalXp: 0,
+        level: 1,
+        loginStreak: 0,
+        achievementsUnlocked: 0,
+        totalAchievements: 0,
+        weeklyActivity: [
+          { day: 'Mon', notes: 0, searches: 0, xp: 0 },
+          { day: 'Tue', notes: 0, searches: 0, xp: 0 },
+          { day: 'Wed', notes: 0, searches: 0, xp: 0 },
+          { day: 'Thu', notes: 0, searches: 0, xp: 0 },
+          { day: 'Fri', notes: 0, searches: 0, xp: 0 },
+          { day: 'Sat', notes: 0, searches: 0, xp: 0 },
+          { day: 'Sun', notes: 0, searches: 0, xp: 0 }
+        ],
+        recentActivity: [],
+        monthlyProgress: [],
+        searchStats: { totalSearches: 0, avgResponseTime: 0, favoriteSearchTypes: [] },
+        voiceStats: { totalVoiceCommands: 0, avgSessionLength: 0, preferredLanguage: 'English' },
+        knowledgeGraph: { totalEntities: 0, totalRelations: 0, mostConnectedEntity: 'N/A' },
+        timeDistribution: Array(24).fill(null).map((_, hour) => ({ hour, activity: 0 })),
+        activityHeatmap: Array(7).fill(null).map(() => Array(24).fill(0))
+      })
+      speak('Failed to load some analytics, showing partial data.', 'error')
     } finally {
       setLoading(false)
       idle()
     }
-  }, [isAuthenticated, dateRange, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, speak, celebrate, think, idle, getAccessToken])
+  }, [isAuthenticated, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, getStatistics, speak, celebrate, think, idle, getAccessToken])
 
   useEffect(() => {
     loadAnalytics()

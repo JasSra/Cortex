@@ -7,8 +7,11 @@ import { AuthWrapper } from "@/components/AuthWrapper";
 import { StructuredData } from "@/components/StructuredData";
 
 const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ||
+  (isDevelopment ? 'http://localhost:3000' : 'https://cortex.yourdomain.com')
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: {
     default: "Cortex - Personal Knowledge Hub",
     template: "%s | Cortex"
