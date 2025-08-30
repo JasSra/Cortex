@@ -1,7 +1,7 @@
 'use client'
 
-import React from 'react'
-import { motion } from 'framer-motion'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   HomeIcon, 
   ChatBubbleLeftRightIcon, 
@@ -16,10 +16,13 @@ import {
   ChartBarIcon,
   SunIcon,
   MoonIcon,
-  TrophyIcon
+  TrophyIcon,
+  FolderIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useSearchApi } from '../../services/apiClient'
 import GamificationWidget from '../gamification/GamificationWidget'
 import UserProfileDropdown from '../UserProfileDropdown'
 import PageRenderer from '../PageRenderer'
@@ -34,13 +37,14 @@ interface ModernLayoutProps {
 const navigation = [
   { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: true },
   { name: 'Analytics', href: 'analytics', icon: ChartBarIcon, current: false },
-  { name: 'Achievements', href: 'achievements', icon: TrophyIcon, current: false },
-  { name: 'Settings', href: 'settings', icon: CogIcon, current: false },
-  { name: 'Ingest', href: 'ingest', icon: DocumentTextIcon, current: false },
   { name: 'Chat Assistant', href: 'chat', icon: ChatBubbleLeftRightIcon, current: false },
+  { name: 'Notes Browser', href: 'notes-browser', icon: FolderIcon, current: false },
   { name: 'Search', href: 'search', icon: MagnifyingGlassIcon, current: false },
   { name: 'Documents', href: 'documents', icon: DocumentTextIcon, current: false },
   { name: 'Knowledge Graph', href: 'graph', icon: ShareIcon, current: false },
+  { name: 'Ingest', href: 'ingest', icon: DocumentTextIcon, current: false },
+  { name: 'Achievements', href: 'achievements', icon: TrophyIcon, current: false },
+  { name: 'Settings', href: 'settings', icon: CogIcon, current: false },
 ]
 
 export default function ModernLayout({ 
@@ -51,6 +55,128 @@ export default function ModernLayout({
 }: ModernLayoutProps) {
   const { user, isAuthenticated } = useAuth()
   const { theme, toggleTheme } = useTheme()
+  const searchApi = useSearchApi()
+  
+  // Global search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchResultsRef = useRef<HTMLDivElement>(null)
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + K to focus search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        return
+      }
+      
+      // Ctrl/Cmd + / to focus search (alternative)
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        return
+      }
+      
+      // Escape to clear search and blur
+      if (e.key === 'Escape') {
+        if (searchInputRef.current === document.activeElement) {
+          searchInputRef.current?.blur()
+          setShowSearchResults(false)
+          setSearchQuery('')
+          setSearchResults([])
+        }
+      }
+      
+      // Enter to go to search page with current query
+      if (e.key === 'Enter' && searchInputRef.current === document.activeElement && searchQuery.trim()) {
+        e.preventDefault()
+        onViewChange('search')
+        setShowSearchResults(false)
+        // Pass search query to search page (we'll enhance this)
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('globalSearchQuery', searchQuery)
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [searchQuery, onViewChange])
+
+  // Click outside to close search results
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        searchResultsRef.current &&
+        !searchResultsRef.current.contains(event.target as Node) &&
+        !searchInputRef.current?.contains(event.target as Node)
+      ) {
+        setShowSearchResults(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Debounced search function
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim() || !isAuthenticated) {
+      setSearchResults([])
+      setShowSearchResults(false)
+      return
+    }
+
+    setIsSearching(true)
+    setShowSearchResults(true)
+
+    try {
+      // Use the search API with a quick search
+      const results = await searchApi.searchGet(query, 5, 'hybrid', 0.6)
+      setSearchResults(results?.Results || results || [])
+    } catch (error) {
+      console.error('Global search failed:', error)
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
+    }
+  }, [searchApi, isAuthenticated])
+
+  // Debounce search input
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      if (searchQuery.length >= 2) {
+        performSearch(searchQuery)
+      } else {
+        setSearchResults([])
+        setShowSearchResults(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(debounceTimer)
+  }, [searchQuery, performSearch])
+
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value)
+  }
+
+  const handleSearchResultClick = (result: any) => {
+    setShowSearchResults(false)
+    setSearchQuery('')
+    // Navigate to the note or result
+    if (result.NoteId || result.noteId) {
+      onViewChange('notes-browser')
+      // Store the selected note ID for the notes browser to highlight
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('selectedNoteId', result.NoteId || result.noteId)
+      }
+    }
+  }
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
@@ -153,16 +279,95 @@ export default function ModernLayout({
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* Search bar */}
-            <div className="hidden md:block">
+            {/* Enhanced Global Search bar */}
+            <div className="hidden md:block relative">
               <div className="relative">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
+                  ref={searchInputRef}
                   type="text"
-                  placeholder="Search everything..."
+                  value={searchQuery}
+                  onChange={handleSearchInputChange}
+                  placeholder="Search everything... (Ctrl+K)"
                   className="w-64 pl-10 pr-4 py-2 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-slate-900 dark:text-slate-100"
+                  onFocus={() => {
+                    if (searchQuery.length >= 2) {
+                      setShowSearchResults(true)
+                    }
+                  }}
                 />
+                {isSearching && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                  </div>
+                )}
               </div>
+
+              {/* Search Results Dropdown */}
+              <AnimatePresence>
+                {showSearchResults && (
+                  <motion.div
+                    ref={searchResultsRef}
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 shadow-lg z-50 max-h-96 overflow-y-auto"
+                  >
+                    {searchResults.length > 0 ? (
+                      <div className="p-2">
+                        <div className="text-xs text-gray-500 dark:text-slate-400 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+                          Search Results ({searchResults.length})
+                        </div>
+                        {searchResults.slice(0, 5).map((result, index) => (
+                          <motion.button
+                            key={index}
+                            onClick={() => handleSearchResultClick(result)}
+                            whileHover={{ backgroundColor: 'rgba(0, 0, 0, 0.05)' }}
+                            className="w-full text-left p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <div className="font-medium text-gray-900 dark:text-slate-100 text-sm truncate">
+                              {result.Title || result.title || 'Untitled'}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-slate-400 mt-1 line-clamp-2">
+                              {result.Content || result.content || result.Snippet || 'No preview available'}
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-xs text-blue-500 dark:text-blue-400">
+                                Score: {((result.Score || result.score || 0) * 100).toFixed(0)}%
+                              </span>
+                              <span className="text-xs text-gray-400 dark:text-slate-500">
+                                {result.NoteId || result.noteId || 'Unknown'}
+                              </span>
+                            </div>
+                          </motion.button>
+                        ))}
+                        <div className="border-t border-gray-100 dark:border-slate-700 mt-2 pt-2">
+                          <button
+                            onClick={() => {
+                              onViewChange('search')
+                              setShowSearchResults(false)
+                              if (typeof window !== 'undefined') {
+                                window.localStorage.setItem('globalSearchQuery', searchQuery)
+                              }
+                            }}
+                            className="w-full text-center py-2 text-sm text-blue-500 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          >
+                            View all results for &ldquo;{searchQuery}&rdquo; →
+                          </button>
+                        </div>
+                      </div>
+                    ) : searchQuery.length >= 2 && !isSearching ? (
+                      <div className="p-4 text-center text-gray-500 dark:text-slate-400 text-sm">
+                        No results found for &ldquo;{searchQuery}&rdquo;
+                      </div>
+                    ) : searchQuery.length < 2 ? (
+                      <div className="p-4 text-center text-gray-500 dark:text-slate-400 text-sm">
+                        Type at least 2 characters to search
+                      </div>
+                    ) : null}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Dark Mode Toggle */}

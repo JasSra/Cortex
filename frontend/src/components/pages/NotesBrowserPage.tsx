@@ -1,0 +1,751 @@
+'use client'
+
+import React, { useState, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  MagnifyingGlassIcon,
+  DocumentTextIcon,
+  EyeIcon,
+  TrashIcon,
+  CalendarIcon,
+  TagIcon,
+  AdjustmentsHorizontalIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  FunnelIcon,
+  XMarkIcon,
+  ViewColumnsIcon,
+  Squares2X2Icon,
+  ListBulletIcon
+} from '@heroicons/react/24/outline'
+import { DocumentTextIcon as DocumentTextSolid } from '@heroicons/react/24/solid'
+import { useMascot } from '@/contexts/MascotContext'
+import { useNotesApi, useSearchApi } from '@/services/apiClient'
+
+interface Note {
+  id: string
+  title: string
+  content: string
+  createdAt: string
+  updatedAt: string
+  tags?: string[]
+  metadata?: {
+    source?: string
+    fileType?: string
+    chunkCount?: number
+    wordCount?: number
+  }
+}
+
+interface SortOption {
+  field: 'title' | 'createdAt' | 'updatedAt' | 'wordCount'
+  direction: 'asc' | 'desc'
+  label: string
+}
+
+interface FilterOptions {
+  tags: string[]
+  fromDate?: string
+  toDate?: string
+  sources: string[]
+  minWordCount?: number
+  maxWordCount?: number
+}
+
+type ViewMode = 'list' | 'grid' | 'compact'
+
+const NotesBrowserPage: React.FC = () => {
+  const [notes, setNotes] = useState<Note[]>([])
+  const [filteredNotes, setFilteredNotes] = useState<Note[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null)
+  const [sortOption, setSortOption] = useState<SortOption>({
+    field: 'updatedAt',
+    direction: 'desc',
+    label: 'Recently Updated'
+  })
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState<FilterOptions>({
+    tags: [],
+    sources: []
+  })
+  const [availableTags, setAvailableTags] = useState<string[]>([])
+  const [availableSources, setAvailableSources] = useState<string[]>([])
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    pageSize: 20,
+    total: 0
+  })
+
+  const { speak, think, idle, suggest } = useMascot()
+  const { getNotes } = useNotesApi()
+  const { searchGet } = useSearchApi()
+
+  const sortOptions: SortOption[] = [
+    { field: 'updatedAt', direction: 'desc', label: 'Recently Updated' },
+    { field: 'createdAt', direction: 'desc', label: 'Recently Created' },
+    { field: 'title', direction: 'asc', label: 'Title A-Z' },
+    { field: 'title', direction: 'desc', label: 'Title Z-A' },
+    { field: 'wordCount', direction: 'desc', label: 'Longest First' },
+    { field: 'wordCount', direction: 'asc', label: 'Shortest First' }
+  ]
+
+  // Load notes with pagination
+  const loadNotes = useCallback(async (page = 1) => {
+    setIsLoading(true)
+    think()
+
+    try {
+      const offset = (page - 1) * pagination.pageSize
+      const notesData = await getNotes()
+      
+      // Transform the data to match our interface
+      const transformedNotes: Note[] = notesData.map((note: any) => ({
+        id: note.id || note.Id || note.noteId,
+        title: note.title || note.Title || `Note ${note.id}`,
+        content: note.content || note.Content || '',
+        createdAt: note.createdAt || note.CreatedAt || new Date().toISOString(),
+        updatedAt: note.updatedAt || note.UpdatedAt || note.createdAt || note.CreatedAt || new Date().toISOString(),
+        tags: note.tags || note.Tags || [],
+        metadata: {
+          source: note.source || note.Source,
+          fileType: note.fileType || note.FileType,
+          chunkCount: note.chunkCount || note.ChunkCount || 0,
+          wordCount: note.content?.split(/\s+/).length || 0
+        }
+      }))
+
+      setNotes(transformedNotes)
+      setPagination(prev => ({
+        ...prev,
+        currentPage: page,
+        total: transformedNotes.length
+      }))
+
+      // Extract available tags and sources
+      const tags = Array.from(new Set(transformedNotes.flatMap(note => note.tags || [])))
+      const sources = Array.from(new Set(transformedNotes.map(note => note.metadata?.source).filter(Boolean)))
+      setAvailableTags(tags)
+      setAvailableSources(sources as string[])
+
+      speak(`Loaded ${transformedNotes.length} notes from your knowledge base`, 'responding')
+    } catch (error) {
+      console.error('Failed to load notes:', error)
+      speak('Sorry, I had trouble loading your notes. Please try again.', 'error')
+    } finally {
+      setIsLoading(false)
+      idle()
+    }
+  }, [getNotes, speak, think, idle, pagination.pageSize])
+
+  // Initial load
+  useEffect(() => {
+    loadNotes()
+  }, [loadNotes])
+
+  // Check for highlighted note from global search
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const selectedNoteId = window.localStorage.getItem('selectedNoteId')
+      if (selectedNoteId) {
+        setHighlightedNoteId(selectedNoteId)
+        // Clear the stored note ID
+        window.localStorage.removeItem('selectedNoteId')
+        // Auto-scroll to the note after a brief delay
+        setTimeout(() => {
+          const element = document.getElementById(`note-${selectedNoteId}`)
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }, 500)
+        // Clear highlight after a few seconds
+        setTimeout(() => {
+          setHighlightedNoteId(null)
+        }, 3000)
+      }
+    }
+  }, [notes]) // Re-run when notes are loaded
+
+  // Apply search and filters
+  useEffect(() => {
+    let filtered = [...notes]
+
+    // Apply search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(note =>
+        note.title.toLowerCase().includes(query) ||
+        note.content.toLowerCase().includes(query) ||
+        note.tags?.some(tag => tag.toLowerCase().includes(query))
+      )
+    }
+
+    // Apply filters
+    if (filters.tags.length > 0) {
+      filtered = filtered.filter(note =>
+        note.tags?.some(tag => filters.tags.includes(tag))
+      )
+    }
+
+    if (filters.sources.length > 0) {
+      filtered = filtered.filter(note =>
+        note.metadata?.source && filters.sources.includes(note.metadata.source)
+      )
+    }
+
+    if (filters.fromDate) {
+      filtered = filtered.filter(note =>
+        new Date(note.createdAt) >= new Date(filters.fromDate!)
+      )
+    }
+
+    if (filters.toDate) {
+      filtered = filtered.filter(note =>
+        new Date(note.createdAt) <= new Date(filters.toDate!)
+      )
+    }
+
+    if (filters.minWordCount) {
+      filtered = filtered.filter(note =>
+        (note.metadata?.wordCount || 0) >= filters.minWordCount!
+      )
+    }
+
+    if (filters.maxWordCount) {
+      filtered = filtered.filter(note =>
+        (note.metadata?.wordCount || 0) <= filters.maxWordCount!
+      )
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      if (sortOption.field === 'wordCount') {
+        const aCount = a.metadata?.wordCount || 0
+        const bCount = b.metadata?.wordCount || 0
+        return sortOption.direction === 'asc' ? aCount - bCount : bCount - aCount
+      }
+      
+      const aValue = sortOption.field === 'title' ? a.title : 
+                    sortOption.field === 'createdAt' ? a.createdAt :
+                    sortOption.field === 'updatedAt' ? a.updatedAt : ''
+      const bValue = sortOption.field === 'title' ? b.title : 
+                    sortOption.field === 'createdAt' ? b.createdAt :
+                    sortOption.field === 'updatedAt' ? b.updatedAt : ''
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortOption.direction === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue)
+      }
+      
+      return 0
+    })
+
+    setFilteredNotes(filtered)
+  }, [notes, searchQuery, filters, sortOption])
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      tags: [],
+      sources: []
+    })
+    setSearchQuery('')
+    speak('All filters cleared!', 'idle')
+  }
+
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  // Get note excerpt
+  const getExcerpt = (content: string, maxLength = 150) => {
+    if (content.length <= maxLength) return content
+    return content.substring(0, maxLength) + '...'
+  }
+
+  // Note Card Component
+  const NoteCard = ({ note, onClick }: { note: Note; onClick: () => void }) => {
+    const isHighlighted = highlightedNoteId === note.id
+
+    return (
+      <motion.div
+        layout
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ 
+          opacity: 1, 
+          scale: 1,
+          boxShadow: isHighlighted ? '0 0 20px rgba(139, 92, 246, 0.5)' : '0 1px 3px rgba(0, 0, 0, 0.1)'
+        }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className={`bg-white dark:bg-gray-800 rounded-xl border transition-all duration-500 cursor-pointer overflow-hidden ${
+          isHighlighted 
+            ? 'border-purple-500 dark:border-purple-400 shadow-lg shadow-purple-500/25' 
+            : 'border-gray-200 dark:border-gray-700 hover:shadow-md'
+        }`}
+        onClick={onClick}
+        whileHover={{ y: -2 }}
+        id={`note-${note.id}`}
+      >
+      {viewMode === 'grid' ? (
+        <div className="p-6">
+          <div className="flex items-start justify-between mb-3">
+            <h3 className="font-semibold text-gray-900 dark:text-white text-lg line-clamp-2">
+              {note.title}
+            </h3>
+            <DocumentTextSolid className="w-5 h-5 text-purple-500 flex-shrink-0 ml-2" />
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-3 mb-4">
+            {getExcerpt(note.content)}
+          </p>
+          <div className="flex flex-wrap gap-1 mb-3">
+            {note.tags?.slice(0, 3).map(tag => (
+              <span
+                key={tag}
+                className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded-full"
+              >
+                {tag}
+              </span>
+            ))}
+            {(note.tags?.length || 0) > 3 && (
+              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-500 text-xs rounded-full">
+                +{(note.tags?.length || 0) - 3}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>{formatDate(note.updatedAt)}</span>
+            <span>{note.metadata?.wordCount || 0} words</span>
+          </div>
+        </div>
+      ) : (
+        <div className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium text-gray-900 dark:text-white truncate">
+                {note.title}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 line-clamp-2">
+                {getExcerpt(note.content, viewMode === 'compact' ? 80 : 120)}
+              </p>
+              {viewMode === 'list' && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {note.tags?.slice(0, 4).map(tag => (
+                    <span
+                      key={tag}
+                      className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center space-x-3 ml-4">
+              <div className="text-right">
+                <div className="text-xs text-gray-500">
+                  {formatDate(note.updatedAt)}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {note.metadata?.wordCount || 0} words
+                </div>
+              </div>
+              <EyeIcon className="w-5 h-5 text-gray-400" />
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <motion.h1 
+              className="text-4xl font-bold text-gray-900 dark:text-white mb-2"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              My Notes
+            </motion.h1>
+            <motion.p 
+              className="text-lg text-gray-600 dark:text-gray-400"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+            >
+              Browse and manage your knowledge base
+            </motion.p>
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center space-x-2">
+            <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <button
+                onClick={() => setViewMode('list')}
+                title="List view"
+                className={`p-2 ${viewMode === 'list' ? 'bg-purple-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
+              >
+                <ListBulletIcon className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                title="Grid view"
+                className={`p-2 ${viewMode === 'grid' ? 'bg-purple-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
+              >
+                <Squares2X2Icon className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setViewMode('compact')}
+                title="Compact view"
+                className={`p-2 ${viewMode === 'compact' ? 'bg-purple-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
+              >
+                <ViewColumnsIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Search and Filters Bar */}
+        <motion.div 
+          className="mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <div className="flex flex-col sm:flex-row gap-4 mb-4">
+            {/* Search Input */}
+            <div className="flex-1 relative">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search your notes..."
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Sort Dropdown */}
+            <div className="relative">
+              <select
+                value={`${sortOption.field}-${sortOption.direction}`}
+                onChange={(e) => {
+                  const [field, direction] = e.target.value.split('-')
+                  const option = sortOptions.find(opt => opt.field === field && opt.direction === direction)
+                  if (option) setSortOption(option)
+                }}
+                title="Sort options"
+                className="appearance-none pl-4 pr-10 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                {sortOptions.map(option => (
+                  <option key={`${option.field}-${option.direction}`} value={`${option.field}-${option.direction}`}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDownIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+            </div>
+
+            {/* Filters Toggle */}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center space-x-2 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <FunnelIcon className="w-5 h-5" />
+              <span>Filters</span>
+              {(filters.tags.length > 0 || filters.sources.length > 0) && (
+                <span className="bg-purple-500 text-white text-xs px-2 py-1 rounded-full">
+                  {filters.tags.length + filters.sources.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Advanced Filters */}
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h3>
+                    <button
+                      onClick={clearFilters}
+                      className="text-sm text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Tags Filter */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Tags
+                      </label>
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {availableTags.map(tag => (
+                          <label key={tag} className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={filters.tags.includes(tag)}
+                              onChange={(e) => {
+                                setFilters(prev => ({
+                                  ...prev,
+                                  tags: e.target.checked
+                                    ? [...prev.tags, tag]
+                                    : prev.tags.filter(t => t !== tag)
+                                }))
+                              }}
+                              className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{tag}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Sources Filter */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Sources
+                      </label>
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {availableSources.map(source => (
+                          <label key={source} className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={filters.sources.includes(source)}
+                              onChange={(e) => {
+                                setFilters(prev => ({
+                                  ...prev,
+                                  sources: e.target.checked
+                                    ? [...prev.sources, source]
+                                    : prev.sources.filter(s => s !== source)
+                                }))
+                              }}
+                              className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{source}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Date Range */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Date Range
+                      </label>
+                      <div className="space-y-2">
+                        <input
+                          type="date"
+                          value={filters.fromDate || ''}
+                          onChange={(e) => setFilters(prev => ({ ...prev, fromDate: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          placeholder="From"
+                        />
+                        <input
+                          type="date"
+                          value={filters.toDate || ''}
+                          onChange={(e) => setFilters(prev => ({ ...prev, toDate: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          placeholder="To"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Word Count Range */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Word Count
+                      </label>
+                      <div className="space-y-2">
+                        <input
+                          type="number"
+                          value={filters.minWordCount || ''}
+                          onChange={(e) => setFilters(prev => ({ ...prev, minWordCount: e.target.value ? parseInt(e.target.value) : undefined }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          placeholder="Min words"
+                        />
+                        <input
+                          type="number"
+                          value={filters.maxWordCount || ''}
+                          onChange={(e) => setFilters(prev => ({ ...prev, maxWordCount: e.target.value ? parseInt(e.target.value) : undefined }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          placeholder="Max words"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Stats Bar */}
+        <motion.div 
+          className="flex items-center justify-between mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <div className="flex items-center space-x-6">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Showing <span className="font-medium text-gray-900 dark:text-white">{filteredNotes.length}</span> of <span className="font-medium text-gray-900 dark:text-white">{notes.length}</span> notes
+            </div>
+            {searchQuery && (
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                Search: <span className="font-medium text-purple-600 dark:text-purple-400">&quot;{searchQuery}&quot;</span>
+              </div>
+            )}
+          </div>
+          
+          {filteredNotes.length > 0 && (
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Total: {filteredNotes.reduce((sum, note) => sum + (note.metadata?.wordCount || 0), 0)} words
+            </div>
+          )}
+        </motion.div>
+
+        {/* Notes Grid/List */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full"
+            />
+          </div>
+        ) : filteredNotes.length > 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className={
+              viewMode === 'grid' 
+                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+                : 'space-y-4'
+            }
+          >
+            <AnimatePresence>
+              {filteredNotes.map(note => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  onClick={() => setSelectedNote(note)}
+                />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-12"
+          >
+            <DocumentTextIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              {searchQuery || Object.values(filters).some(f => Array.isArray(f) ? f.length > 0 : Boolean(f))
+                ? 'No notes found'
+                : 'No notes yet'
+              }
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              {searchQuery || Object.values(filters).some(f => Array.isArray(f) ? f.length > 0 : Boolean(f))
+                ? 'Try adjusting your search or filters'
+                : 'Start by uploading some documents or creating notes'
+              }
+            </p>
+          </motion.div>
+        )}
+
+        {/* Note Viewer Modal */}
+        <AnimatePresence>
+          {selectedNote && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+              onClick={() => setSelectedNote(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                      {selectedNote.title}
+                    </h2>
+                    <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600 dark:text-gray-400">
+                      <span>Created: {formatDate(selectedNote.createdAt)}</span>
+                      <span>Updated: {formatDate(selectedNote.updatedAt)}</span>
+                      <span>{selectedNote.metadata?.wordCount || 0} words</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedNote(null)}
+                    title="Close modal"
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    <XMarkIcon className="w-6 h-6 text-gray-500" />
+                  </button>
+                </div>
+
+                <div className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
+                  {selectedNote.tags && selectedNote.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-6">
+                      {selectedNote.tags.map(tag => (
+                        <span
+                          key={tag}
+                          className="px-3 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-sm rounded-full"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="prose dark:prose-invert max-w-none">
+                    {selectedNote.content.split('\n').map((paragraph, index) => (
+                      <p key={index} className="mb-4 leading-relaxed">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
+export default NotesBrowserPage

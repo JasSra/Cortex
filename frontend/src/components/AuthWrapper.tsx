@@ -49,7 +49,7 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
       <WelcomeDialog 
         open={showWelcome} 
         type={welcomeType}
-        onClose={() => { setShowWelcome(false); clearRecentAuthEvent?.() }} 
+        onClose={() => setShowWelcome(false)} 
       />
     </>
   )

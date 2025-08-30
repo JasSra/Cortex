@@ -8,7 +8,8 @@ import ModernLayout from '@/components/layout/ModernLayout'
 import ModernDashboard from '@/components/dashboard/ModernDashboard'
 import SmartLiveAssistant from '@/components/assistant/SmartLiveAssistant'
 import KnowledgeGraphVisualizer from '@/components/graph/KnowledgeGraphVisualizer'
-import EnhancedSearchPage from '@/components/EnhancedSearchPage'
+import NotesBrowserPage from '@/components/pages/NotesBrowserPage'
+import AdvancedSearchPage from '@/components/pages/AdvancedSearchPage'
 import { UserProfile } from '@/components/UserProfile'
 
 export default function Home() {
@@ -71,7 +72,12 @@ export default function Home() {
         return <SmartLiveAssistant />
       
       case 'search':
-        return <EnhancedSearchPage onNoteSelect={() => {}} />
+      case 'advanced-search':
+        return <AdvancedSearchPage />
+      
+      case 'notes':
+      case 'notes-browser':
+        return <NotesBrowserPage />
       
       case 'documents':
         return (

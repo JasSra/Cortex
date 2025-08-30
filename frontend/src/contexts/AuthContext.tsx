@@ -12,6 +12,80 @@ import { msalConfig, loginRequest, tokenRequest } from '../config/authConfig'
 // Create MSAL instance
 export const msalInstance = new PublicClientApplication(msalConfig)
 
+// Helper function to get user display name from B2C claims
+export const getUserDisplayName = (user: AccountInfo | null): string => {
+  if (!user) return 'User'
+  
+  // Check for given_name + family_name in idTokenClaims
+  const claims = user.idTokenClaims as any
+  if (claims) {
+    const givenName = claims.given_name || claims.givenName
+    const familyName = claims.family_name || claims.surname || claims.familyName
+    
+    if (givenName && familyName) {
+      return `${givenName} ${familyName}`
+    }
+    if (givenName) {
+      return givenName
+    }
+    if (familyName) {
+      return familyName
+    }
+  }
+  
+  // Fallback to standard MSAL properties
+  return user.name || (user as any).username || user.username || 'User'
+}
+
+// Helper function to get user initials from B2C claims
+export const getUserInitials = (user: AccountInfo | null): string => {
+  if (!user) return 'U'
+  
+  // Check for given_name + family_name in idTokenClaims
+  const claims = user.idTokenClaims as any
+  if (claims) {
+    const givenName = claims.given_name || claims.givenName
+    const familyName = claims.family_name || claims.surname || claims.familyName
+    
+    if (givenName && familyName) {
+      return `${givenName[0]}${familyName[0]}`.toUpperCase()
+    }
+    if (givenName) {
+      return givenName[0].toUpperCase()
+    }
+    if (familyName) {
+      return familyName[0].toUpperCase()
+    }
+  }
+  
+  // Fallback to first letter of display name
+  const displayName = user.name || (user as any).username || user.username || 'User'
+  return displayName[0].toUpperCase()
+}
+
+// Helper function to get user email from B2C claims
+export const getUserEmail = (user: AccountInfo | null): string => {
+  if (!user) return ''
+  
+  // Check for email in idTokenClaims
+  const claims = user.idTokenClaims as any
+  if (claims) {
+    // Try various email claim names
+    const email = claims.email || claims.emails?.[0] || claims.signInName || claims.preferred_username
+    if (email && email !== user.localAccountId) {
+      return email
+    }
+  }
+  
+  // Fallback to username if it looks like an email
+  const username = user.username || user.localAccountId || ''
+  if (username.includes('@')) {
+    return username
+  }
+  
+  return ''
+}
+
 interface AuthContextType {
   isAuthenticated: boolean
   user: AccountInfo | null
@@ -52,39 +126,65 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      await msalInstance.initialize()
-      
-      // Handle redirect response
-      const response = await msalInstance.handleRedirectPromise()
-      
-      if (response && response.account) {
-        setUser(response.account)
-        setIsAuthenticated(true)
+      try {
+        console.log('Starting MSAL initialization...')
+        await msalInstance.initialize()
+        console.log('MSAL initialized successfully')
         
-  // Create or get user profile (no automatic seeding)
-  const created = await handleUserProfile(response.account, response.accessToken)
-        setRecentAuthEvent(created ? 'signup' : 'login')
-      } else {
-        // Check for existing accounts and validate token
-        const accounts = msalInstance.getAllAccounts()
-        if (accounts.length > 0) {
+        // Handle redirect response
+        const response = await msalInstance.handleRedirectPromise()
+        console.log('Redirect response:', response)
+        
+        if (response && response.account) {
+          console.log('User logged in from redirect:', response.account.username)
+          console.log('User claims:', response.account.idTokenClaims)
+          setUser(response.account)
+          setIsAuthenticated(true)
+          
+          // Create or get user profile (no automatic seeding) - with timeout
           try {
-            const token = await msalInstance.acquireTokenSilent({ ...tokenRequest, account: accounts[0] })
-            if (token && token.accessToken) {
-              setUser(accounts[0])
-              setIsAuthenticated(true)
-            } else {
-              // Do not force logout immediately; keep user unauthenticated and allow retry
-              console.warn('No access token available yet; staying unauthenticated temporarily')
+            const created = await Promise.race([
+              handleUserProfile(response.account, response.accessToken),
+              new Promise<boolean>((_, reject) => 
+                setTimeout(() => reject(new Error('Profile creation timeout')), 5000)
+              )
+            ])
+            setRecentAuthEvent(created ? 'signup' : 'login')
+          } catch (error) {
+            console.warn('Profile creation failed or timed out, continuing anyway:', error)
+            setRecentAuthEvent('login') // Default to login
+          }
+        } else {
+          // Check for existing accounts and validate token
+          const accounts = msalInstance.getAllAccounts()
+          console.log('Existing accounts found:', accounts.length)
+          
+          if (accounts.length > 0) {
+            console.log('Attempting silent token acquisition for account:', accounts[0].username)
+            console.log('Account claims:', accounts[0].idTokenClaims)
+            try {
+              const token = await msalInstance.acquireTokenSilent({ ...tokenRequest, account: accounts[0] })
+              if (token && token.accessToken) {
+                console.log('Silent token acquisition successful')
+                setUser(accounts[0])
+                setIsAuthenticated(true)
+              } else {
+                console.warn('No access token available yet; staying unauthenticated temporarily')
+              }
+            } catch (e) {
+              console.warn('Silent token acquisition failed; staying on page', e)
+              // Avoid redirect loop; user can click login again
             }
-          } catch (e) {
-            console.warn('Silent token acquisition failed; staying on page', e)
-            // Avoid redirect loop; user can click login again
+          } else {
+            console.log('No existing accounts found, user needs to log in')
           }
         }
+      } catch (error) {
+        console.error('Error during auth initialization:', error)
+      } finally {
+        console.log('Setting loading to false')
+        setLoading(false)
       }
-      
-      setLoading(false)
     }
 
     initializeAuth()
@@ -160,30 +260,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const handleUserProfile = async (account: AccountInfo, accessToken: string) => {
     try {
-      // First, try to get existing user profile
+      // First, try to get existing user profile with timeout
       let existing: any | null = null
       try {
-        const res = await authedFetch('/api/User/profile', undefined, accessToken)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+        
+        const res = await authedFetch('/api/User/profile', { 
+          signal: controller.signal 
+        }, accessToken)
+        clearTimeout(timeoutId)
+        
         if (res.ok) existing = await res.json()
-      } catch {}
+      } catch (error) {
+        console.warn('Failed to check existing profile (continuing):', error)
+      }
 
       if (!existing) {
         // User profile doesn't exist, create it
         console.log('Creating new user profile...')
         try {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+          
           const res = await authedFetch('/api/User/profile', {
             method: 'POST',
+            signal: controller.signal,
             body: JSON.stringify({
               email: account.username || account.localAccountId,
               name: account.name || 'User',
               subjectId: account.localAccountId || account.homeAccountId
             })
           }, accessToken)
+          clearTimeout(timeoutId)
+          
           if (!res.ok) throw new Error(`Create profile failed: ${res.status}`)
           console.log('User profile created successfully')
           return true // created new profile
-        } catch {
-          console.error('Failed to create user profile')
+        } catch (error) {
+          console.warn('Failed to create user profile (continuing anyway):', error)
         }
       } else {
         // User profile exists
@@ -191,7 +306,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return false // existing profile
       }
     } catch (error) {
-      console.error('Error handling user profile:', error)
+      console.warn('Error handling user profile (continuing anyway):', error)
     }
     return false
   }

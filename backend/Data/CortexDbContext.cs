@@ -38,6 +38,12 @@ public class CortexDbContext : DbContext
     public DbSet<NotificationDevice> NotificationDevices { get; set; }
     public DbSet<NotificationHistory> NotificationHistory { get; set; }
 
+    // Stored files (simple uploads)
+    public DbSet<StoredFile> StoredFiles { get; set; }
+
+    // App-managed roles
+    public DbSet<UserRoleAssignment> UserRoleAssignments { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -287,6 +293,29 @@ public class CortexDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.UserProfileId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // StoredFile Configuration
+        modelBuilder.Entity<StoredFile>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserId).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.OriginalFileName).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.StoredPath).IsRequired().HasMaxLength(2000);
+            entity.Property(e => e.RelativePath).IsRequired().HasMaxLength(2000);
+            entity.Property(e => e.ContentType).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Extension).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        // UserRoleAssignment configuration
+        modelBuilder.Entity<UserRoleAssignment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SubjectId).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Role).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.SubjectId, e.Role }).IsUnique();
         });
     }
 }

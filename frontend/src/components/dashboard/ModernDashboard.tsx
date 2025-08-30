@@ -11,7 +11,8 @@ import {
   ChartBarIcon,
   ClockIcon,
   ArrowTrendingUpIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline'
 
 // Dynamically import Plotly to avoid SSR issues
@@ -36,15 +37,16 @@ interface DashboardProps {
 }
 
 const defaultStats = {
-  totalDocuments: 1247,
-  totalSearches: 8392,
-  totalChats: 456,
-  totalConnections: 2847,
+  totalDocuments: 247,
+  totalSearches: 1392,
+  totalChats: 156,
+  totalConnections: 847,
   recentActivity: [
-    { id: '1', type: 'document', title: 'New document uploaded: Research Paper.pdf', timestamp: '2 minutes ago' },
-    { id: '2', type: 'search', title: 'Search: "machine learning algorithms"', timestamp: '5 minutes ago' },
-    { id: '3', type: 'chat', title: 'Chat session: Code review discussion', timestamp: '12 minutes ago' },
-    { id: '4', type: 'graph', title: 'New connection discovered: AI → Neural Networks', timestamp: '18 minutes ago' },
+    { id: '1', type: 'document', title: 'Weekly Report Q3 analyzed', timestamp: '2 minutes ago' },
+    { id: '2', type: 'search', title: 'Found insights in "machine learning trends"', timestamp: '5 minutes ago' },
+    { id: '3', type: 'chat', title: 'AI Assistant helped with code review', timestamp: '12 minutes ago' },
+    { id: '4', type: 'graph', title: 'Discovered new connection: React → TypeScript', timestamp: '18 minutes ago' },
+    { id: '5', type: 'achievement', title: 'Unlocked "Knowledge Explorer" badge', timestamp: '1 hour ago' },
   ]
 }
 
@@ -56,24 +58,29 @@ const StatCard = ({ title, value, icon: Icon, trend, color }: {
   color: string
 }) => (
   <motion.div
-    whileHover={{ scale: 1.02 }}
-    className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/50"
+    whileHover={{ scale: 1.05, y: -5 }}
+    transition={{ type: "spring", stiffness: 300 }}
+    className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300 group"
   >
     <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium text-gray-600">{title}</p>
-        <p className="text-2xl font-bold text-gray-900 mt-1">
+      <div className="flex-1">
+        <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">{title}</p>
+        <p className="text-3xl font-bold text-gray-900 mt-2 group-hover:text-gray-700 transition-colors">
           {value.toLocaleString()}
         </p>
         {trend && (
-          <p className="text-sm text-green-600 mt-1 flex items-center">
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-sm text-emerald-600 mt-2 flex items-center font-medium"
+          >
             <ArrowTrendingUpIcon className="h-4 w-4 mr-1" />
             {trend}
-          </p>
+          </motion.p>
         )}
       </div>
-      <div className={`p-3 rounded-xl ${color}`}>
-        <Icon className="h-6 w-6 text-white" />
+      <div className={`p-4 rounded-2xl ${color} shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+        <Icon className="h-7 w-7 text-white" />
       </div>
     </div>
   </motion.div>
@@ -132,13 +139,18 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(59,130,246,0.1)_1px,transparent_0)] bg-[length:24px_24px]" />
+      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-100/20 via-transparent to-purple-100/20" />
+      
+      <div className="relative z-10 p-6 space-y-8">
       {/* Header */}
       <div className="text-center mb-8">
         <motion.h1 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent"
+          className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-2"
         >
           Welcome to Cortex
         </motion.h1>
@@ -146,10 +158,20 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-gray-600 mt-2"
+          className="text-gray-600 text-lg"
         >
           Your intelligent knowledge management system
         </motion.p>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.2 }}
+          className="flex justify-center mt-4"
+        >
+          <div className="bg-gradient-to-r from-blue-100 to-purple-100 px-4 py-2 rounded-full">
+            <span className="text-sm font-medium text-blue-700">🎯 AI-Powered • 🚀 Real-time • ✨ Intelligent</span>
+          </div>
+        </motion.div>
       </div>
 
       {/* Stats Grid */}
@@ -191,11 +213,12 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/50"
+          className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300"
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <ChartBarIcon className="h-5 w-5 mr-2 text-blue-500" />
+          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+            <ChartBarIcon className="h-6 w-6 mr-3 text-blue-500" />
             Search Trends (Last 7 Days)
+            <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Live</span>
           </h3>
           <Plot
             data={[searchTrendsData]}
@@ -215,11 +238,12 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3 }}
-          className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/50"
+          className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300"
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <DocumentTextIcon className="h-5 w-5 mr-2 text-green-500" />
+          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+            <DocumentTextIcon className="h-6 w-6 mr-3 text-green-500" />
             Document Types
+            <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Updated</span>
           </h3>
           <Plot
             data={[documentTypesData]}
@@ -237,11 +261,12 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/50 lg:col-span-2"
+          className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300 lg:col-span-2"
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <ArrowTrendingUpIcon className="h-5 w-5 mr-2 text-purple-500" />
+          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+            <ArrowTrendingUpIcon className="h-6 w-6 mr-3 text-purple-500" />
             Knowledge Base Growth (Last 6 Months)
+            <span className="ml-auto text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">Trending ↗</span>
           </h3>
           <Plot
             data={knowledgeGrowthData}
@@ -265,35 +290,41 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/50"
+        className="bg-white/80 backdrop-blur-lg rounded-3xl p-8 shadow-xl border border-white/20"
       >
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <ClockIcon className="h-5 w-5 mr-2 text-orange-500" />
+        <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+          <ClockIcon className="h-6 w-6 mr-3 text-orange-500" />
           Recent Activity
+          <span className="ml-auto text-xs bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">Real-time</span>
         </h3>
-        <div className="space-y-3">
+        <div className="space-y-4">
           {stats.recentActivity.map((activity, index) => (
             <motion.div
               key={activity.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.1 * index }}
-              className="flex items-center space-x-3 p-3 rounded-xl hover:bg-gray-50/70 transition-colors"
+              className="flex items-center space-x-4 p-4 rounded-2xl hover:bg-gradient-to-r hover:from-gray-50 hover:to-blue-50 transition-all duration-300 group cursor-pointer border border-transparent hover:border-blue-200"
             >
-              <div className={`p-2 rounded-lg ${
-                activity.type === 'document' ? 'bg-blue-100 text-blue-600' :
-                activity.type === 'search' ? 'bg-green-100 text-green-600' :
-                activity.type === 'chat' ? 'bg-yellow-100 text-yellow-600' :
-                'bg-purple-100 text-purple-600'
+              <div className={`p-3 rounded-xl shadow-sm group-hover:scale-110 transition-transform duration-300 ${
+                activity.type === 'document' ? 'bg-gradient-to-br from-blue-100 to-blue-200 text-blue-600' :
+                activity.type === 'search' ? 'bg-gradient-to-br from-green-100 to-green-200 text-green-600' :
+                activity.type === 'chat' ? 'bg-gradient-to-br from-yellow-100 to-orange-200 text-orange-600' :
+                activity.type === 'achievement' ? 'bg-gradient-to-br from-amber-100 to-yellow-200 text-amber-600' :
+                'bg-gradient-to-br from-purple-100 to-purple-200 text-purple-600'
               }`}>
-                {activity.type === 'document' && <DocumentTextIcon className="h-4 w-4" />}
-                {activity.type === 'search' && <MagnifyingGlassIcon className="h-4 w-4" />}
-                {activity.type === 'chat' && <ChatBubbleLeftIcon className="h-4 w-4" />}
-                {activity.type === 'graph' && <ShareIcon className="h-4 w-4" />}
+                {activity.type === 'document' && <DocumentTextIcon className="h-5 w-5" />}
+                {activity.type === 'search' && <MagnifyingGlassIcon className="h-5 w-5" />}
+                {activity.type === 'chat' && <ChatBubbleLeftIcon className="h-5 w-5" />}
+                {activity.type === 'graph' && <ShareIcon className="h-5 w-5" />}
+                {activity.type === 'achievement' && <SparklesIcon className="h-5 w-5" />}
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">{activity.title}</p>
-                <p className="text-xs text-gray-500">{activity.timestamp}</p>
+                <p className="font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">{activity.title}</p>
+                <p className="text-sm text-gray-500 mt-1">{activity.timestamp}</p>
+              </div>
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
               </div>
             </motion.div>
           ))}
@@ -305,26 +336,99 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6 }}
-        className="grid grid-cols-1 md:grid-cols-3 gap-4"
+        className="grid grid-cols-1 md:grid-cols-3 gap-6"
       >
-        <button className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105">
-          <DocumentTextIcon className="h-8 w-8 mb-2" />
-          <h4 className="font-semibold">Upload Document</h4>
-          <p className="text-sm opacity-90 mt-1">Add new knowledge to your system</p>
-        </button>
+        <motion.button 
+          whileHover={{ scale: 1.05, y: -5 }}
+          whileTap={{ scale: 0.95 }}
+          className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white p-8 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 group relative overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          <DocumentTextIcon className="h-10 w-10 mb-3 group-hover:scale-110 transition-transform duration-300" />
+          <h4 className="font-bold text-lg mb-2">Upload Document</h4>
+          <p className="text-sm opacity-90">AI extracts entities and builds knowledge graph</p>
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <span className="text-xs bg-white/20 px-2 py-1 rounded-full">✨ AI Powered</span>
+          </div>
+        </motion.button>
         
-        <button className="bg-gradient-to-r from-green-500 to-green-600 text-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105">
-          <ChatBubbleLeftIcon className="h-8 w-8 mb-2" />
-          <h4 className="font-semibold">Start Chat</h4>
-          <p className="text-sm opacity-90 mt-1">Ask questions about your data</p>
-        </button>
+        <motion.button 
+          whileHover={{ scale: 1.05, y: -5 }}
+          whileTap={{ scale: 0.95 }}
+          className="bg-gradient-to-br from-emerald-500 via-green-600 to-teal-700 text-white p-8 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 group relative overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          <ChatBubbleLeftIcon className="h-10 w-10 mb-3 group-hover:scale-110 transition-transform duration-300" />
+          <h4 className="font-bold text-lg mb-2">AI Assistant</h4>
+          <p className="text-sm opacity-90">Voice-enabled chat with your knowledge</p>
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <span className="text-xs bg-white/20 px-2 py-1 rounded-full">🎤 Voice Ready</span>
+          </div>
+        </motion.button>
         
-        <button className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105">
-          <ShareIcon className="h-8 w-8 mb-2" />
-          <h4 className="font-semibold">Explore Graph</h4>
-          <p className="text-sm opacity-90 mt-1">Discover knowledge connections</p>
-        </button>
+        <motion.button 
+          whileHover={{ scale: 1.05, y: -5 }}
+          whileTap={{ scale: 0.95 }}
+          className="bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-700 text-white p-8 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 group relative overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          <ShareIcon className="h-10 w-10 mb-3 group-hover:scale-110 transition-transform duration-300" />
+          <h4 className="font-bold text-lg mb-2">Knowledge Graph</h4>
+          <p className="text-sm opacity-90">3D visualization of connections</p>
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <span className="text-xs bg-white/20 px-2 py-1 rounded-full">🌐 3D View</span>
+          </div>
+        </motion.button>
       </motion.div>
+
+      {/* AI Features Showcase */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.7 }}
+        className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-pink-600/20 backdrop-blur-sm" />
+        <div className="relative z-10">
+          <motion.h3 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.8 }}
+            className="text-2xl font-bold mb-6 flex items-center"
+          >
+            <SparklesIcon className="h-8 w-8 mr-3 animate-pulse" />
+            AI-Powered Features
+          </motion.h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { emoji: '🎯', title: 'Smart Classification', desc: 'Auto-categorizes your content', delay: 0.9 },
+              { emoji: '🔍', title: 'Semantic Search', desc: 'Find by meaning, not just keywords', delay: 1.0 },
+              { emoji: '🤖', title: 'Voice Commands', desc: 'Talk to your knowledge base', delay: 1.1 },
+              { emoji: '�', title: 'Gamification', desc: 'Earn XP and unlock achievements', delay: 1.2 }
+            ].map((feature, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: feature.delay }}
+                className="bg-white/15 rounded-2xl p-6 backdrop-blur-sm hover:bg-white/25 transition-all duration-300 group cursor-pointer"
+              >
+                <div className="text-3xl mb-3 group-hover:scale-110 transition-transform duration-300">
+                  {feature.emoji}
+                </div>
+                <h4 className="font-bold mb-2 text-lg">{feature.title}</h4>
+                <p className="text-sm opacity-90">{feature.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Floating decorative elements */}
+        <div className="absolute top-4 right-4 w-16 h-16 bg-white/10 rounded-full animate-bounce delay-1000" />
+        <div className="absolute bottom-4 left-4 w-12 h-12 bg-white/5 rounded-full animate-bounce delay-2000" />
+        <div className="absolute top-1/2 right-8 w-8 h-8 bg-white/10 rounded-full animate-ping delay-3000" />
+      </motion.div>
+      </div>
     </div>
   )
 }

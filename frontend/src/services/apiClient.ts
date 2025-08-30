@@ -160,10 +160,10 @@ export function useAdminApi() {
 // Notes (fallback to raw fetch until OpenAPI adds response schemas)
 export function useNotesApi() {
   const http = useAuthedFetch()
-  return {
-  getNotes: () => http.get<any[]>('/api/Notes'),
-  getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
-  }
+  return useMemo(() => ({
+    getNotes: () => http.get<any[]>('/api/Notes'),
+    getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
+  }), [http])
 }
 
 // Ingest (multipart uploads and local folder ingest)
@@ -212,7 +212,23 @@ export function useIngestApi() {
     }))
   }, [authedFetch, baseUrl])
 
-  return useMemo(() => ({ uploadFiles, ingestFolder }), [uploadFiles, ingestFolder])
+  const createNote = useCallback(async (content: string, title?: string) => {
+    const res = await authedFetch(`${baseUrl}/api/Notes`, {
+      method: 'POST',
+      body: JSON.stringify({ content, title: title || '' }),
+    })
+    if (!res.ok) throw new Error(`Create note failed: ${res.status}`)
+    const data = await res.json()
+    return {
+      noteId: data.noteId ?? data.NoteId,
+      title: data.title ?? data.Title,
+      status: 'created',
+      chunkCount: data.chunkCount ?? data.CountChunks ?? data.countChunks ?? 0,
+      error: data.error,
+    }
+  }, [authedFetch, baseUrl])
+
+  return useMemo(() => ({ uploadFiles, ingestFolder, createNote }), [uploadFiles, ingestFolder, createNote])
 }
 
 // Search
@@ -265,9 +281,6 @@ export function useUserApi() {
   const deleteProfile = useCallback(() => client.profileDELETE() as any, [client])
   const getSettings = useCallback(() => client.settingsGET() as any, [client])
   const updateSettings = useCallback((settings: any) => client.settingsPUT(settings) as any, [client])
-  const exportAccountData = useCallback(() => client.export() as unknown as Promise<any>, [client])
-  const deleteAccountData = useCallback(() => client.data(), [client])
-  const deleteAccount = useCallback(() => client.account(), [client])
 
   return useMemo(() => ({
     getProfile,
@@ -275,18 +288,12 @@ export function useUserApi() {
     deleteProfile,
     getSettings,
     updateSettings,
-    exportAccountData,
-    deleteAccountData,
-    deleteAccount,
   }), [
     getProfile,
     createOrUpdateProfile,
     deleteProfile,
     getSettings,
     updateSettings,
-    exportAccountData,
-    deleteAccountData,
-    deleteAccount,
   ])
 }
 
@@ -388,4 +395,135 @@ export function useMascotApi() {
     getProfile: () => http.get<MascotProfileDto>('/api/User/mascot-profile'),
     updateProfile: (req: UpdateMascotProfileRequest) => http.put<MascotProfileDto>('/api/User/mascot-profile', req),
   }
+}
+
+// Chat API for RAG and Tool-based conversations
+export function useChatApi() {
+  const http = useAuthedFetch()
+  const { getAccessToken } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+
+  // RAG-based chat query (knowledge base)
+  const ragQuery = useCallback(async (messages: Array<{role: string, content: string}>, filters?: Record<string, string>) => {
+    const request = {
+      Messages: messages.map(m => [m.role, m.content] as [string, string]),
+      TopK: 8,
+      Alpha: 0.6,
+      Filters: filters
+    }
+    return await http.post<{
+      Answer: string;
+      Citations: Array<{
+        NoteId: string;
+        ChunkId: string;
+        Offsets: number[];
+      }>;
+      Usage: any;
+    }>('/api/Rag/query', request)
+  }, [http])
+
+  // RAG streaming chat (Server-Sent Events)
+  const ragStreamQuery = useCallback(async (
+    messages: Array<{role: string, content: string}>, 
+    onChunk: (chunk: string) => void,
+    filters?: Record<string, string>
+  ) => {
+    const request = {
+      Messages: messages.map(m => [m.role, m.content] as [string, string]),
+      TopK: 8,
+      Alpha: 0.6,
+      Filters: filters
+    }
+
+    const token = await getAccessToken()
+    const response = await fetch(`${baseUrl}/api/Rag/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = new TextDecoder().decode(value)
+        const lines = chunk.split('\n')
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            if (data.trim()) {
+              try {
+                const parsed = JSON.parse(data)
+                if (parsed.Answer) {
+                  onChunk(parsed.Answer)
+                } else if (parsed.error) {
+                  throw new Error(parsed.error)
+                }
+              } catch (e) {
+                // Handle non-JSON chunks
+                onChunk(data)
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }, [getAccessToken, baseUrl])
+
+  // Chat with tools
+  const chatWithTools = useCallback(async (
+    query: string, 
+    availableTools: string[] = [],
+    context: Record<string, any> = {}
+  ) => {
+    const request = {
+      Query: query,
+      AvailableTools: availableTools,
+      Context: context
+    }
+    return await http.post<{
+      Response: string;
+      SuggestedTools: Array<{
+        Tool: string;
+        Args: any;
+      }>;
+      RequiresConfirmation: boolean;
+    }>('/api/chat/tools', request)
+  }, [http])
+
+  // Execute a specific tool
+  const executeTool = useCallback(async (tool: string, args: any) => {
+    const request = {
+      Tool: tool,
+      Args: args
+    }
+    return await http.post<any>('/api/chat/tools/execute', request)
+  }, [http])
+
+  // Get available tools
+  const getAvailableTools = useCallback(async () => {
+    return await http.get<string[]>('/api/chat/tools')
+  }, [http])
+
+  return useMemo(() => ({
+    ragQuery,
+    ragStreamQuery,
+    chatWithTools,
+    executeTool,
+    getAvailableTools,
+  }), [ragQuery, ragStreamQuery, chatWithTools, executeTool, getAvailableTools])
 }

@@ -86,6 +86,9 @@ namespace CortexApi.Controllers
                     
                     await _context.SaveChangesAsync();
 
+                    // Ensure default roles exist
+                    await EnsureDefaultRolesAsync(userSubjectId ?? userId);
+
                     // Track login activity for gamification
                     await _gamificationService.UpdateUserStatsAsync(existingProfile.Id, "login");
                     await _gamificationService.CheckAndAwardAchievementsAsync(existingProfile.Id, "login");
@@ -105,6 +108,9 @@ namespace CortexApi.Controllers
 
                 _context.UserProfiles.Add(profile);
                 await _context.SaveChangesAsync();
+
+                // Assign default roles (Admin, Editor, Reader)
+                await EnsureDefaultRolesAsync(profile.SubjectId);
 
                 // Award first time registration achievements
                 await _gamificationService.UpdateUserStatsAsync(profile.Id, "registration");
@@ -365,11 +371,11 @@ namespace CortexApi.Controllers
             }
         }
 
-        private async Task<List<MascotInteraction>> GetMascotInteractionHistoryAsync(string userProfileId)
+        private Task<List<MascotInteraction>> GetMascotInteractionHistoryAsync(string userProfileId)
         {
             // This would retrieve interaction history from a dedicated table if implemented
             // For now, return empty list as placeholder
-            return new List<MascotInteraction>();
+            return Task.FromResult(new List<MascotInteraction>());
         }
 
         private List<string> GetPersonalityQuirks(string personality)
@@ -408,11 +414,32 @@ namespace CortexApi.Controllers
             };
         }
 
-        private async Task<List<string>> GetCustomMascotResponsesAsync(string userProfileId)
+        private Task<List<string>> GetCustomMascotResponsesAsync(string userProfileId)
         {
             // This would retrieve custom responses from a dedicated table if implemented
             // For now, return empty list as placeholder
-            return new List<string>();
+            return Task.FromResult(new List<string>());
+        }
+
+        private async Task EnsureDefaultRolesAsync(string subjectId)
+        {
+            var defaults = new[] { "Admin", "Editor", "Reader" };
+            var existing = await _context.UserRoleAssignments
+                .Where(r => r.SubjectId == subjectId)
+                .Select(r => r.Role).ToListAsync();
+            foreach (var role in defaults)
+            {
+                if (!existing.Contains(role, StringComparer.OrdinalIgnoreCase))
+                {
+                    _context.UserRoleAssignments.Add(new UserRoleAssignment
+                    {
+                        SubjectId = subjectId,
+                        Role = role,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+            await _context.SaveChangesAsync();
         }
     }
 

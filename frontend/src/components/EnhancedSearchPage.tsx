@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { 
   faSearch, faFilter, faCalendar, faFile, faRobot, faShield, 
@@ -57,8 +57,9 @@ export default function SearchPage({ onNoteSelect }: SearchPageProps) {
   const [voicePin, setVoicePin] = useState("");
   const [showVoicePinDialog, setShowVoicePinDialog] = useState(false);
 
-  const handleSearch = async () => {
-    if (!query.trim()) {
+  const handleSearchWithQuery = useCallback(async (searchQuery?: string) => {
+    const searchTerm = searchQuery || query;
+    if (!searchTerm.trim()) {
       setResults([]);
       return;
     }
@@ -66,7 +67,7 @@ export default function SearchPage({ onNoteSelect }: SearchPageProps) {
     setLoading(true);
     try {
       const searchPayload = {
-        q: query,
+        q: searchTerm,
         k: 20,
         mode: searchMode,
         filters: {
@@ -99,7 +100,25 @@ export default function SearchPage({ onNoteSelect }: SearchPageProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [query, searchMode, filters]);
+
+  const handleSearch = useCallback(() => handleSearchWithQuery(), [handleSearchWithQuery]);
+
+  // Check for global search query on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const globalSearchQuery = window.localStorage.getItem('globalSearchQuery');
+      if (globalSearchQuery) {
+        setQuery(globalSearchQuery);
+        // Clear the stored query
+        window.localStorage.removeItem('globalSearchQuery');
+        // Auto-execute search after a brief delay to let the component settle
+        setTimeout(() => {
+          handleSearchWithQuery(globalSearchQuery);
+        }, 100);
+      }
+    }
+  }, [handleSearchWithQuery]);
 
   const handleTopicToggle = (topic: string) => {
     setFilters(prev => ({

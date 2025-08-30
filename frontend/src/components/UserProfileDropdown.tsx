@@ -11,7 +11,7 @@ import {
   SunIcon,
   MoonIcon
 } from '@heroicons/react/24/outline'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth, getUserDisplayName, getUserInitials } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useGamificationApi } from '@/services/apiClient'
 import { useMascot } from '@/contexts/MascotContext'
@@ -103,7 +103,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
         <UserCircleIcon className="h-8 w-8 text-gray-600 dark:text-slate-400" />
         <div className="hidden md:block text-left">
           <p className="text-sm font-medium text-gray-900 dark:text-slate-100">
-            {user?.name || (user as any)?.username || 'User'}
+            {getUserDisplayName(user)}
           </p>
           <p className="text-xs text-gray-500 dark:text-slate-400">
             Administrator
@@ -125,12 +125,12 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
               <div className="flex items-center space-x-3">
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
                   <span className="text-white font-bold text-lg">
-                    {(user?.name || (user as any)?.username || 'U')[0].toUpperCase()}
+                    {getUserInitials(user)}
                   </span>
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 dark:text-slate-100">
-                    {user?.name || (user as any)?.username || 'User'}
+                    {getUserDisplayName(user)}
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-slate-400">
                     {topAchievement}
