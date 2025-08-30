@@ -467,13 +467,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Ensure we also listen on :8080 unless ASPNETCORE_URLS explicitly set
+// Ensure we also listen on :8081 unless ASPNETCORE_URLS explicitly set
 var urlsEnv = builder.Configuration["ASPNETCORE_URLS"];
 if (string.IsNullOrWhiteSpace(urlsEnv))
 {
     var port = builder.Configuration["PORT"]
                ?? builder.Configuration["Server:Port"]
-               ?? "8080";
+               ?? "8081";
     try
     {
         app.Urls.Add($"http://localhost:{port}");
@@ -531,6 +531,18 @@ using (var scope = app.Services.CreateScope())
                 {
                     File.Delete(csb.DataSource);
                     Console.WriteLine($"[DB] Deleted SQLite file: {csb.DataSource}");
+                }
+                // Also remove SQLite sidecar files that can linger and cause disk I/O or locks
+                try
+                {
+                    var wal = csb.DataSource + "-wal";
+                    var shm = csb.DataSource + "-shm";
+                    if (File.Exists(wal)) { File.Delete(wal); Console.WriteLine($"[DB] Deleted SQLite WAL: {wal}"); }
+                    if (File.Exists(shm)) { File.Delete(shm); Console.WriteLine($"[DB] Deleted SQLite SHM: {shm}"); }
+                }
+                catch (Exception sidecarEx)
+                {
+                    Console.WriteLine($"[DB] Could not delete WAL/SHM files: {sidecarEx.Message}");
                 }
             }
             catch (Exception delEx)

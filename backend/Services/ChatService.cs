@@ -99,14 +99,14 @@ public class ChatService : IChatService
 
     private async Task StreamOpenAiResponseAsync(string prompt, HttpContext context)
     {
-        var apiKey = _configuration["OPENAI_API_KEY"];
+        var apiKey = _configuration["OpenAI:ApiKey"];
         if (string.IsNullOrEmpty(apiKey))
         {
             await SendSseEventAsync(context, "error", "OpenAI API key not configured");
             return;
         }
 
-        var model = _configuration["OPENAI_MODEL"] ?? "gpt-4o-mini";
+        var model = _configuration["OpenAI:Model"] ?? "gpt-4o-mini";
 
         var requestData = new
         {
