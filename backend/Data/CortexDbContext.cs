@@ -33,6 +33,10 @@ public class CortexDbContext : DbContext
     // Stage 3 DbSets
     public DbSet<Edge> Edges { get; set; }
     public DbSet<AuditEntry> AuditEntries { get; set; }
+    
+    // Notification DbSets
+    public DbSet<NotificationDevice> NotificationDevices { get; set; }
+    public DbSet<NotificationHistory> NotificationHistory { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -238,6 +242,51 @@ public class CortexDbContext : DbContext
             // Unique constraint - each user can only earn each achievement once
             entity.HasIndex(e => new { e.UserProfileId, e.AchievementId }).IsUnique();
             entity.HasIndex(e => e.EarnedAt);
+        });
+
+        // Notification Device Configuration
+        modelBuilder.Entity<NotificationDevice>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserProfileId).IsRequired();
+            entity.Property(e => e.Endpoint).IsRequired().HasMaxLength(1000);
+            entity.Property(e => e.P256dh).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Auth).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.DeviceType).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.DeviceName).HasMaxLength(255);
+            entity.Property(e => e.UserAgent).HasMaxLength(1000);
+            
+            entity.HasIndex(e => e.UserProfileId);
+            entity.HasIndex(e => e.Endpoint).IsUnique();
+            entity.HasIndex(e => e.RegisteredAt);
+            entity.HasIndex(e => e.IsActive);
+            
+            entity.HasOne(e => e.UserProfile)
+                  .WithMany()
+                  .HasForeignKey(e => e.UserProfileId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Notification History Configuration
+        modelBuilder.Entity<NotificationHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserProfileId).IsRequired();
+            entity.Property(e => e.Type).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Title).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Message).IsRequired().HasMaxLength(2000);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.DeliveryMethods).HasDefaultValue("[]");
+            
+            entity.HasIndex(e => e.UserProfileId);
+            entity.HasIndex(e => e.Type);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.SentAt);
+            
+            entity.HasOne(e => e.UserProfile)
+                  .WithMany()
+                  .HasForeignKey(e => e.UserProfileId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

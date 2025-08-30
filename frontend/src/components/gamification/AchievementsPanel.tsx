@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useGamificationApi } from '@/services/apiClient'
 import type { IAchievement, UserAchievement } from '@/api/cortex-api-client'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface AchievementsPanelProps {
   className?: string
@@ -25,6 +26,7 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const gamificationApi = useGamificationApi()
   const [showCelebrate, setShowCelebrate] = useState(false)
+  const { isAuthenticated } = useAuth()
 
   const loadAchievements = useCallback(async () => {
     try {
@@ -59,8 +61,9 @@ export function AchievementsPanel({ className = '' }: AchievementsPanelProps) {
   }, [gamificationApi])
 
   useEffect(() => {
+    if (!isAuthenticated) return
     loadAchievements()
-  }, [loadAchievements])
+  }, [isAuthenticated, loadAchievements])
 
   const categories = [
     { id: 'all', name: 'All', icon: TrophyIcon },

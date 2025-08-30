@@ -25,12 +25,18 @@ export const MSAL_SCOPES = {
 
 // Add scopes for B2C APIs - changed to RedirectRequest
 export const loginRequest: RedirectRequest = {
-  scopes: ['openid', 'profile', 'email']
+  scopes: [
+    'openid',
+    'profile',
+    'email',
+    // Request at least one API scope so we get an access token acceptable to backend
+    MSAL_SCOPES.user
+  ]
 }
 
 // Silent token acquisition request for B2C
 export const tokenRequest = {
-  scopes: ['openid', 'profile', 'email'],
+  scopes: ['openid', 'profile', 'email', MSAL_SCOPES.user],
   account: null as any
 }
 

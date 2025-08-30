@@ -35,6 +35,11 @@ public class PiiDetectionJobPayload
 	public string NoteId { get; set; } = string.Empty;
 }
 
+public class WeeklyDigestJobPayload
+{
+	public string UserProfileId { get; set; } = string.Empty;
+}
+
 public class BackgroundJobService : BackgroundService, IBackgroundJobService
 {
 	private readonly IServiceScopeFactory _scopeFactory;
@@ -51,6 +56,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 	private const string EMBEDDING_STREAM = "jobs:embedding";
 	private const string CLASSIFICATION_STREAM = "jobs:classification";
 	private const string PII_DETECTION_STREAM = "jobs:pii_detection";
+	private const string WEEKLY_DIGEST_STREAM = "jobs:weekly_digest";
 	private const string CONSUMER_GROUP = "cortex-workers";
 	private const string CONSUMER_NAME = "worker-1";
 
@@ -79,6 +85,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 			await CreateConsumerGroupAsync(EMBEDDING_STREAM);
 			await CreateConsumerGroupAsync(CLASSIFICATION_STREAM);
 			await CreateConsumerGroupAsync(PII_DETECTION_STREAM);
+			await CreateConsumerGroupAsync(WEEKLY_DIGEST_STREAM);
 			
 			_logger.LogInformation("Redis Streams initialized successfully");
 			return true;
@@ -115,6 +122,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 			"embedding" => EMBEDDING_STREAM,
 			"classification" => CLASSIFICATION_STREAM,
 			"pii_detection" => PII_DETECTION_STREAM,
+			"weekly_digest" => WEEKLY_DIGEST_STREAM,
 			_ => throw new ArgumentException($"Unknown job type: {jobType}")
 		};
 
@@ -141,10 +149,11 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 			var embeddingInfo = await _db.StreamInfoAsync(EMBEDDING_STREAM);
 			var classificationInfo = await _db.StreamInfoAsync(CLASSIFICATION_STREAM);
 			var piiInfo = await _db.StreamInfoAsync(PII_DETECTION_STREAM);
+			var weeklyDigestInfo = await _db.StreamInfoAsync(WEEKLY_DIGEST_STREAM);
 
 			return new JobStats
 			{
-				PendingJobs = (int)(embeddingInfo.Length + classificationInfo.Length + piiInfo.Length),
+				PendingJobs = (int)(embeddingInfo.Length + classificationInfo.Length + piiInfo.Length + weeklyDigestInfo.Length),
 				ProcessedJobs = 0, // Would need to track this separately
 				FailedJobs = 0, // Would need to track this separately
 				AverageProcessingTime = TimeSpan.Zero // Would need to track this separately
@@ -231,10 +240,12 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 			var embeddingResults = await _db!.StreamReadGroupAsync(EMBEDDING_STREAM, CONSUMER_GROUP, CONSUMER_NAME, ">", 5);
 			var classificationResults = await _db!.StreamReadGroupAsync(CLASSIFICATION_STREAM, CONSUMER_GROUP, CONSUMER_NAME, ">", 5);
 			var piiResults = await _db!.StreamReadGroupAsync(PII_DETECTION_STREAM, CONSUMER_GROUP, CONSUMER_NAME, ">", 5);
+			var weeklyDigestResults = await _db!.StreamReadGroupAsync(WEEKLY_DIGEST_STREAM, CONSUMER_GROUP, CONSUMER_NAME, ">", 5);
 			
 			streamResults.AddRange(embeddingResults.Select(r => r));
 			streamResults.AddRange(classificationResults.Select(r => r));
 			streamResults.AddRange(piiResults.Select(r => r));
+			streamResults.AddRange(weeklyDigestResults.Select(r => r));
 		}
 		catch (Exception ex)
 		{
@@ -257,6 +268,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 					"embedding" => EMBEDDING_STREAM,
 					"classification" => CLASSIFICATION_STREAM,
 					"pii_detection" => PII_DETECTION_STREAM,
+					"weekly_digest" => WEEKLY_DIGEST_STREAM,
 					_ => EMBEDDING_STREAM // default
 				};
 				
@@ -305,15 +317,23 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 
 			await vector.UpsertChunkAsync(note, chunk, vec, stoppingToken);
 
-			db.Embeddings.Add(new Embedding
+			// Create or update embedding record
+			var existingEmbedding = await db.Embeddings.FirstOrDefaultAsync(e => e.ChunkId == chunk.Id, stoppingToken);
+			if (existingEmbedding == null)
 			{
-				ChunkId = chunk.Id,
-				Provider = _configuration["Embedding:Provider"] ?? "openai",
-				Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
-				Dim = vec.Length,
-				VectorRef = $"chunk:{chunk.Id}",
-				CreatedAt = DateTime.UtcNow
-			});
+				// Create new embedding record
+				var embeddingRecord = new Models.Embedding
+				{
+					ChunkId = chunk.Id,
+					Provider = _configuration["Embedding:Provider"] ?? "openai",
+					Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
+					Dim = vec.Length,
+					VectorRef = $"chunk:{chunk.Id}",
+					CreatedAt = DateTime.UtcNow
+				};
+
+				db.Embeddings.Add(embeddingRecord);
+			}
 			
 			// Mark as done in local set once tracked in DbContext
 			lock (_lock) { _inProgress.Remove(chunk.Id); }
@@ -352,6 +372,9 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 					break;
 				case "pii_detection":
 					await ProcessPiiDetectionJob(scope, payloadJson, stoppingToken);
+					break;
+				case "weekly_digest":
+					await ProcessWeeklyDigestJob(scope, payloadJson, stoppingToken);
 					break;
 				default:
 					_logger.LogWarning("Unknown job type: {JobType}", jobType);
@@ -439,5 +462,89 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		note.PiiFlags = JsonSerializer.Serialize(piiSpans);
 
 		await db.SaveChangesAsync(stoppingToken);
+	}
+	
+	private async Task ProcessWeeklyDigestJob(IServiceScope scope, string payloadJson, CancellationToken stoppingToken)
+	{
+		var payload = JsonSerializer.Deserialize<WeeklyDigestJobPayload>(payloadJson);
+		if (payload == null) return;
+
+		var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
+		var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
+		var profile = await db.UserProfiles.FindAsync(new object[] { payload.UserProfileId }, stoppingToken);
+		if (profile == null) return;
+
+		// Check if user has weekly digest enabled
+		var preferences = await notificationService.GetNotificationPreferencesAsync(profile);
+		if (!preferences.WeeklyDigest) return;
+
+		// Generate weekly digest content
+		var digestContent = await GenerateWeeklyDigestAsync(db, profile.Id, stoppingToken);
+		
+		// Send the digest
+		await notificationService.SendWeeklyDigestAsync(profile, digestContent);
+	}
+	
+	private async Task<string> GenerateWeeklyDigestAsync(CortexDbContext db, string userProfileId, CancellationToken stoppingToken)
+	{
+		var weekAgo = DateTime.UtcNow.AddDays(-7);
+		
+		// Get user's subject ID to filter notes
+		var profile = await db.UserProfiles.FindAsync(new object[] { userProfileId }, stoppingToken);
+		if (profile == null) return "No activity this week.";
+		
+		var userId = profile.SubjectId;
+		
+		// Get notes created in the last week
+		var newNotes = await db.Notes
+			.Where(n => n.UserId == userId && n.CreatedAt >= weekAgo && !n.IsDeleted)
+			.CountAsync(stoppingToken);
+		
+		// Get most used tags
+		var topTags = await db.NoteTags
+			.Where(nt => db.Notes.Any(n => n.Id == nt.NoteId && n.UserId == userId && n.CreatedAt >= weekAgo && !n.IsDeleted))
+			.Join(db.Tags, nt => nt.TagId, t => t.Id, (nt, t) => t.Name)
+			.GroupBy(name => name)
+			.Select(g => new { Tag = g.Key, Count = g.Count() })
+			.OrderByDescending(x => x.Count)
+			.Take(3)
+			.ToListAsync(stoppingToken);
+		
+		// Get achievement count for the week
+		var newAchievements = await db.UserAchievements
+			.Where(ua => ua.UserProfileId == userProfileId && ua.EarnedAt >= weekAgo)
+			.CountAsync(stoppingToken);
+		
+		// Build digest content
+		var digestLines = new List<string>
+		{
+			$"?? Your Cortex Week in Review",
+			"",
+			$"?? Notes Created: {newNotes}",
+		};
+		
+		if (topTags.Any())
+		{
+			digestLines.Add($"??? Top Tags: {string.Join(", ", topTags.Select(t => $"{t.Tag} ({t.Count})"))}");
+		}
+		
+		if (newAchievements > 0)
+		{
+			digestLines.Add($"?? New Achievements: {newAchievements}");
+		}
+		
+		if (newNotes == 0)
+		{
+			digestLines.Add("");
+			digestLines.Add("?? Tip: Try adding some notes this week to build your knowledge base!");
+		}
+		else if (newNotes >= 10)
+		{
+			digestLines.Add("");
+			digestLines.Add("?? Great job staying productive! You're building an impressive knowledge base.");
+		}
+		
+		return string.Join("\n", digestLines);
 	}
 }

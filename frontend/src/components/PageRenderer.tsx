@@ -4,13 +4,21 @@ import React from 'react'
 import ChatAssistantPage from './pages/ChatAssistantPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import SettingsPage from './pages/SettingsPage'
+import IngestPage from './pages/IngestPage'
 import AchievementsPanel from './gamification/AchievementsPanel'
+import WelcomePage from './pages/WelcomePage'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface PageRendererProps {
   activeView: string
 }
 
 const PageRenderer: React.FC<PageRendererProps> = ({ activeView }) => {
+  const { recentAuthEvent } = useAuth()
+  if (recentAuthEvent && (activeView === 'dashboard' || activeView === 'analytics')) {
+    // Show Welcome immediately after fresh login/signup
+    return <WelcomePage onNavigate={(v) => { (window as any).__setActiveView?.(v) }} />
+  }
   switch (activeView) {
     case 'analytics':
       return <AnalyticsPage />
@@ -18,6 +26,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({ activeView }) => {
       return <AchievementsPanel />
     case 'settings':
       return <SettingsPage />
+    case 'ingest':
+      return <IngestPage />
     case 'dashboard':
       return (
         <div className="p-6">

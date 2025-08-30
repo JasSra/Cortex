@@ -44,7 +44,7 @@ public class ClassificationController : ControllerBase
     public async Task<IActionResult> ClassifyNote(string noteId)
     {
         if (!Rbac.RequireRole(_userContext, "Editor"))
-            return Forbid("Editor role required");
+            return Forbid();
 
         _logger.LogInformation("Classification requested for note {NoteId} by user {UserId}", 
             noteId, _userContext.UserId);
@@ -73,22 +73,19 @@ public class ClassificationController : ControllerBase
                 Tags = classificationResult.Tags?.Take(5).Select(t => t.Name).ToList() ?? new List<string>(),
                 Sensitivity = sensitivityLevel,
                 SensitivityScore = classificationResult.SensitivityLevel, // Use SensitivityLevel instead of SensitivityScore
-                Pii = piiDetections.Select(p => p.Type).Distinct().ToList(),
-                Secrets = secretDetections.Select(s => s.Type).Distinct().ToList(),
-                Summary = GenerateSummary(note.Content, classificationResult),
-                Confidence = classificationResult.Tags?.FirstOrDefault()?.Confidence ?? 0.0,
+                Pii = piiDetections.Select(p => p.Type).ToList(),
+                Secrets = secretDetections.Select(s => s.Type).ToList(),
+                Summary = classificationResult.Summary,
+                Confidence = classificationResult.Confidence,
                 ProcessedAt = DateTime.UtcNow
             };
-
-            _logger.LogInformation("Classification completed for note {NoteId}: sensitivity={Sensitivity}, tags={TagCount}, pii={PiiCount}, secrets={SecretCount}", 
-                noteId, sensitivityLevel, response.Tags.Count, response.Pii.Count, response.Secrets.Count);
 
             return Ok(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Classification failed for note {NoteId}", noteId);
-            return StatusCode(500, "Classification failed");
+            _logger.LogError(ex, "Error classifying note {NoteId}", noteId);
+            return StatusCode(500, new { error = "Failed to classify note" });
         }
     }
 
@@ -99,22 +96,22 @@ public class ClassificationController : ControllerBase
     public async Task<IActionResult> ClassifyBulk([FromBody] BulkClassificationRequest request)
     {
         if (!Rbac.RequireRole(_userContext, "Editor"))
-            return Forbid("Editor role required");
+            return Forbid();
 
-        if (request.NoteIds?.Any() != true)
+        if (request?.NoteIds?.Any() != true)
             return BadRequest("NoteIds is required and cannot be empty");
 
         if (request.NoteIds.Count > 100)
             return BadRequest("Cannot classify more than 100 notes at once");
-
-        _logger.LogInformation("Bulk classification requested for {Count} notes by user {UserId}", 
-            request.NoteIds.Count, _userContext.UserId);
 
         try
         {
             var notes = await _context.Notes
                 .Where(n => request.NoteIds.Contains(n.Id) && n.UserId == _userContext.UserId && !n.IsDeleted)
                 .ToListAsync();
+
+            if (notes.Count == 0)
+                return NotFound("No valid notes found for classification");
 
             var results = new List<ClassificationResponse>();
 
@@ -134,81 +131,33 @@ public class ClassificationController : ControllerBase
                         Tags = classificationResult.Tags?.Take(5).Select(t => t.Name).ToList() ?? new List<string>(),
                         Sensitivity = sensitivityLevel,
                         SensitivityScore = classificationResult.SensitivityLevel,
-                        Pii = piiDetections.Select(p => p.Type).Distinct().ToList(),
-                        Secrets = secretDetections.Select(s => s.Type).Distinct().ToList(),
-                        Summary = GenerateSummary(note.Content, classificationResult),
-                        Confidence = classificationResult.Tags?.FirstOrDefault()?.Confidence ?? 0.0,
+                        Pii = piiDetections.Select(p => p.Type).ToList(),
+                        Secrets = secretDetections.Select(s => s.Type).ToList(),
+                        Summary = classificationResult.Summary,
+                        Confidence = classificationResult.Confidence,
                         ProcessedAt = DateTime.UtcNow
                     });
                 }
-                catch (Exception ex)
+                catch (Exception exNote)
                 {
-                    _logger.LogWarning(ex, "Classification failed for note {NoteId}", note.Id);
-                    results.Add(new ClassificationResponse
-                    {
-                        NoteId = note.Id,
-                        Tags = new List<string>(),
-                        Sensitivity = 0,
-                        SensitivityScore = 0.0,
-                        Pii = new List<string>(),
-                        Secrets = new List<string>(),
-                        Summary = "Classification failed",
-                        Confidence = 0.0,
-                        ProcessedAt = DateTime.UtcNow,
-                        Error = "Classification processing failed"
-                    });
+                    _logger.LogError(exNote, "Error classifying note {NoteId}", note.Id);
                 }
             }
-
-            _logger.LogInformation("Bulk classification completed: {SuccessCount}/{TotalCount} notes processed successfully", 
-                results.Count(r => string.IsNullOrEmpty(r.Error)), results.Count);
 
             return Ok(new BulkClassificationResponse { Results = results });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Bulk classification failed");
-            return StatusCode(500, "Bulk classification failed");
+            _logger.LogError(ex, "Error during bulk classification for user {UserId}", _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to perform bulk classification" });
         }
     }
 
-    private int CalculateSensitivityLevel(List<PiiDetection> piiDetections, List<SecretDetection> secretDetections, ClassificationResult classificationResult)
+    private int CalculateSensitivityLevel(List<PiiDetection> pii, List<SecretDetection> secrets, ClassificationResult classification)
     {
-        // Start with ML classification score
-        var baseLevel = classificationResult.SensitivityLevel;
-        
-        // Elevate based on detections
-        if (secretDetections.Any())
-        {
-            baseLevel = Math.Max(baseLevel, 3); // Secrets always mean high sensitivity
-        }
-        
-        if (piiDetections.Any())
-        {
-            var criticalPii = piiDetections.Any(p => 
-                p.Type.Contains("ssn") || p.Type.Contains("credit") || p.Type.Contains("passport") || 
-                p.Type.Contains("medicare") || p.Type.Contains("tfn"));
-            
-            baseLevel = Math.Max(baseLevel, criticalPii ? 3 : 2);
-        }
-
-        return Math.Clamp(baseLevel, 0, 3);
-    }
-
-    private string GenerateSummary(string content, ClassificationResult classificationResult)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-            return "Empty content";
-
-        // Simple extractive summary - take first 200 chars with topic context
-        var summary = content.Length > 200 ? content.Substring(0, 200).Trim() + "..." : content;
-        
-        if (classificationResult.Tags?.Any() == true)
-        {
-            var topTag = classificationResult.Tags.First().Name;
-            return $"[{topTag}] {summary}";
-        }
-
-        return summary;
+        // Simple heuristic: secrets > pii > classification sensitivity
+        if (secrets.Any()) return 3; // Secret
+        if (pii.Any()) return 2;     // Confidential
+        return Math.Max(1, classification.SensitivityLevel);
     }
 }

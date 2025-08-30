@@ -38,6 +38,12 @@ export default function Home() {
     }
   }, [isAuthenticated, user, loadInitialData])
 
+  // Expose a minimal navigation bridge for components rendered deep (WelcomePage)
+  useEffect(() => {
+    ;(window as any).__setActiveView = (v: string) => setActiveView(v)
+    return () => { delete (window as any).__setActiveView }
+  }, [])
+
   const renderActiveView = () => {
     if (isLoading) {
       return (

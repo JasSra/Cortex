@@ -1,8 +1,8 @@
-/*
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using CortexApi.Models;
 using CortexApi.Services;
+using CortexApi.Security;
 
 namespace CortexApi.Controllers;
 
@@ -39,10 +39,9 @@ public class SecurityController : ControllerBase
             // Only allow admins to view other users' audit logs
             if (!string.IsNullOrEmpty(userId) && userId != _userContext.UserId)
             {
-                // Check if current user is admin (implement your admin check logic)
-                if (!IsUserAdmin(_userContext.UserId))
+                if (!Rbac.RequireRole(_userContext, "Admin"))
                 {
-                    return Forbid("Only administrators can view other users' audit logs");
+                    return StatusCode(403, new { error = "Only administrators can view other users' audit logs" });
                 }
             }
 
@@ -195,12 +194,4 @@ public class SecurityController : ControllerBase
             return StatusCode(500, new { error = "Failed to generate classification report" });
         }
     }
-
-    private bool IsUserAdmin(string? userId)
-    {
-        // Implement your admin check logic here
-        // This is a placeholder - you should implement proper role checking
-        return false;
-    }
 }
-*/

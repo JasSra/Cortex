@@ -257,70 +257,55 @@ namespace CortexApi.Controllers
         }
 
         /// <summary>
-        /// Export all account data for the current user as JSON
+        /// Get user's mascot configuration
         /// </summary>
-    [HttpGet("account/export")]
-    [ProducesResponseType(typeof(AccountExportResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ExportAccountData()
+        [HttpGet("mascot-profile")]
+        [ProducesResponseType(typeof(MascotProfileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetMascotProfile()
         {
             try
             {
                 var subjectId = _userContext.UserSubjectId;
                 if (string.IsNullOrEmpty(subjectId)) return Unauthorized();
 
-                var profile = await _context.UserProfiles
-                    .Include(up => up.UserAchievements)
-                    .FirstOrDefaultAsync(p => p.SubjectId == subjectId);
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.SubjectId == subjectId);
                 if (profile == null) return NotFound(new { message = "User profile not found" });
 
-                // Gather related data for export scoped by user
-                var notes = await _context.Notes.Where(n => n.UserId == (_userContext.UserId ?? subjectId)).ToListAsync();
-                var noteIds = notes.Select(n => n.Id).ToList();
-                var chunks = await _context.NoteChunks.Where(c => noteIds.Contains(c.NoteId)).ToListAsync();
-                var classifications = await _context.Classifications.Where(c => noteIds.Contains(c.NoteId)).ToListAsync();
-                var tags = await _context.NoteTags.Where(nt => noteIds.Contains(nt.NoteId)).ToListAsync();
+                var settings = string.IsNullOrWhiteSpace(profile.Preferences)
+                    ? new UserSettingsDto()
+                    : System.Text.Json.JsonSerializer.Deserialize<UserSettingsDto>(profile.Preferences) ?? new UserSettingsDto();
 
-                var userAchievementDetails = await _context.UserAchievements
-                    .Where(ua => ua.UserProfileId == profile.Id)
-                    .Include(ua => ua.Achievement)
-                    .ToListAsync();
-
-                var export = new AccountExportResponse
+                var mascotProfile = new MascotProfileDto
                 {
-                    Profile = profile,
-                    Notes = notes,
-                    Chunks = chunks,
-                    Classifications = classifications,
-                    NoteTags = tags,
-                    Achievements = userAchievementDetails.Select(ua => new UserAchievementExport
-                    {
-                        Id = ua.Id,
-                        EarnedAt = ua.EarnedAt,
-                        Progress = ua.Progress,
-                        HasSeen = ua.HasSeen,
-                        Achievement = ua.Achievement
-                    }).ToList()
+                    Enabled = settings.MascotEnabled,
+                    Personality = settings.MascotPersonality,
+                    Animations = settings.MascotAnimations,
+                    Voice = settings.MascotVoice,
+                    Proactivity = settings.MascotProactivity,
+                    InteractionHistory = await GetMascotInteractionHistoryAsync(profile.Id),
+                    PersonalityQuirks = GetPersonalityQuirks(settings.MascotPersonality),
+                    CustomResponses = await GetCustomMascotResponsesAsync(profile.Id)
                 };
 
-                return Ok(export);
+                return Ok(mascotProfile);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error exporting account data");
-                return StatusCode(500, new { message = "Failed to export account data" });
+                _logger.LogError(ex, "Error retrieving mascot profile");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
         /// <summary>
-        /// Delete all user-owned content but keep the account/profile
+        /// Update user's mascot configuration
         /// </summary>
-    [HttpDelete("account/data")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteAccountData()
+        [HttpPut("mascot-profile")]
+        [ProducesResponseType(typeof(MascotProfileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateMascotProfile([FromBody] UpdateMascotProfileRequest request)
         {
             try
             {
@@ -330,84 +315,104 @@ namespace CortexApi.Controllers
                 var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.SubjectId == subjectId);
                 if (profile == null) return NotFound(new { message = "User profile not found" });
 
-                var notes = await _context.Notes.Where(n => n.UserId == (_userContext.UserId ?? subjectId)).ToListAsync();
-                var noteIds = notes.Select(n => n.Id).ToList();
+                var settings = string.IsNullOrWhiteSpace(profile.Preferences)
+                    ? new UserSettingsDto()
+                    : System.Text.Json.JsonSerializer.Deserialize<UserSettingsDto>(profile.Preferences) ?? new UserSettingsDto();
 
-                // Remove dependent data first where needed
-                var chunks = _context.NoteChunks.Where(c => noteIds.Contains(c.NoteId));
-                _context.NoteChunks.RemoveRange(chunks);
+                // Update mascot settings
+                if (request.Enabled.HasValue) settings.MascotEnabled = request.Enabled.Value;
+                if (!string.IsNullOrEmpty(request.Personality)) settings.MascotPersonality = request.Personality;
+                if (request.Animations.HasValue) settings.MascotAnimations = request.Animations.Value;
+                if (request.Voice.HasValue) settings.MascotVoice = request.Voice.Value;
+                if (request.Proactivity.HasValue) settings.MascotProactivity = request.Proactivity.Value;
 
-                var classifications = _context.Classifications.Where(c => noteIds.Contains(c.NoteId));
-                _context.Classifications.RemoveRange(classifications);
+                // Validate personality
+                var validPersonalities = new[] { "friendly", "professional", "playful", "minimal" };
+                if (!validPersonalities.Contains(settings.MascotPersonality))
+                {
+                    return BadRequest(new { message = $"Invalid personality. Must be one of: {string.Join(", ", validPersonalities)}" });
+                }
 
-                var noteTags = _context.NoteTags.Where(nt => noteIds.Contains(nt.NoteId));
-                _context.NoteTags.RemoveRange(noteTags);
+                // Validate proactivity range
+                if (settings.MascotProactivity < 0.0 || settings.MascotProactivity > 1.0)
+                {
+                    return BadRequest(new { message = "Proactivity must be between 0.0 and 1.0" });
+                }
 
-                // Remove notes
-                _context.Notes.RemoveRange(notes);
-
-                // Optionally clear achievements progress
-                var userAchievements = _context.UserAchievements.Where(ua => ua.UserProfileId == profile.Id);
-                _context.UserAchievements.RemoveRange(userAchievements);
-
+                profile.Preferences = System.Text.Json.JsonSerializer.Serialize(settings);
+                profile.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
-                _logger.LogInformation("Deleted all account data for subject {SubjectId}", subjectId);
-                return NoContent();
+
+                // Return updated mascot profile
+                var updatedProfile = new MascotProfileDto
+                {
+                    Enabled = settings.MascotEnabled,
+                    Personality = settings.MascotPersonality,
+                    Animations = settings.MascotAnimations,
+                    Voice = settings.MascotVoice,
+                    Proactivity = settings.MascotProactivity,
+                    InteractionHistory = await GetMascotInteractionHistoryAsync(profile.Id),
+                    PersonalityQuirks = GetPersonalityQuirks(settings.MascotPersonality),
+                    CustomResponses = await GetCustomMascotResponsesAsync(profile.Id)
+                };
+
+                return Ok(updatedProfile);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting account data");
-                return StatusCode(500, new { message = "Failed to delete account data" });
+                _logger.LogError(ex, "Error updating mascot profile");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
-        /// <summary>
-        /// Delete the account/profile itself (and all associated data via cascade)
-        /// </summary>
-    [HttpDelete("account")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteAccount()
+        private async Task<List<MascotInteraction>> GetMascotInteractionHistoryAsync(string userProfileId)
         {
-            try
+            // This would retrieve interaction history from a dedicated table if implemented
+            // For now, return empty list as placeholder
+            return new List<MascotInteraction>();
+        }
+
+        private List<string> GetPersonalityQuirks(string personality)
+        {
+            return personality switch
             {
-                var subjectId = _userContext.UserSubjectId;
-                if (string.IsNullOrEmpty(subjectId)) return Unauthorized();
+                "friendly" => new List<string> 
+                { 
+                    "Uses encouraging language", 
+                    "Celebrates your achievements", 
+                    "Offers helpful tips",
+                    "Uses emojis in responses"
+                },
+                "professional" => new List<string> 
+                { 
+                    "Concise and direct communication", 
+                    "Focus on productivity", 
+                    "Formal language",
+                    "Data-driven suggestions"
+                },
+                "playful" => new List<string> 
+                { 
+                    "Uses humor and puns", 
+                    "Creative suggestions", 
+                    "Animated reactions",
+                    "Fun facts and trivia"
+                },
+                "minimal" => new List<string> 
+                { 
+                    "Brief responses only", 
+                    "Only speaks when necessary", 
+                    "No decorative language",
+                    "Efficient interactions"
+                },
+                _ => new List<string>()
+            };
+        }
 
-                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.SubjectId == subjectId);
-                if (profile == null) return NotFound(new { message = "User profile not found" });
-
-                // Remove all user-owned content first (same as DeleteAccountData)
-                var notes = await _context.Notes.Where(n => n.UserId == (_userContext.UserId ?? subjectId)).ToListAsync();
-                var noteIds = notes.Select(n => n.Id).ToList();
-
-                var chunks = _context.NoteChunks.Where(c => noteIds.Contains(c.NoteId));
-                _context.NoteChunks.RemoveRange(chunks);
-
-                var classifications = _context.Classifications.Where(c => noteIds.Contains(c.NoteId));
-                _context.Classifications.RemoveRange(classifications);
-
-                var noteTags = _context.NoteTags.Where(nt => noteIds.Contains(nt.NoteId));
-                _context.NoteTags.RemoveRange(noteTags);
-
-                _context.Notes.RemoveRange(notes);
-
-                var userAchievements = _context.UserAchievements.Where(ua => ua.UserProfileId == profile.Id);
-                _context.UserAchievements.RemoveRange(userAchievements);
-
-                // Finally remove the profile
-                _context.UserProfiles.Remove(profile);
-                await _context.SaveChangesAsync();
-
-                _logger.LogInformation("Deleted account for subject {SubjectId}", subjectId);
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting account");
-                return StatusCode(500, new { message = "Failed to delete account" });
-            }
+        private async Task<List<string>> GetCustomMascotResponsesAsync(string userProfileId)
+        {
+            // This would retrieve custom responses from a dedicated table if implemented
+            // For now, return empty list as placeholder
+            return new List<string>();
         }
     }
 
@@ -491,5 +496,45 @@ namespace CortexApi.Controllers
         public bool LoginAlerts { get; set; } = true;
         public int SessionTimeout { get; set; } = 30;
         public bool DataEncryption { get; set; } = true;
+    }
+
+    /// <summary>
+    /// Mascot profile data transfer object
+    /// </summary>
+    public class MascotProfileDto
+    {
+        public bool Enabled { get; set; } = true;
+        public string Personality { get; set; } = "friendly";
+        public bool Animations { get; set; } = true;
+        public bool Voice { get; set; } = true;
+        public double Proactivity { get; set; } = 0.5;
+        public List<MascotInteraction> InteractionHistory { get; set; } = new();
+        public List<string> PersonalityQuirks { get; set; } = new();
+        public List<string> CustomResponses { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Request model for updating mascot profile
+    /// </summary>
+    public class UpdateMascotProfileRequest
+    {
+        public bool? Enabled { get; set; }
+        public string? Personality { get; set; }
+        public bool? Animations { get; set; }
+        public bool? Voice { get; set; }
+        public double? Proactivity { get; set; }
+    }
+
+    /// <summary>
+    /// Mascot interaction history entry
+    /// </summary>
+    public class MascotInteraction
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Type { get; set; } = string.Empty; // greeting, suggestion, celebration, reminder
+        public string Message { get; set; } = string.Empty;
+        public string UserResponse { get; set; } = string.Empty; // liked, dismissed, ignored
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        public Dictionary<string, object> Context { get; set; } = new();
     }
 }
