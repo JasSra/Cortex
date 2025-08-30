@@ -346,7 +346,7 @@ public class SearchService : ISearchService
             }
         }
 
-        var hits = merged.Values.OrderByDescending(h => h.Score).Take(k * 2).ToList();
+    var hits = merged.Values.OrderByDescending(h => h.Score).Take(k * 2).ToList();
 
         // Apply cross-encoder reranking if enabled
         if (request.UseReranking && !string.IsNullOrWhiteSpace(q) && hits.Count > 1)
@@ -392,15 +392,19 @@ public class SearchService : ISearchService
 
     private SearchHit CreateSearchHit(NoteChunk chunk, Note note, string query, double score)
     {
-        var highlight = GenerateHighlight(chunk.Content, query);
-        
+        // Compute best match offset and snippet window
+        var (snippet, offsets, snippetStart) = ComputeSnippetAndOffsets(chunk.Content, query);
+
         return new SearchHit
         {
             ChunkId = chunk.Id,
             NoteId = note.Id,
             Title = note.Title,
             Content = chunk.Content,
-            Highlight = highlight,
+            Snippet = snippet,
+            Highlight = GenerateHighlight(chunk.Content, query),
+            Offsets = offsets,
+            SnippetStart = snippetStart,
             Score = score,
             CreatedAt = note.CreatedAt,
             Source = note.Source,
@@ -412,6 +416,46 @@ public class SearchService : ISearchService
             PiiTypes = note.PiiFlags?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() ?? new List<string>(),
             SecretTypes = note.SecretFlags?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() ?? new List<string>()
         };
+    }
+
+    private (string snippet, int[] offsets, int snippetStart) ComputeSnippetAndOffsets(string content, string query)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return (string.Empty, Array.Empty<int>(), 0);
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            var sn = content.Length > 300 ? content.Substring(0, 300) + "…" : content;
+            return (sn, Array.Empty<int>(), 0);
+        }
+
+        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var lower = content.ToLowerInvariant();
+        var firstIdx = -1;
+        var matchLen = 0;
+        foreach (var t in terms)
+        {
+            var idx = lower.IndexOf(t.ToLowerInvariant(), StringComparison.Ordinal);
+            if (idx >= 0 && (firstIdx == -1 || idx < firstIdx))
+            {
+                firstIdx = idx;
+                matchLen = Math.Max(matchLen, t.Length);
+            }
+        }
+
+        int start = 0;
+        if (firstIdx >= 0)
+        {
+            start = Math.Max(0, firstIdx - 100);
+        }
+        var end = Math.Min(content.Length, (firstIdx >= 0 ? firstIdx + matchLen + 200 : 300));
+        var snippetLen = Math.Max(0, end - start);
+        var snippet = content.Substring(start, snippetLen);
+        if (start > 0) snippet = "…" + snippet;
+        if (start + snippetLen < content.Length) snippet += "…";
+
+        var offsets = firstIdx >= 0 ? new[] { firstIdx, matchLen } : Array.Empty<int>();
+        return (snippet, offsets, start);
     }
 
     private string GenerateHighlight(string content, string query)

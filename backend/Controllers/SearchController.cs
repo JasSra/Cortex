@@ -37,7 +37,10 @@ public class SearchController : ControllerBase
     /// Search notes using hybrid (semantic + BM25) approach
     /// </summary>
     [HttpPost]
-    public async Task<IActionResult> Search([FromBody] SearchRequest request)
+    [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<SearchResponse>> Search([FromBody] SearchRequest request)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
             return Forbid("Reader role required");
@@ -66,14 +69,17 @@ public class SearchController : ControllerBase
         _logger.LogInformation("Search returned {HitCount} results for user {UserId}", 
             response.Hits.Count, _userContext.UserId);
 
-        return Ok(response);
+    return Ok(response);
     }
 
     /// <summary>
     /// Simple GET-based search for compatibility
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> SearchGet(
+    [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<SearchResponse>> SearchGet(
         [FromQuery] string q = "",
         [FromQuery] int k = 10,
         [FromQuery] string mode = "hybrid",
@@ -109,14 +115,17 @@ public class SearchController : ControllerBase
             await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search_performed");
         }
         
-        return Ok(response);
+    return Ok(response);
     }
 
     /// <summary>
     /// Advanced search with Stage 2 auto-classification filtering
     /// </summary>
     [HttpPost("advanced")]
-    public async Task<IActionResult> SearchAdvanced([FromBody] AdvancedSearchRequest request)
+    [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<SearchResponse>> SearchAdvanced([FromBody] AdvancedSearchRequest request)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
             return Forbid("Reader role required");
@@ -147,6 +156,6 @@ public class SearchController : ControllerBase
         _logger.LogInformation("Advanced search returned {HitCount} results for user {UserId}", 
             response.Hits.Count, _userContext.UserId);
 
-        return Ok(response);
+    return Ok(response);
     }
 }

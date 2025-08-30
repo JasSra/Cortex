@@ -351,6 +351,8 @@ public class SearchHit
     public string Highlight { get; set; } = string.Empty;
     // Offsets expressed as [start, length] in the chunk text for the best match
     public int[] Offsets { get; set; } = Array.Empty<int>();
+    // Start position used to derive snippet window (for precise client highlighting)
+    public int SnippetStart { get; set; }
     public int ChunkIndex { get; set; }
     public double Score { get; set; }
     

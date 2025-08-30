@@ -1342,6 +1342,39 @@ export class CortexApiClient {
     /**
      * @return Success
      */
+    streamGET(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Jobs/status/stream";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processStreamGET(_response);
+        });
+    }
+
+    protected processStreamGET(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
     notesGET(id: string): Promise<void> {
         let url_ = this.baseUrl + "/api/Notes/{id}";
         if (id === undefined || id === null)
@@ -1397,6 +1430,47 @@ export class CortexApiClient {
     }
 
     protected processNotesDELETE(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    notesPUT(id: string, body: UpdateNoteRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Notes/{id}";
+        if (id === undefined || id === null)
+            throw new Error("The parameter 'id' must be defined.");
+        url_ = url_.replace("{id}", encodeURIComponent("" + id));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processNotesPUT(_response);
+        });
+    }
+
+    protected processNotesPUT(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -1943,7 +2017,7 @@ export class CortexApiClient {
      * @param body (optional) 
      * @return Success
      */
-    query(body: RagQueryRequest | undefined): Promise<void> {
+    query(body: RagQueryRequest | undefined): Promise<RagAnswer> {
         let url_ = this.baseUrl + "/api/Rag/query";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -1954,6 +2028,7 @@ export class CortexApiClient {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                "Accept": "text/plain"
             }
         };
 
@@ -1962,19 +2037,47 @@ export class CortexApiClient {
         });
     }
 
-    protected processQuery(response: Response): Promise<void> {
+    protected processQuery(response: Response): Promise<RagAnswer> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = RagAnswer.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
+            });
+        } else if (status === 499) {
+            return response.text().then((_responseText) => {
+            let result499: any = null;
+            let resultData499 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result499 = ProblemDetails.fromJS(resultData499);
+            return throwException("Client Error", status, _responseText, _headers, result499);
+            });
+        } else if (status === 500) {
+            return response.text().then((_responseText) => {
+            return throwException("Server Error", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<RagAnswer>(null as any);
     }
 
     /**
@@ -2182,7 +2285,7 @@ export class CortexApiClient {
      * @param body (optional) 
      * @return Success
      */
-    searchPOST(body: SearchRequest | undefined): Promise<void> {
+    searchPOST(body: SearchRequest | undefined): Promise<SearchResponse> {
         let url_ = this.baseUrl + "/api/Search";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -2193,6 +2296,7 @@ export class CortexApiClient {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                "Accept": "text/plain"
             }
         };
 
@@ -2201,19 +2305,36 @@ export class CortexApiClient {
         });
     }
 
-    protected processSearchPOST(response: Response): Promise<void> {
+    protected processSearchPOST(response: Response): Promise<SearchResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SearchResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<SearchResponse>(null as any);
     }
 
     /**
@@ -2223,7 +2344,7 @@ export class CortexApiClient {
      * @param alpha (optional) 
      * @return Success
      */
-    searchGET(q: string | undefined, k: number | undefined, mode: string | undefined, alpha: number | undefined): Promise<void> {
+    searchGET(q: string | undefined, k: number | undefined, mode: string | undefined, alpha: number | undefined): Promise<SearchResponse> {
         let url_ = this.baseUrl + "/api/Search?";
         if (q === null)
             throw new Error("The parameter 'q' cannot be null.");
@@ -2246,6 +2367,7 @@ export class CortexApiClient {
         let options_: RequestInit = {
             method: "GET",
             headers: {
+                "Accept": "text/plain"
             }
         };
 
@@ -2254,26 +2376,43 @@ export class CortexApiClient {
         });
     }
 
-    protected processSearchGET(response: Response): Promise<void> {
+    protected processSearchGET(response: Response): Promise<SearchResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SearchResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<SearchResponse>(null as any);
     }
 
     /**
      * @param body (optional) 
      * @return Success
      */
-    advanced(body: AdvancedSearchRequest | undefined): Promise<void> {
+    advanced(body: AdvancedSearchRequest | undefined): Promise<SearchResponse> {
         let url_ = this.baseUrl + "/api/Search/advanced";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -2284,6 +2423,7 @@ export class CortexApiClient {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                "Accept": "text/plain"
             }
         };
 
@@ -2292,19 +2432,36 @@ export class CortexApiClient {
         });
     }
 
-    protected processAdvanced(response: Response): Promise<void> {
+    protected processAdvanced(response: Response): Promise<SearchResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SearchResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = ProblemDetails.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            let result403: any = null;
+            let resultData403 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result403 = ProblemDetails.fromJS(resultData403);
+            return throwException("Forbidden", status, _responseText, _headers, result403);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<SearchResponse>(null as any);
     }
 
     /**
@@ -2565,7 +2722,7 @@ export class CortexApiClient {
      * @param files (optional) 
      * @return Success
      */
-    upload(files: FileParameter[] | undefined): Promise<void> {
+    upload(files: FileParameter[] | undefined): Promise<UploadFilesResponse> {
         let url_ = this.baseUrl + "/api/Storage/upload";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -2579,6 +2736,7 @@ export class CortexApiClient {
             body: content_,
             method: "POST",
             headers: {
+                "Accept": "text/plain"
             }
         };
 
@@ -2587,19 +2745,38 @@ export class CortexApiClient {
         });
     }
 
-    protected processUpload(response: Response): Promise<void> {
+    protected processUpload(response: Response): Promise<UploadFilesResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = UploadFilesResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+                result400 = resultData400 !== undefined ? resultData400 : <any>null;
+    
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 500) {
+            return response.text().then((_responseText) => {
+            let result500: any = null;
+            let resultData500 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+                result500 = resultData500 !== undefined ? resultData500 : <any>null;
+    
+            return throwException("Server Error", status, _responseText, _headers, result500);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<UploadFilesResponse>(null as any);
     }
 
     /**
@@ -2607,7 +2784,7 @@ export class CortexApiClient {
      * @param offset (optional) 
      * @return Success
      */
-    storage(limit: number | undefined, offset: number | undefined): Promise<void> {
+    storageGET(limit: number | undefined, offset: number | undefined): Promise<StorageListResponse> {
         let url_ = this.baseUrl + "/api/Storage?";
         if (limit === null)
             throw new Error("The parameter 'limit' cannot be null.");
@@ -2622,20 +2799,68 @@ export class CortexApiClient {
         let options_: RequestInit = {
             method: "GET",
             headers: {
+                "Accept": "text/plain"
             }
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processStorage(_response);
+            return this.processStorageGET(_response);
         });
     }
 
-    protected processStorage(response: Response): Promise<void> {
+    protected processStorageGET(response: Response): Promise<StorageListResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = StorageListResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<StorageListResponse>(null as any);
+    }
+
+    /**
+     * @return No Content
+     */
+    storageDELETE(id: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/Storage/{id}";
+        if (id === undefined || id === null)
+            throw new Error("The parameter 'id' must be defined.");
+        url_ = url_.replace("{id}", encodeURIComponent("" + id));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processStorageDELETE(_response);
+        });
+    }
+
+    protected processStorageDELETE(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 204) {
+            return response.text().then((_responseText) => {
             return;
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+                result404 = resultData404 !== undefined ? resultData404 : <any>null;
+    
+            return throwException("Not Found", status, _responseText, _headers, result404);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2872,6 +3097,48 @@ export class CortexApiClient {
             });
         }
         return Promise.resolve<EntityInsight[]>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    assist(body: SuggestionRequest | undefined): Promise<SuggestionResponse> {
+        let url_ = this.baseUrl + "/api/Suggestions/assist";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processAssist(_response);
+        });
+    }
+
+    protected processAssist(response: Response): Promise<SuggestionResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SuggestionResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SuggestionResponse>(null as any);
     }
 
     /**
@@ -3425,7 +3692,7 @@ export class CortexApiClient {
      * @param format (optional) 
      * @return Success
      */
-    streamGET(text: string | undefined, format: string | undefined): Promise<void> {
+    streamGET2(text: string | undefined, format: string | undefined): Promise<void> {
         let url_ = this.baseUrl + "/api/Voice/tts/stream?";
         if (text === null)
             throw new Error("The parameter 'text' cannot be null.");
@@ -3444,11 +3711,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processStreamGET(_response);
+            return this.processStreamGET2(_response);
         });
     }
 
-    protected processStreamGET(response: Response): Promise<void> {
+    protected processStreamGET2(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -6372,6 +6639,110 @@ export interface IProblemDetails {
     [key: string]: any;
 }
 
+export class RagAnswer implements IRagAnswer {
+    answer?: string | undefined;
+    citations?: RagCitation[] | undefined;
+    usage?: any | undefined;
+
+    constructor(data?: IRagAnswer) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.answer = _data["answer"];
+            if (Array.isArray(_data["citations"])) {
+                this.citations = [] as any;
+                for (let item of _data["citations"])
+                    this.citations!.push(RagCitation.fromJS(item));
+            }
+            this.usage = _data["usage"];
+        }
+    }
+
+    static fromJS(data: any): RagAnswer {
+        data = typeof data === 'object' ? data : {};
+        let result = new RagAnswer();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["answer"] = this.answer;
+        if (Array.isArray(this.citations)) {
+            data["citations"] = [];
+            for (let item of this.citations)
+                data["citations"].push(item.toJSON());
+        }
+        data["usage"] = this.usage;
+        return data;
+    }
+}
+
+export interface IRagAnswer {
+    answer?: string | undefined;
+    citations?: RagCitation[] | undefined;
+    usage?: any | undefined;
+}
+
+export class RagCitation implements IRagCitation {
+    noteId?: string | undefined;
+    chunkId?: string | undefined;
+    offsets?: number[] | undefined;
+
+    constructor(data?: IRagCitation) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.noteId = _data["noteId"];
+            this.chunkId = _data["chunkId"];
+            if (Array.isArray(_data["offsets"])) {
+                this.offsets = [] as any;
+                for (let item of _data["offsets"])
+                    this.offsets!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): RagCitation {
+        data = typeof data === 'object' ? data : {};
+        let result = new RagCitation();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["noteId"] = this.noteId;
+        data["chunkId"] = this.chunkId;
+        if (Array.isArray(this.offsets)) {
+            data["offsets"] = [];
+            for (let item of this.offsets)
+                data["offsets"].push(item);
+        }
+        return data;
+    }
+}
+
+export interface IRagCitation {
+    noteId?: string | undefined;
+    chunkId?: string | undefined;
+    offsets?: number[] | undefined;
+}
+
 export class RagQueryRequest implements IRagQueryRequest {
     messages?: StringStringValueTuple[] | undefined;
     topK?: number;
@@ -6644,6 +7015,146 @@ export interface IRegisteredDevice {
     isActive?: boolean;
 }
 
+export class SearchHit implements ISearchHit {
+    noteId?: string | undefined;
+    chunkId?: string | undefined;
+    title?: string | undefined;
+    snippet?: string | undefined;
+    content?: string | undefined;
+    highlight?: string | undefined;
+    offsets?: number[] | undefined;
+    snippetStart?: number;
+    chunkIndex?: number;
+    score?: number;
+    createdAt?: Date;
+    source?: string | undefined;
+    fileType?: string | undefined;
+    sensitivityLevel?: number;
+    tags?: string[] | undefined;
+    hasPii?: boolean;
+    hasSecrets?: boolean;
+    piiTypes?: string[] | undefined;
+    secretTypes?: string[] | undefined;
+
+    constructor(data?: ISearchHit) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.noteId = _data["noteId"];
+            this.chunkId = _data["chunkId"];
+            this.title = _data["title"];
+            this.snippet = _data["snippet"];
+            this.content = _data["content"];
+            this.highlight = _data["highlight"];
+            if (Array.isArray(_data["offsets"])) {
+                this.offsets = [] as any;
+                for (let item of _data["offsets"])
+                    this.offsets!.push(item);
+            }
+            this.snippetStart = _data["snippetStart"];
+            this.chunkIndex = _data["chunkIndex"];
+            this.score = _data["score"];
+            this.createdAt = _data["createdAt"] ? new Date(_data["createdAt"].toString()) : <any>undefined;
+            this.source = _data["source"];
+            this.fileType = _data["fileType"];
+            this.sensitivityLevel = _data["sensitivityLevel"];
+            if (Array.isArray(_data["tags"])) {
+                this.tags = [] as any;
+                for (let item of _data["tags"])
+                    this.tags!.push(item);
+            }
+            this.hasPii = _data["hasPii"];
+            this.hasSecrets = _data["hasSecrets"];
+            if (Array.isArray(_data["piiTypes"])) {
+                this.piiTypes = [] as any;
+                for (let item of _data["piiTypes"])
+                    this.piiTypes!.push(item);
+            }
+            if (Array.isArray(_data["secretTypes"])) {
+                this.secretTypes = [] as any;
+                for (let item of _data["secretTypes"])
+                    this.secretTypes!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): SearchHit {
+        data = typeof data === 'object' ? data : {};
+        let result = new SearchHit();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["noteId"] = this.noteId;
+        data["chunkId"] = this.chunkId;
+        data["title"] = this.title;
+        data["snippet"] = this.snippet;
+        data["content"] = this.content;
+        data["highlight"] = this.highlight;
+        if (Array.isArray(this.offsets)) {
+            data["offsets"] = [];
+            for (let item of this.offsets)
+                data["offsets"].push(item);
+        }
+        data["snippetStart"] = this.snippetStart;
+        data["chunkIndex"] = this.chunkIndex;
+        data["score"] = this.score;
+        data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : <any>undefined;
+        data["source"] = this.source;
+        data["fileType"] = this.fileType;
+        data["sensitivityLevel"] = this.sensitivityLevel;
+        if (Array.isArray(this.tags)) {
+            data["tags"] = [];
+            for (let item of this.tags)
+                data["tags"].push(item);
+        }
+        data["hasPii"] = this.hasPii;
+        data["hasSecrets"] = this.hasSecrets;
+        if (Array.isArray(this.piiTypes)) {
+            data["piiTypes"] = [];
+            for (let item of this.piiTypes)
+                data["piiTypes"].push(item);
+        }
+        if (Array.isArray(this.secretTypes)) {
+            data["secretTypes"] = [];
+            for (let item of this.secretTypes)
+                data["secretTypes"].push(item);
+        }
+        return data;
+    }
+}
+
+export interface ISearchHit {
+    noteId?: string | undefined;
+    chunkId?: string | undefined;
+    title?: string | undefined;
+    snippet?: string | undefined;
+    content?: string | undefined;
+    highlight?: string | undefined;
+    offsets?: number[] | undefined;
+    snippetStart?: number;
+    chunkIndex?: number;
+    score?: number;
+    createdAt?: Date;
+    source?: string | undefined;
+    fileType?: string | undefined;
+    sensitivityLevel?: number;
+    tags?: string[] | undefined;
+    hasPii?: boolean;
+    hasSecrets?: boolean;
+    piiTypes?: string[] | undefined;
+    secretTypes?: string[] | undefined;
+}
+
 export class SearchRequest implements ISearchRequest {
     q?: string | undefined;
     k?: number;
@@ -6708,6 +7219,166 @@ export interface ISearchRequest {
     alpha?: number;
 }
 
+export class SearchResponse implements ISearchResponse {
+    hits?: SearchHit[] | undefined;
+
+    constructor(data?: ISearchResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            if (Array.isArray(_data["hits"])) {
+                this.hits = [] as any;
+                for (let item of _data["hits"])
+                    this.hits!.push(SearchHit.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SearchResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new SearchResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        if (Array.isArray(this.hits)) {
+            data["hits"] = [];
+            for (let item of this.hits)
+                data["hits"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface ISearchResponse {
+    hits?: SearchHit[] | undefined;
+}
+
+export class StorageListResponse implements IStorageListResponse {
+    total?: number;
+    items?: StoredFileResponse[] | undefined;
+
+    constructor(data?: IStorageListResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.total = _data["total"];
+            if (Array.isArray(_data["items"])) {
+                this.items = [] as any;
+                for (let item of _data["items"])
+                    this.items!.push(StoredFileResponse.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): StorageListResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new StorageListResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["total"] = this.total;
+        if (Array.isArray(this.items)) {
+            data["items"] = [];
+            for (let item of this.items)
+                data["items"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface IStorageListResponse {
+    total?: number;
+    items?: StoredFileResponse[] | undefined;
+}
+
+export class StoredFileResponse implements IStoredFileResponse {
+    id?: string | undefined;
+    fileName?: string | undefined;
+    url?: string | undefined;
+    sizeBytes?: number;
+    contentType?: string | undefined;
+    extension?: string | undefined;
+    tags?: string[] | undefined;
+
+    constructor(data?: IStoredFileResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.id = _data["id"];
+            this.fileName = _data["fileName"];
+            this.url = _data["url"];
+            this.sizeBytes = _data["sizeBytes"];
+            this.contentType = _data["contentType"];
+            this.extension = _data["extension"];
+            if (Array.isArray(_data["tags"])) {
+                this.tags = [] as any;
+                for (let item of _data["tags"])
+                    this.tags!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): StoredFileResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new StoredFileResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["id"] = this.id;
+        data["fileName"] = this.fileName;
+        data["url"] = this.url;
+        data["sizeBytes"] = this.sizeBytes;
+        data["contentType"] = this.contentType;
+        data["extension"] = this.extension;
+        if (Array.isArray(this.tags)) {
+            data["tags"] = [];
+            for (let item of this.tags)
+                data["tags"].push(item);
+        }
+        return data;
+    }
+}
+
+export interface IStoredFileResponse {
+    id?: string | undefined;
+    fileName?: string | undefined;
+    url?: string | undefined;
+    sizeBytes?: number;
+    contentType?: string | undefined;
+    extension?: string | undefined;
+    tags?: string[] | undefined;
+}
+
 export class StringStringValueTuple implements IStringStringValueTuple {
 
     constructor(data?: IStringStringValueTuple) {
@@ -6736,6 +7407,98 @@ export class StringStringValueTuple implements IStringStringValueTuple {
 }
 
 export interface IStringStringValueTuple {
+}
+
+export class SuggestionRequest implements ISuggestionRequest {
+    prompt?: string | undefined;
+    context?: string | undefined;
+    mode?: string | undefined;
+    provider?: string | undefined;
+    maxTokens?: number | undefined;
+    temperature?: number | undefined;
+
+    constructor(data?: ISuggestionRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.prompt = _data["prompt"];
+            this.context = _data["context"];
+            this.mode = _data["mode"];
+            this.provider = _data["provider"];
+            this.maxTokens = _data["maxTokens"];
+            this.temperature = _data["temperature"];
+        }
+    }
+
+    static fromJS(data: any): SuggestionRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SuggestionRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["prompt"] = this.prompt;
+        data["context"] = this.context;
+        data["mode"] = this.mode;
+        data["provider"] = this.provider;
+        data["maxTokens"] = this.maxTokens;
+        data["temperature"] = this.temperature;
+        return data;
+    }
+}
+
+export interface ISuggestionRequest {
+    prompt?: string | undefined;
+    context?: string | undefined;
+    mode?: string | undefined;
+    provider?: string | undefined;
+    maxTokens?: number | undefined;
+    temperature?: number | undefined;
+}
+
+export class SuggestionResponse implements ISuggestionResponse {
+    text?: string | undefined;
+
+    constructor(data?: ISuggestionResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.text = _data["text"];
+        }
+    }
+
+    static fromJS(data: any): SuggestionResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new SuggestionResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["text"] = this.text;
+        return data;
+    }
+}
+
+export interface ISuggestionResponse {
+    text?: string | undefined;
 }
 
 export class Tag implements ITag {
@@ -7138,6 +7901,46 @@ export interface IUpdateMascotProfileRequest {
     proactivity?: number | undefined;
 }
 
+export class UpdateNoteRequest implements IUpdateNoteRequest {
+    title?: string | undefined;
+    content?: string | undefined;
+
+    constructor(data?: IUpdateNoteRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.title = _data["title"];
+            this.content = _data["content"];
+        }
+    }
+
+    static fromJS(data: any): UpdateNoteRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new UpdateNoteRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["title"] = this.title;
+        data["content"] = this.content;
+        return data;
+    }
+}
+
+export interface IUpdateNoteRequest {
+    title?: string | undefined;
+    content?: string | undefined;
+}
+
 export class UpdateUserProfileRequest implements IUpdateUserProfileRequest {
     email?: string | undefined;
     name?: string | undefined;
@@ -7184,6 +7987,50 @@ export interface IUpdateUserProfileRequest {
     name?: string | undefined;
     bio?: string | undefined;
     avatar?: string | undefined;
+}
+
+export class UploadFilesResponse implements IUploadFilesResponse {
+    files?: StoredFileResponse[] | undefined;
+
+    constructor(data?: IUploadFilesResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            if (Array.isArray(_data["files"])) {
+                this.files = [] as any;
+                for (let item of _data["files"])
+                    this.files!.push(StoredFileResponse.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): UploadFilesResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new UploadFilesResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        if (Array.isArray(this.files)) {
+            data["files"] = [];
+            for (let item of this.files)
+                data["files"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface IUploadFilesResponse {
+    files?: StoredFileResponse[] | undefined;
 }
 
 export class UserAchievement implements IUserAchievement {

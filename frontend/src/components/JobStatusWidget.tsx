@@ -9,6 +9,10 @@ type JobStatus = {
   processed: number
   failed: number
   avgMs: number
+  pendingStreams?: number
+  pendingBacklog?: number
+  usingStreams?: boolean
+  redisConnected?: boolean
 }
 
 export default function JobStatusWidget({ intervalMs = 12000 }: { intervalMs?: number }) {
@@ -46,12 +50,25 @@ export default function JobStatusWidget({ intervalMs = 12000 }: { intervalMs?: n
 
   return (
     <div
-      className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg bg-gray-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700"
-      title={status?.summary || 'Background workers'}
+      className="flex items-center gap-2 px-2 py-1 rounded-lg bg-gray-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700"
+      title={
+        status
+          ? `${status.summary}\nPending: ${status.pending} (streams ${status.pendingStreams ?? 0}, backlog ${status.pendingBacklog ?? 0})\nMode: ${status.usingStreams ? 'streams' : 'polling'} • Redis: ${status.redisConnected ? 'connected' : 'disconnected'}`
+          : 'Background workers'
+      }
     >
-      <span className={`h-2 w-2 rounded-full ${loading ? 'bg-amber-500 animate-pulse' : (status && status.pending > 0 ? 'bg-blue-500' : 'bg-emerald-500')}`}></span>
+      <span className={`h-2 w-2 rounded-full ${loading
+        ? 'bg-amber-500 animate-pulse'
+        : (status && ((status.pending ?? 0) > 0 || (status.pendingStreams ?? 0) > 0 || (status.pendingBacklog ?? 0) > 0)
+            ? 'bg-blue-500'
+            : 'bg-emerald-500')
+        }`}></span>
       <span className="truncate max-w-[280px]">
-        {status?.summary || 'Jobs: idle'}
+        {status
+          ? ((status.pending ?? 0) > 0 || (status.pendingStreams ?? 0) > 0 || (status.pendingBacklog ?? 0) > 0
+              ? `Pending: ${(status.pending ?? 0)} (S:${status.pendingStreams ?? 0} B:${status.pendingBacklog ?? 0})`
+              : (status.summary || 'Jobs: idle'))
+          : 'Jobs: idle'}
       </span>
     </div>
   )

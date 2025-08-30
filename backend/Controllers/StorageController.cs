@@ -31,12 +31,15 @@ namespace CortexApi.Controllers
             _http = http;
         }
 
-        [HttpPost("upload")] // single or batch via multipart
-        [RequestSizeLimit(MaxSizeBytes * 10)] // allow some headroom for batch
-        public async Task<IActionResult> Upload([FromForm] IFormFileCollection files, CancellationToken ct)
+    [HttpPost("upload")] // single or batch via multipart
+    [RequestSizeLimit(MaxSizeBytes * 10)] // allow some headroom for batch
+    [ProducesResponseType(typeof(UploadFilesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<UploadFilesResponse>> Upload([FromForm] IFormFileCollection files, CancellationToken ct)
         {
             if (files == null || files.Count == 0)
-                return BadRequest("No files provided");
+        return BadRequest("No files provided");
 
             var storageRoot = _config["Storage:Root"] ?? Path.Combine(AppContext.BaseDirectory, "storage");
             var publicBase = _config["Storage:PublicBaseUrl"]; // optional, fallback to /storage
@@ -113,11 +116,12 @@ namespace CortexApi.Controllers
                 }
             }
 
-            return Ok(new { files = results });
+            return Ok(new UploadFilesResponse { Files = results });
         }
 
         [HttpGet]
-        public async Task<IActionResult> List([FromQuery] int limit = 50, [FromQuery] int offset = 0, CancellationToken ct = default)
+        [ProducesResponseType(typeof(StorageListResponse), StatusCodes.Status200OK)]
+        public async Task<ActionResult<StorageListResponse>> List([FromQuery] int limit = 50, [FromQuery] int offset = 0, CancellationToken ct = default)
         {
             var q = _db.StoredFiles.Where(f => f.UserId == _user.UserId)
                 .OrderByDescending(f => f.CreatedAt);
@@ -137,7 +141,35 @@ namespace CortexApi.Controllers
                 Tags = string.IsNullOrWhiteSpace(e.Tags) ? new List<string>() : e.Tags.Split(',').ToList()
             }).ToList();
 
-            return Ok(new { total, items });
+            return Ok(new StorageListResponse { Total = total, Items = items });
+        }
+
+        [HttpDelete("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> Delete(string id, CancellationToken ct)
+        {
+            var entity = await _db.StoredFiles.FirstOrDefaultAsync(f => f.Id == id && f.UserId == _user.UserId, ct);
+            if (entity == null)
+            {
+                return NotFound(new { error = "File not found" });
+            }
+
+            try
+            {
+                if (System.IO.File.Exists(entity.StoredPath))
+                {
+                    System.IO.File.Delete(entity.StoredPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete file from disk: {Path}", entity.StoredPath);
+            }
+
+            _db.StoredFiles.Remove(entity);
+            await _db.SaveChangesAsync(ct);
+            return NoContent();
         }
 
         private async Task<List<string>> GenerateTagsWithOpenAiAsync(string name, string ext, long size, CancellationToken ct)
@@ -252,5 +284,16 @@ Metadata:
         public string ContentType { get; set; } = string.Empty;
         public string Extension { get; set; } = string.Empty;
         public List<string> Tags { get; set; } = new();
+    }
+
+    public class UploadFilesResponse
+    {
+        public List<StoredFileResponse> Files { get; set; } = new();
+    }
+
+    public class StorageListResponse
+    {
+        public int Total { get; set; }
+        public List<StoredFileResponse> Items { get; set; } = new();
     }
 }

@@ -30,7 +30,11 @@ public class JobsController : ControllerBase
                 pending = stats.PendingJobs,
                 processed = stats.ProcessedJobs,
                 failed = stats.FailedJobs,
-                avgMs
+                avgMs,
+                pendingStreams = stats.PendingStreams,
+                pendingBacklog = stats.PendingBacklog,
+                usingStreams = stats.UsingStreams,
+                redisConnected = stats.RedisConnected,
             });
         }
         catch (Exception ex)
@@ -42,7 +46,7 @@ public class JobsController : ControllerBase
 
     private static string BuildSummary(int pending, int processed, int failed, int avgMs)
     {
-        if (pending == 0 && processed == 0 && failed == 0)
+    if (pending == 0 && processed == 0 && failed == 0)
             return "Background workers are idle.";
 
         var parts = new List<string>();
@@ -77,7 +81,11 @@ public class JobsController : ControllerBase
                     pending = stats.PendingJobs,
                     processed = stats.ProcessedJobs,
                     failed = stats.FailedJobs,
-                    avgMs
+                    avgMs,
+                    pendingStreams = stats.PendingStreams,
+                    pendingBacklog = stats.PendingBacklog,
+                    usingStreams = stats.UsingStreams,
+                    redisConnected = stats.RedisConnected,
                 });
                 await Response.WriteAsync($"data: {payload}\n\n");
                 await Response.Body.FlushAsync();

@@ -30,7 +30,12 @@ public class RagController : ControllerBase
     /// Query the knowledge base using RAG approach (Reader role required)
     /// </summary>
     [HttpPost("query")]
-    public async Task<IActionResult> Query(
+    [ProducesResponseType(typeof(RagAnswer), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status499ClientClosedRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<RagAnswer>> Query(
         [FromBody] RagQueryRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -69,6 +74,7 @@ public class RagController : ControllerBase
     /// Stream RAG responses (for real-time chat-like experience)
     /// </summary>
     [HttpPost("stream")]
+    [Produces("text/event-stream")]
     public async Task<IActionResult> StreamQuery(
         [FromBody] RagQueryRequest request,
         CancellationToken cancellationToken = default)

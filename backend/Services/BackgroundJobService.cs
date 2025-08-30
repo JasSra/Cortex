@@ -18,6 +18,11 @@ public class JobStats
     public int ProcessedJobs { get; set; }
     public int FailedJobs { get; set; }
     public TimeSpan AverageProcessingTime { get; set; }
+	// Extra diagnostics to help UI reflect true state
+	public int PendingStreams { get; set; }
+	public int PendingBacklog { get; set; }
+	public bool UsingStreams { get; set; }
+	public bool RedisConnected { get; set; }
 }
 
 public class EmbeddingJobPayload
@@ -77,7 +82,11 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 	{
 		try
 		{
-			var redisConfig = _configuration.GetConnectionString("Redis");
+			// Accept multiple config keys for Redis to match VectorService
+			var redisConfig =
+				_configuration["REDIS_CONNECTION"]
+				?? _configuration["Redis:Connection"]
+				?? _configuration.GetConnectionString("Redis");
 			if (string.IsNullOrEmpty(redisConfig))
 			{
 				_logger.LogWarning("Redis connection string not configured, falling back to polling mode");
@@ -147,32 +156,63 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 
 	public async Task<JobStats> GetStatsAsync(CancellationToken ct = default)
 	{
-		if (_db == null)
-		{
-			return new JobStats();
-		}
-
+		int pendingFromStreams = 0;
 		try
 		{
-			var embeddingInfo = await _db.StreamInfoAsync(EMBEDDING_STREAM);
-			var classificationInfo = await _db.StreamInfoAsync(CLASSIFICATION_STREAM);
-			var piiInfo = await _db.StreamInfoAsync(PII_DETECTION_STREAM);
-			var weeklyDigestInfo = await _db.StreamInfoAsync(WEEKLY_DIGEST_STREAM);
-            var graphInfo = await _db.StreamInfoAsync(GRAPH_ENRICH_STREAM);
-
-			return new JobStats
+			if (_db != null)
 			{
-				PendingJobs = (int)(embeddingInfo.Length + classificationInfo.Length + piiInfo.Length + weeklyDigestInfo.Length + graphInfo.Length),
-				ProcessedJobs = 0,
-				FailedJobs = 0,
-				AverageProcessingTime = TimeSpan.Zero
-			};
+				var embeddingInfo = await _db.StreamInfoAsync(EMBEDDING_STREAM);
+				var classificationInfo = await _db.StreamInfoAsync(CLASSIFICATION_STREAM);
+				var piiInfo = await _db.StreamInfoAsync(PII_DETECTION_STREAM);
+				var weeklyDigestInfo = await _db.StreamInfoAsync(WEEKLY_DIGEST_STREAM);
+				var graphInfo = await _db.StreamInfoAsync(GRAPH_ENRICH_STREAM);
+				pendingFromStreams = (int)(embeddingInfo.Length + classificationInfo.Length + piiInfo.Length + weeklyDigestInfo.Length + graphInfo.Length);
+			}
 		}
 		catch (Exception ex)
 		{
-			_logger.LogWarning(ex, "Failed to get job stats");
-			return new JobStats();
+			_logger.LogDebug(ex, "Failed to read Redis stream stats; continuing with EF backlog stats");
 		}
+
+		// Add EF-based backlog: count chunks without embeddings
+		int pendingBacklog = 0;
+		int processedRecently = 0;
+		try
+		{
+			using var scope = _scopeFactory.CreateScope();
+			var db = scope.ServiceProvider.GetRequiredService<CortexApi.Data.CortexDbContext>();
+
+			// Count chunks that do not yet have an embedding record (LEFT JOIN NULL pattern for better translation)
+			pendingBacklog = await (
+				from ch in db.NoteChunks.AsNoTracking()
+				join em in db.Embeddings.AsNoTracking() on ch.Id equals em.ChunkId into gj
+				from em in gj.DefaultIfEmpty()
+				where em == null
+				select ch.Id
+			).CountAsync(ct);
+
+			// Heuristic: embeddings created in the last 10 minutes
+			var cutoff = DateTime.UtcNow.AddMinutes(-10);
+			processedRecently = await db.Embeddings
+				.AsNoTracking()
+				.CountAsync(e => e.CreatedAt >= cutoff, ct);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogDebug(ex, "Failed to compute EF backlog stats");
+		}
+
+		return new JobStats
+		{
+			PendingJobs = pendingFromStreams + pendingBacklog,
+			ProcessedJobs = processedRecently,
+			FailedJobs = 0,
+			AverageProcessingTime = TimeSpan.Zero,
+			PendingStreams = pendingFromStreams,
+			PendingBacklog = pendingBacklog,
+			UsingStreams = _db != null,
+			RedisConnected = _redis?.IsConnected ?? false,
+		};
 	}
 
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -10,6 +10,7 @@ import SmartLiveAssistant from '@/components/assistant/SmartLiveAssistant'
 import KnowledgeGraphVisualizer from '@/components/graph/KnowledgeGraphVisualizer'
 import NotesBrowserPage from '@/components/pages/NotesBrowserPage'
 import AdvancedSearchPage from '@/components/pages/AdvancedSearchPage'
+import DocumentsPage from '@/components/pages/DocumentsPage'
 import { UserProfile } from '@/components/UserProfile'
 
 export default function Home() {
@@ -80,14 +81,7 @@ export default function Home() {
         return <NotesBrowserPage />
       
       case 'documents':
-        return (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">Document Management</h2>
-              <p className="text-slate-600 dark:text-slate-400">Upload and manage your documents here</p>
-            </div>
-          </div>
-        )
+        return <DocumentsPage />
       
       case 'graph':
         return <KnowledgeGraphVisualizer />

@@ -23,6 +23,7 @@ public interface IIngestService
     Task<IngestResult?> IngestTextAsync(string title, string content);
     Task<Note?> GetNoteAsync(string noteId);
     Task<List<Note>> GetUserNotesAsync(string userId, int limit = 20, int offset = 0);
+    Task<IngestResult?> UpdateNoteAsync(string noteId, string title, string content);
 }
 
 public class IngestService : IIngestService
@@ -178,6 +179,58 @@ public class IngestService : IIngestService
         return await _context.Notes
             .Include(n => n.Chunks.OrderBy(c => c.ChunkIndex))
             .FirstOrDefaultAsync(n => n.Id == noteId);
+    }
+
+    public async Task<IngestResult?> UpdateNoteAsync(string noteId, string title, string content)
+    {
+        // Note query is already scoped by user via query filter
+        var note = await _context.Notes
+            .Include(n => n.Chunks)
+            .FirstOrDefaultAsync(n => n.Id == noteId);
+        if (note == null)
+        {
+            _logger.LogWarning("UpdateNoteAsync: Note {NoteId} not found or not accessible for user {UserId}", noteId, _user.UserId);
+            return null;
+        }
+
+        var now = DateTime.UtcNow;
+        note.Title = string.IsNullOrWhiteSpace(title) ? note.Title : title.Trim();
+        note.Content = content;
+        note.UpdatedAt = now;
+        note.Source = "editor";
+        note.FileType = ".txt";
+        note.FileSizeBytes = Encoding.UTF8.GetByteCount(content);
+        note.Sha256Hash = CalculateSha256FromText(content);
+
+        // Remove existing derived data to avoid duplication
+        var existingChunks = await _context.NoteChunks.Where(c => c.NoteId == note.Id).ToListAsync();
+        if (existingChunks.Count > 0)
+        {
+            _context.NoteChunks.RemoveRange(existingChunks); // cascades to Embeddings
+        }
+        var oldSpans = await _context.TextSpans.Where(s => s.NoteId == note.Id).ToListAsync();
+        if (oldSpans.Count > 0) _context.TextSpans.RemoveRange(oldSpans);
+        var oldClasses = await _context.Classifications.Where(c => c.NoteId == note.Id).ToListAsync();
+        if (oldClasses.Count > 0) _context.Classifications.RemoveRange(oldClasses);
+
+        // Recreate chunks
+        var chunks = ChunkText(content, note.Id);
+        note.ChunkCount = chunks.Count;
+        note.Chunks = chunks;
+
+        // Re-run classification and span extraction
+        await PerformAutoClassificationAsync(note, content);
+
+        await _context.SaveChangesAsync();
+
+        // Enqueue embeddings for new chunks
+        foreach (var ch in chunks)
+        {
+            await _vectorService.EnqueueEmbedAsync(note, ch);
+        }
+
+        _logger.LogInformation("Updated note {NoteId} with {ChunkCount} chunks for user {UserId}", note.Id, note.ChunkCount, _user.UserId);
+        return new IngestResult { NoteId = note.Id, Title = note.Title, CountChunks = note.ChunkCount };
     }
 
     private async Task<IngestResult?> IngestSingleFileAsync(IFormFile file)
