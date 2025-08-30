@@ -99,7 +99,6 @@ const NotesBrowserPage: React.FC = () => {
     think()
 
     try {
-      const offset = (page - 1) * pagination.pageSize
       const notesData = await getNotes()
       
       // Transform the data to match our interface
@@ -139,7 +138,7 @@ const NotesBrowserPage: React.FC = () => {
       setIsLoading(false)
       idle()
     }
-  }, [getNotes, speak, think, idle, pagination.pageSize])
+  }, [getNotes, speak, think, idle])
 
   // Initial load
   useEffect(() => {

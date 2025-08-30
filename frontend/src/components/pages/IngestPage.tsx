@@ -1,8 +1,8 @@
 'use client'
 
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { useIngestApi, useNotesApi } from '@/services/apiClient'
-import { IngestResult, Note } from '@/types/api'
+import { useIngestApi } from '@/services/apiClient'
+import { IngestResult } from '@/types/api'
 import { ArrowUpTrayIcon, FolderOpenIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/contexts/AuthContext'
@@ -10,10 +10,8 @@ import { useAuth } from '@/contexts/AuthContext'
 const IngestPage: React.FC = () => {
   const { isAuthenticated } = useAuth()
   const { uploadFiles, ingestFolder, createNote } = useIngestApi()
-  const { getNotes } = useNotesApi()
 
   const [results, setResults] = useState<IngestResult[]>([])
-  const [notes, setNotes] = useState<Note[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [folderPath, setFolderPath] = useState('')
@@ -27,14 +25,13 @@ const IngestPage: React.FC = () => {
     try {
       const res = await uploadFiles(files)
       setResults(prev => [...res, ...prev])
-      const latest = await getNotes()
-      setNotes(latest as any)
+      // Remove automatic notes refresh - let the Notes page handle its own data
     } catch (e: any) {
       setError(e?.message || 'Upload failed')
     } finally {
       setIsUploading(false)
     }
-  }, [uploadFiles, getNotes])
+  }, [uploadFiles])
 
   const onDrop = useCallback((ev: React.DragEvent) => {
     ev.preventDefault()
@@ -54,14 +51,13 @@ const IngestPage: React.FC = () => {
     try {
       const result = await createNote(text.trim())
       setResults(prev => [result, ...prev])
-      const latest = await getNotes()
-      setNotes(latest as any)
+      // Remove automatic notes refresh - let the Notes page handle its own data
     } catch (e: any) {
       setError(e?.message || 'Failed to create note from pasted text')
     } finally {
       setIsUploading(false)
     }
-  }, [createNote, getNotes])
+  }, [createNote])
 
   const onFolderIngest = useCallback(async () => {
     if (!folderPath.trim()) return
@@ -70,14 +66,13 @@ const IngestPage: React.FC = () => {
     try {
       const res = await ingestFolder(folderPath.trim())
       setResults(prev => [...res, ...prev])
-      const latest = await getNotes()
-      setNotes(latest as any)
+      // Remove automatic notes refresh - let the Notes page handle its own data
     } catch (e: any) {
       setError(e?.message || 'Folder ingest failed')
     } finally {
       setIsUploading(false)
     }
-  }, [folderPath, ingestFolder, getNotes])
+  }, [folderPath, ingestFolder])
 
   const dropzoneClasses = useMemo(() => (
     'flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-8 text-center '
@@ -202,20 +197,6 @@ const IngestPage: React.FC = () => {
         </div>
       )}
 
-      {/* Notes preview */}
-      {notes.length > 0 && (
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Your notes</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {notes.slice(0, 6).map(n => (
-              <div key={n.id} className="p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700">
-                <div className="font-medium text-gray-900 dark:text-white">{n.title || n.id}</div>
-                <div className="text-sm text-gray-600 dark:text-slate-400">{new Date(n.createdAt).toLocaleString()}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
