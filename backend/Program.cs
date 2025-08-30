@@ -40,6 +40,7 @@ builder.Services.AddScoped<ISearchService, SearchService>();
 builder.Services.AddScoped<IVoiceService, VoiceService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IChatToolsService, ChatToolsService>();
+builder.Services.AddScoped<ISuggestionsService, SuggestionsService>();
 builder.Services.AddSingleton<IVectorService, VectorService>();
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<INerService, NerService>();
@@ -86,7 +87,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             RoleClaimType = "extension_Role"
         };
 
-        // Support tokens in query for WebSocket and media elements (e.g., /voice/stt and /api/Voice/tts/stream)
+        // Support tokens in query for WebSocket/media elements and SSE (stt, tts/stream, jobs status)
         options.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>
@@ -94,7 +95,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var accessToken = context.Request.Query["access_token"].ToString();
                 var path = context.HttpContext.Request.Path;
                 if (!string.IsNullOrEmpty(accessToken) &&
-                    (path.StartsWithSegments("/voice/stt") || path.StartsWithSegments("/api/Voice/tts/stream")))
+                    (path.StartsWithSegments("/voice/stt") ||
+                     path.StartsWithSegments("/api/Voice/tts/stream") ||
+                     path.StartsWithSegments("/api/Jobs/status/stream")))
                 {
                     context.Token = accessToken;
                 }

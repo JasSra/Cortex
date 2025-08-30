@@ -30,11 +30,11 @@ public class SeedDataService : ISeedDataService
 
     public async Task SeedDataForNewUserAsync(string userId)
     {
-        if (await HasUserDataAsync(userId))
-        {
-            _logger.LogInformation("User {UserId} already has data, skipping seed", userId);
-            return;
-        }
+        // if (await HasUserDataAsync(userId))
+        // {
+        //     _logger.LogInformation("User {UserId} already has data, skipping seed", userId);
+        //     return;
+        // }
 
         _logger.LogInformation("Seeding data for new user {UserId}", userId);
 

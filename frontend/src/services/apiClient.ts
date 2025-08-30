@@ -190,6 +190,11 @@ export function useNotesApi() {
   return useMemo(() => ({
     getNotes: () => getCached('notes:list', TTL, () => http.get<any[]>('/api/Notes')),
     getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
+    updateNote: (id: string, content: string, title?: string) => http.put<any>(`/api/Notes/${id}`, { content, title }).then((data) => ({
+      noteId: data?.noteId ?? data?.NoteId ?? id,
+      title: data?.title ?? data?.Title ?? title ?? '',
+      chunkCount: data?.countChunks ?? data?.CountChunks ?? 0,
+    })),
   }), [http])
 }
 
@@ -260,8 +265,8 @@ export function useIngestApi() {
 
 // Search
 export function useSearchApi() {
-  // Use raw authed fetch because generated client returns void for search endpoints
-  const http = useAuthedFetch()
+  // Now use the generated client (typed SearchResponse)
+  const client = useCortexApiClient()
   const normalize = useCallback((raw: any) => {
     // Accept array or object; produce both Hits and hits for compatibility
     const hits = Array.isArray(raw)
@@ -277,48 +282,41 @@ export function useSearchApi() {
 
   const search = useCallback(async (request: any) => {
     const body = {
-      Q: request?.Q ?? request?.q ?? request?.query ?? '',
-      Mode: request?.Mode ?? request?.mode ?? 'hybrid',
-      K: request?.K ?? request?.k ?? 20,
-      Alpha: request?.Alpha ?? request?.alpha ?? 0.6,
-      Filters: request?.Filters ?? request?.filters,
+      q: request?.Q ?? request?.q ?? request?.query ?? '',
+      mode: request?.Mode ?? request?.mode ?? 'hybrid',
+      k: request?.K ?? request?.k ?? 20,
+      alpha: request?.Alpha ?? request?.alpha ?? 0.6,
+      filters: request?.Filters ?? request?.filters,
     }
-    const res = await http.post<any>('/api/Search', body)
+    const res = await client.searchPOST(body as any)
     return normalize(res)
-  }, [http, normalize])
+  }, [client, normalize])
 
   const searchGet = useCallback(async (q: string, k?: number, mode?: string, alpha?: number) => {
-    const params = new URLSearchParams()
-    if (q) params.set('q', q)
-    if (k != null) params.set('k', String(k))
-    if (mode) params.set('mode', mode)
-    if (alpha != null) params.set('alpha', String(alpha))
-    const res = await http.get<any>(`/api/Search?${params.toString()}`)
+    const res = await client.searchGET(q, k, mode, alpha)
     return normalize(res)
-  }, [http, normalize])
+  }, [client, normalize])
 
   const advancedSearch = useCallback(async (request: any) => {
     const body = {
-      Q: request?.Q ?? request?.q ?? request?.query ?? '',
-      Mode: request?.Mode ?? request?.mode ?? 'hybrid',
-      K: request?.K ?? request?.k ?? 20,
-      Alpha: request?.Alpha ?? request?.alpha ?? 0.6,
-      SensitivityLevels: request?.SensitivityLevels ?? request?.sensitivityLevels,
-      FileTypes: request?.FileTypes ?? request?.fileTypes,
-      Tags: request?.Tags ?? request?.tags,
-  // Backend expects singular Source and DateFrom/DateTo
-  Source: request?.Source ?? request?.source ?? (Array.isArray(request?.Sources ?? request?.sources) ? (request?.Sources ?? request?.sources)[0] : request?.Sources ?? request?.sources),
-  DateFrom: request?.DateFrom ?? request?.dateFrom ?? request?.FromDate ?? request?.fromDate,
-  DateTo: request?.DateTo ?? request?.dateTo ?? request?.ToDate ?? request?.toDate,
-      ExcludePii: request?.ExcludePii ?? request?.excludePii,
-      ExcludeSecrets: request?.ExcludeSecrets ?? request?.excludeSecrets,
-  PiiTypes: request?.PiiTypes ?? request?.piiTypes,
-  SecretTypes: request?.SecretTypes ?? request?.secretTypes,
-  // Non-backend fields are intentionally omitted
+      q: request?.Q ?? request?.q ?? request?.query ?? '',
+      mode: request?.Mode ?? request?.mode ?? 'hybrid',
+      k: request?.K ?? request?.k ?? 20,
+      alpha: request?.Alpha ?? request?.alpha ?? 0.6,
+      sensitivityLevels: request?.SensitivityLevels ?? request?.sensitivityLevels,
+      fileTypes: request?.FileTypes ?? request?.fileTypes,
+      tags: request?.Tags ?? request?.tags,
+      source: request?.Source ?? request?.source ?? (Array.isArray(request?.Sources ?? request?.sources) ? (request?.Sources ?? request?.sources)[0] : request?.Sources ?? request?.sources),
+      dateFrom: request?.DateFrom ?? request?.dateFrom ?? request?.FromDate ?? request?.fromDate,
+      dateTo: request?.DateTo ?? request?.dateTo ?? request?.ToDate ?? request?.toDate,
+      excludePii: request?.ExcludePii ?? request?.excludePii,
+      excludeSecrets: request?.ExcludeSecrets ?? request?.excludeSecrets,
+      piiTypes: request?.PiiTypes ?? request?.piiTypes,
+      secretTypes: request?.SecretTypes ?? request?.secretTypes,
     }
-    const res = await http.post<any>('/api/Search/advanced', body)
+    const res = await client.advanced(body as any)
     return normalize(res)
-  }, [http, normalize])
+  }, [client, normalize])
 
   return { search, searchGet, advancedSearch }
 }
@@ -337,9 +335,13 @@ export function useJobsApi() {
         processed: res?.processed ?? res?.Processed ?? 0,
         failed: res?.failed ?? res?.Failed ?? 0,
         avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
+        pendingStreams: res?.pendingStreams ?? res?.PendingStreams ?? 0,
+        pendingBacklog: res?.pendingBacklog ?? res?.PendingBacklog ?? 0,
+        usingStreams: res?.usingStreams ?? res?.UsingStreams ?? false,
+        redisConnected: res?.redisConnected ?? res?.RedisConnected ?? false,
       }
     },
-    subscribeStatusStream: (onUpdate: (s: { summary: string; pending: number; processed: number; failed: number; avgMs: number }) => void) => {
+    subscribeStatusStream: (onUpdate: (s: { summary: string; pending: number; processed: number; failed: number; avgMs: number; pendingStreams?: number; pendingBacklog?: number; usingStreams?: boolean; redisConnected?: boolean }) => void) => {
       let es: EventSource | null = null
       let closed = false
       ;(async () => {
@@ -358,6 +360,10 @@ export function useJobsApi() {
                   processed: data?.processed ?? data?.Processed ?? 0,
                   failed: data?.failed ?? data?.Failed ?? 0,
                   avgMs: data?.avgMs ?? data?.AverageMs ?? 0,
+                  pendingStreams: data?.pendingStreams ?? data?.PendingStreams ?? 0,
+                  pendingBacklog: data?.pendingBacklog ?? data?.PendingBacklog ?? 0,
+                  usingStreams: data?.usingStreams ?? data?.UsingStreams ?? false,
+                  redisConnected: data?.redisConnected ?? data?.RedisConnected ?? false,
                 })
               } catch {
                 // ignore
@@ -397,17 +403,23 @@ export function useClassificationApi() {
   }
 }
 
-// Chat tools
+// Chat tools (thin wrapper around useChatApi)
 export function useChatToolsApi() {
-  const client = useCortexApiClient()
+  const { chatWithTools, executeTool, getAvailableTools } = useChatApi()
   return {
-    processChat: (request: any) => client.tools(request),
-    executeTool: (request: any) => client.execute(request),
-    getAvailableTools: () => client.toolsAll(),
+    chatWithTools,
+    executeTool,
+    getAvailableTools,
+    // Back-compat helper: accept a single request object
+    processChat: (request: any) =>
+      chatWithTools(
+        request?.query ?? request?.Query ?? '',
+        request?.availableTools ?? request?.AvailableTools ?? [],
+        request?.context ?? request?.Context ?? {}
+      ),
   }
 }
 
-// User profile API (not fully present in generated client yet)
 // User profile API via generated CortexApiClient (prefer generated client over ad-hoc fetch)
 export function useUserApi() {
   const client = useCortexApiClient()
@@ -523,6 +535,15 @@ export function useNotificationsApi() {
   }
 }
 
+// AI Assist API (generic suggestions for editor)
+export function useAssistApi() {
+  const http = useAuthedFetch()
+  return {
+    assist: (body: { prompt?: string; context?: string; mode?: 'suggest'|'summarize'|'rewrite'; provider?: 'openai'|'ollama'; maxTokens?: number; temperature?: number }) =>
+      http.post<{ text: string }>(`/api/Suggestions/assist`, body).then(r => ({ text: (r as any)?.text ?? (r as any)?.Text ?? '' })),
+  }
+}
+
 // Mascot API convenience
 export function useMascotApi() {
   const http = useAuthedFetch()
@@ -539,23 +560,16 @@ export function useChatApi() {
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
 
   // RAG-based chat query (knowledge base)
+  const client = useCortexApiClient()
   const ragQuery = useCallback(async (messages: Array<{role: string, content: string}>, filters?: Record<string, string>) => {
     const request = {
-      Messages: messages.map(m => [m.role, m.content] as [string, string]),
-      TopK: 8,
-      Alpha: 0.6,
-      Filters: filters
+      messages: messages.map(m => [m.role, m.content] as [string, string]),
+      topK: 8,
+      alpha: 0.6,
+      filters: filters
     }
-    return await http.post<{
-      Answer: string;
-      Citations: Array<{
-        NoteId: string;
-        ChunkId: string;
-        Offsets: number[];
-      }>;
-      Usage: any;
-    }>('/api/Rag/query', request)
-  }, [http])
+    return await client.query(request as any) as any
+  }, [client])
 
   // RAG streaming chat (Server-Sent Events)
   const ragStreamQuery = useCallback(async (
@@ -571,7 +585,7 @@ export function useChatApi() {
     }
 
     const token = await getAccessToken()
-    const response = await fetch(`${baseUrl}/api/Rag/stream`, {
+  const response = await fetch(`${baseUrl}/api/Rag/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -619,6 +633,68 @@ export function useChatApi() {
     }
   }, [getAccessToken, baseUrl])
 
+  // RAG streaming with options (supports AbortSignal)
+  const ragStreamQuery2 = useCallback(async (
+    messages: Array<{role: string, content: string}>, 
+    onChunk: (chunk: string) => void,
+    options?: { filters?: Record<string, string>, signal?: AbortSignal }
+  ) => {
+    const request = {
+      Messages: messages.map(m => [m.role, m.content] as [string, string]),
+      TopK: 8,
+      Alpha: 0.6,
+      Filters: options?.filters
+    }
+
+    const token = await getAccessToken()
+    const response = await fetch(`${baseUrl}/api/Rag/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(request),
+      signal: options?.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = new TextDecoder().decode(value)
+        const lines = chunk.split('\n')
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            if (data.trim()) {
+              try {
+                const parsed = JSON.parse(data)
+                if (parsed.Answer) {
+                  onChunk(parsed.Answer)
+                } else if (parsed.error) {
+                  throw new Error(parsed.error)
+                }
+              } catch (e) {
+                onChunk(data)
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }, [getAccessToken, baseUrl])
+
   // Chat with tools
   const chatWithTools = useCallback(async (
     query: string, 
@@ -626,39 +702,44 @@ export function useChatApi() {
     context: Record<string, any> = {}
   ) => {
     const request = {
-      Query: query,
-      AvailableTools: availableTools,
-      Context: context
+      query,
+      availableTools,
+      context
     }
-    return await http.post<{
-      Response: string;
-      SuggestedTools: Array<{
-        Tool: string;
-        Args: any;
-      }>;
-      RequiresConfirmation: boolean;
-    }>('/api/chat/tools', request)
-  }, [http])
+    return await client.tools(request as any) as any
+  }, [client])
 
-  // Execute a specific tool
-  const executeTool = useCallback(async (tool: string, args: any) => {
-    const request = {
-      Tool: tool,
-      Args: args
-    }
-    return await http.post<any>('/api/chat/tools/execute', request)
-  }, [http])
+  // Execute a specific tool (supports (tool, args) and ({ tool/Tool, args/Args }))
+  const executeTool = useCallback(async (
+    toolOrReq: string | { Tool?: string; tool?: string; Args?: any; args?: any },
+    maybeArgs?: any
+  ) => {
+    const tool = typeof toolOrReq === 'string' ? toolOrReq : (toolOrReq.Tool ?? toolOrReq.tool)
+    const args = typeof toolOrReq === 'string' ? maybeArgs : (toolOrReq.Args ?? toolOrReq.args)
+    return await client.execute({ tool, parameters: args } as any) as any
+  }, [client])
 
   // Get available tools
   const getAvailableTools = useCallback(async () => {
-    return await http.get<string[]>('/api/chat/tools')
-  }, [http])
+    return await client.toolsAll() as any
+  }, [client])
 
   return useMemo(() => ({
     ragQuery,
     ragStreamQuery,
+    ragStreamQuery2,
     chatWithTools,
     executeTool,
     getAvailableTools,
-  }), [ragQuery, ragStreamQuery, chatWithTools, executeTool, getAvailableTools])
+  }), [ragQuery, ragStreamQuery, ragStreamQuery2, chatWithTools, executeTool, getAvailableTools])
+}
+
+// Cards API helpers (Adaptive Card JSON producers)
+export function useCardsApi() {
+  const http = useAuthedFetch()
+  return {
+    listNotesCard: () => http.post<any>('/api/Cards/list-notes'),
+    noteCard: (id: string) => http.post<any>(`/api/Cards/note/${encodeURIComponent(id)}`),
+    confirmDeleteCard: (action?: string) => http.post<any>(`/api/Cards/confirm-delete${action ? `?action=${encodeURIComponent(action)}` : ''}`),
+  }
 }

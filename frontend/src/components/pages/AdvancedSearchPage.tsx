@@ -26,13 +26,17 @@ import {
   GlobeAltIcon
 } from '@heroicons/react/24/outline'
 import { useMascot } from '@/contexts/MascotContext'
-import { useSearchApi, useChatApi } from '@/services/apiClient'
+import { useSearchApi, useChatApi, useNotesApi } from '@/services/apiClient'
 
 interface SearchResult {
   id: string
   title: string
   content: string
   score: number
+  noteId?: string
+  chunkId?: string
+  offsets?: number[]
+  snippetStart?: number
   metadata: {
     source?: string
     createdAt?: string
@@ -126,16 +130,20 @@ const AdvancedSearchPage: React.FC = () => {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [aiContext, setAiContext] = useState('')
   const [expertQuery, setExpertQuery] = useState('')
-  const [searchHistory, setSearchHistory] = useState<Array<{
-    query: string
-    mode: string
-    timestamp: Date
-    resultCount: number
-  }>>([])
+  const [showHelp, setShowHelp] = useState(false)
+  // Cache of note metadata to improve titles/snippets
+  const [noteMeta, setNoteMeta] = useState<Record<string, { title?: string; content?: string }>>({})
+
+  // Preview modal state
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [previewTitle, setPreviewTitle] = useState<string>('')
+  const [previewContent, setPreviewContent] = useState<string>('')
+  const [isPreviewLoading, setIsPreviewLoading] = useState<boolean>(false)
 
   const { speak, think, idle, suggest } = useMascot()
   const { searchGet, advancedSearch } = useSearchApi()
   const { ragQuery } = useChatApi()
+  const { getNote } = useNotesApi()
   
   const searchInputRef = useRef<HTMLInputElement>(null)
   const recognition = useRef<any>(null)
@@ -188,10 +196,15 @@ const AdvancedSearchPage: React.FC = () => {
   const transformResultsFromResponse = useCallback((response: any): SearchResult[] => {
     const hits = response?.Hits || response?.hits || []
     return hits.map((h: any, index: number) => ({
-      id: h.ChunkId || h.NoteId || `result-${index}`,
-      title: h.Title || `Result ${index + 1}`,
-      content: h.Snippet || h.Content || '',
-      score: h.Score ?? Math.random() * 0.3 + 0.7,
+  id: h.ChunkId || h.NoteId || `result-${index}`,
+  title: h.NoteTitle || h.Title || h.FileName || h.Source || `Result ${index + 1}`,
+  // Prefer server-provided highlight HTML if available
+  content: h.Highlight || h.Snippet || h.Content || '',
+  score: h.Score ?? Math.random() * 0.3 + 0.7,
+  noteId: h.NoteId,
+  chunkId: h.ChunkId,
+  offsets: h.Offsets,
+  snippetStart: h.SnippetStart,
       metadata: {
         source: h.Source,
         createdAt: h.CreatedAt,
@@ -374,16 +387,6 @@ const AdvancedSearchPage: React.FC = () => {
         keyword: filteredResults.filter(r => r.score <= 0.7).length
       })
 
-      setSearchHistory(prev => [
-        {
-          query: queryToSearch,
-          mode: searchMode,
-          timestamp: new Date(),
-          resultCount: filteredResults.length
-        },
-        ...prev.slice(0, 9)
-      ])
-
       if (!recentSearches.includes(queryToSearch)) {
         setRecentSearches(prev => [queryToSearch, ...prev.slice(0, 4)])
       }
@@ -440,11 +443,44 @@ const AdvancedSearchPage: React.FC = () => {
   }
 
   const formatSnippet = (content: string, query: string) => {
-    if (!query) return content.substring(0, 200) + '...'
+  if (!content || content.trim().length === 0) return 'No preview available'
+  if (!query) return content.substring(0, 200) + '...'
     
-    const regex = new RegExp(`(${query.split(' ').join('|')})`, 'gi')
-    const highlighted = content.replace(regex, '<mark className="bg-yellow-200 dark:bg-yellow-800">$1</mark>')
+  const regex = new RegExp(`(${query.split(' ').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
+  const highlighted = content.replace(regex, '<mark class="bg-yellow-200 dark:bg-yellow-800">$1</mark>')
     return highlighted.substring(0, 300) + '...'
+  }
+
+  // If we have offsets and snippetStart, try precise highlight inside snippet window
+  const renderHighlightedSnippet = (item: SearchResult) => {
+    const q = query.trim()
+    if (!q) {
+      if (!item.content || item.content.length === 0) {
+        const fallback = item.noteId ? (noteMeta[item.noteId]?.content || '') : ''
+        return formatSnippet(fallback, '')
+      }
+      return formatSnippet(item.content, '')
+    }
+    const start = item.snippetStart ?? 0
+    const [offStart, offLen] = item.offsets ?? []
+    const windowEnd = Math.min(item.content.length, (offStart ? offStart + offLen + 200 : start + 300))
+    const snippetStart = Math.max(0, start)
+    const snippet = item.content.substring(snippetStart, Math.max(snippetStart, windowEnd || snippetStart + 300))
+    if (!snippet || snippet.length === 0) {
+      const fallback = item.noteId ? (noteMeta[item.noteId]?.content || '') : ''
+      return formatSnippet(fallback, q)
+    }
+    if (offStart === undefined || offLen === undefined || offStart < 0 || offLen <= 0) {
+      return formatSnippet(snippet, q)
+    }
+    const relStart = Math.max(0, offStart - snippetStart)
+    const relEnd = Math.min(snippet.length, relStart + offLen)
+    const before = snippet.substring(0, relStart)
+    const match = snippet.substring(relStart, relEnd)
+    const after = snippet.substring(relEnd)
+    const leftEllip = snippetStart > 0 ? '…' : ''
+    const rightEllip = (snippetStart + snippet.length) < item.content.length ? '…' : ''
+    return `${leftEllip}${before}<mark class="bg-yellow-200 dark:bg-yellow-800">${match}</mark>${after}${rightEllip}`
   }
 
   const saveSearch = (query: string) => {
@@ -476,6 +512,103 @@ const AdvancedSearchPage: React.FC = () => {
     URL.revokeObjectURL(url)
     
     speak('Search results exported!', 'responding')
+  }
+
+  // Group results by NoteId with best score ordering
+  const groupedResults = React.useMemo(() => {
+    const groups = new Map<string, { noteId: string, title: string, items: SearchResult[], bestScore: number }>()
+    for (const r of results) {
+      const key = r.noteId || r.id
+      if (!groups.has(key)) {
+        groups.set(key, { noteId: key, title: r.title, items: [r], bestScore: r.score })
+      } else {
+        const g = groups.get(key)!
+        g.items.push(r)
+        if (r.score > g.bestScore) g.bestScore = r.score
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) => b.bestScore - a.bestScore)
+  }, [results])
+
+  // Backfill missing titles/content per noteId using Notes API
+  useEffect(() => {
+    const isPlaceholder = (t?: string) => !t || /^result\s+\d+$/i.test(t)
+    const uniqueNoteIds = new Set<string>()
+    for (const r of results) {
+      if (r.noteId) uniqueNoteIds.add(r.noteId)
+    }
+    const toFetch: string[] = []
+  for (const gid of Array.from(uniqueNoteIds)) {
+      // If we already have meta, skip
+      if (noteMeta[gid]?.title) continue
+      // Find any item for this note to check title placeholder
+      const sample = results.find(x => x.noteId === gid)
+      if (sample && isPlaceholder(sample.title)) toFetch.push(gid)
+    }
+    if (toFetch.length === 0) return
+    // Limit parallelism to avoid flooding
+    const batch = toFetch.slice(0, 8)
+    let cancelled = false
+    ;(async () => {
+      const entries: Array<[string, { title?: string; content?: string }]> = []
+      await Promise.all(batch.map(async (nid) => {
+        try {
+          const note = await getNote(nid)
+          if (!cancelled && note) {
+            entries.push([nid, { title: note.title || note.Title, content: note.content || note.Content }])
+          }
+        } catch {}
+      }))
+      if (!cancelled && entries.length) {
+        setNoteMeta(prev => ({ ...prev, ...Object.fromEntries(entries) }))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [results, getNote, noteMeta])
+
+  const scoreColor = (s: number) => s >= 0.85 ? 'bg-green-500' : s >= 0.7 ? 'bg-yellow-500' : s >= 0.5 ? 'bg-orange-500' : 'bg-red-500'
+
+  // Predeclare width classes so Tailwind can include them; choose nearest 5%
+  const WIDTH_CLASSES = [
+    'w-[0%]','w-[5%]','w-[10%]','w-[15%]','w-[20%]','w-[25%]','w-[30%]','w-[35%]','w-[40%]','w-[45%]',
+    'w-[50%]','w-[55%]','w-[60%]','w-[65%]','w-[70%]','w-[75%]','w-[80%]','w-[85%]','w-[90%]','w-[95%]','w-[100%]'
+  ] as const
+  const widthClassForScore = (s: number) => {
+    const pct = Math.min(100, Math.max(0, Math.round((s * 100) / 5) * 5))
+    const idx = Math.round(pct / 5)
+    return WIDTH_CLASSES[idx] || 'w-[0%]'
+  }
+
+  const openPreview = async (noteId?: string, fallbackTitle?: string) => {
+    if (!noteId) return
+    try {
+      setIsPreviewLoading(true)
+      setIsPreviewOpen(true)
+      setPreviewTitle(fallbackTitle || 'Preview')
+      const note = await getNote(noteId)
+      setPreviewTitle(note?.title || fallbackTitle || 'Preview')
+      setPreviewContent(note?.content || note?.Content || 'No content available')
+    } catch (e) {
+      setPreviewContent('Failed to load note')
+    } finally {
+      setIsPreviewLoading(false)
+    }
+  }
+
+  const copyGroup = async (items: SearchResult[]) => {
+    const text = items.map(i => `• ${i.title}\n${i.content}`).join('\n\n')
+    await navigator.clipboard.writeText(text)
+    speak('Copied to clipboard', 'idle')
+  }
+
+  const shareQuery = async () => {
+    const payload = { title: 'Search Results', text: query, url: window.location.href }
+    if ((navigator as any).share) {
+      try { await (navigator as any).share(payload) } catch {}
+    } else {
+      await navigator.clipboard.writeText(`${query} — ${window.location.href}`)
+      speak('Link copied to clipboard', 'idle')
+    }
   }
 
   return (
@@ -527,6 +660,85 @@ const AdvancedSearchPage: React.FC = () => {
               {searchModes.find(m => m.id === searchMode)?.description}
             </p>
           </div>
+        </motion.div>
+
+        {/* AI usage help */}
+        <motion.div
+          className="max-w-4xl mx-auto mb-6"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <button
+            onClick={() => setShowHelp(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-left"
+          >
+            <span className="text-sm font-medium text-gray-900 dark:text-white">How to use AI search effectively</span>
+            {showHelp ? <ChevronUpIcon className="w-4 h-4 text-gray-500"/> : <ChevronDownIcon className="w-4 h-4 text-gray-500"/>}
+          </button>
+          <AnimatePresence>
+            {showHelp && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="mt-2 bg-white dark:bg-gray-800 border border-t-0 border-gray-200 dark:border-gray-700 rounded-b-lg p-4 text-sm text-gray-700 dark:text-gray-300"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Hybrid */}
+                  <div className="border-l-4 border-purple-500 pl-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <SparklesIcon className="w-4 h-4 text-purple-500" />
+                      <span className="font-medium text-purple-600 dark:text-purple-400">Start with Hybrid</span>
+                    </div>
+                    <p className="mb-1">Balanced results from keywords + semantic understanding.</p>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      <div><span className="font-semibold">When:</span> General discovery; unsure which mode fits.</div>
+                      <div><span className="font-semibold">Example:</span> <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 font-mono">security policy compliance</code></div>
+                    </div>
+                  </div>
+
+                  {/* Filters */}
+                  <div className="border-l-4 border-teal-500 pl-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <FunnelIcon className="w-4 h-4 text-teal-500" />
+                      <span className="font-medium text-teal-600 dark:text-teal-400">Use Filters to narrow noise</span>
+                    </div>
+                    <p className="mb-1">Constrain by date, file type, sensitivity, tags, or source.</p>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      <div><span className="font-semibold">When:</span> Too many results or you know the shape.</div>
+                      <div><span className="font-semibold">Example:</span> <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 font-mono">last 30 days · pdf · confidential</code></div>
+                    </div>
+                  </div>
+
+                  {/* AI Mode */}
+                  <div className="border-l-4 border-emerald-500 pl-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ChatBubbleLeftRightIcon className="w-4 h-4 text-emerald-500" />
+                      <span className="font-medium text-emerald-600 dark:text-emerald-400">AI mode: add context</span>
+                    </div>
+                    <p className="mb-1">Guide intent with a short brief; refine with follow-ups.</p>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      <div><span className="font-semibold">When:</span> You need a conversational, intent-driven search.</div>
+                      <div><span className="font-semibold">Example:</span> <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 font-mono">Context: Q4 security review · Query: token storage risks</code></div>
+                    </div>
+                  </div>
+
+                  {/* Expert Mode */}
+                  <div className="border-l-4 border-amber-500 pl-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AcademicCapIcon className="w-4 h-4 text-amber-500" />
+                      <span className="font-medium text-amber-600 dark:text-amber-400">Expert: AND / OR / NOT</span>
+                    </div>
+                    <p className="mb-1">Precision with boolean operators and grouping.</p>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      <div><span className="font-semibold">When:</span> You know exact terms and want strict logic.</div>
+                      <div><span className="font-semibold">Example:</span> <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 font-mono">(encryption AND policy) OR (token AND rotation) NOT deprecated</code></div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
 
         {/* Main Search Interface */}
@@ -881,7 +1093,7 @@ const AdvancedSearchPage: React.FC = () => {
           </motion.div>
         )}
 
-        {/* Search Results */}
+  {/* Search Results (grouped by note) */}
         <div className="max-w-4xl mx-auto">
           {isSearching ? (
             <div className="text-center py-16">
@@ -906,9 +1118,9 @@ const AdvancedSearchPage: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              {results.map((result, index) => (
+              {groupedResults.map((group, index) => (
                 <motion.div
-                  key={result.id}
+                  key={group.noteId}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
@@ -916,89 +1128,86 @@ const AdvancedSearchPage: React.FC = () => {
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="text-xl font-semibold text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer transition-colors">
-                        {result.title}
+                      <h3 className="text-xl font-semibold text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer transition-colors" onClick={() => openPreview(group.noteId, noteMeta[group.noteId]?.title || group.title)}>
+                        {noteMeta[group.noteId]?.title || group.title}
                       </h3>
+                      <div className="mt-2 w-full h-2 bg-gray-100 dark:bg-gray-700 rounded">
+                        <div className={`${scoreColor(group.bestScore)} h-2 rounded ${widthClassForScore(group.bestScore)}`} />
+                      </div>
                       <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400">
-                        {result.metadata.source && (
-                          <span className="flex items-center">
-                            <DocumentTextIcon className="w-4 h-4 mr-1" />
-                            {result.metadata.source}
-                          </span>
-                        )}
-                        {result.metadata.createdAt && (
-                          <span>
-                            {new Date(result.metadata.createdAt).toLocaleDateString()}
-                          </span>
-                        )}
                         <span className="flex items-center">
-                          <EyeIcon className="w-4 h-4 mr-1" />
-                          {result.metadata.wordCount} words
+                          Top score: <span className="ml-1 font-medium text-gray-900 dark:text-white">{(group.bestScore * 100).toFixed(1)}%</span>
                         </span>
+                        <span className="text-xs text-gray-500">{group.items.length} snippet{group.items.length > 1 ? 's' : ''}</span>
                       </div>
                     </div>
                     
                     <div className="flex items-center gap-3 ml-4">
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {(result.score * 100).toFixed(1)}%
-                        </div>
-                        <div className="text-xs text-gray-500">relevance</div>
-                      </div>
-                      
-                      {result.metadata.sensitivityLevel !== undefined && (
-                        <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                          result.metadata.sensitivityLevel === 0 ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100' :
-                          result.metadata.sensitivityLevel === 1 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100' :
-                          result.metadata.sensitivityLevel === 2 ? 'bg-orange-100 text-orange-800 dark:bg-orange-800 dark:text-orange-100' :
+                      {/* Sensitivity badge: show highest among group if present */}
+                      {(() => {
+                        const level = Math.max(...group.items.map(i => i.metadata.sensitivityLevel ?? -1))
+                        if (level < 0) return null
+                        const classes = level === 0 ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100' :
+                          level === 1 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100' :
+                          level === 2 ? 'bg-orange-100 text-orange-800 dark:bg-orange-800 dark:text-orange-100' :
                           'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
-                        }`}>
-                          {['Public', 'Internal', 'Confidential', 'Secret'][result.metadata.sensitivityLevel]}
-                        </span>
-                      )}
+                        return (
+                          <span className={`text-xs px-3 py-1 rounded-full font-medium ${classes}`}>
+                            {['Public', 'Internal', 'Confidential', 'Secret'][level]}
+                          </span>
+                        )
+                      })()}
                     </div>
                   </div>
-                  
-                  <div 
-                    className="text-gray-700 dark:text-gray-300 mb-4 leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: formatSnippet(result.content, query) }}
-                  />
-                  
+                  {/* Top snippets */}
+                  <div className="space-y-3 mb-4">
+          {group.items.slice(0, 3).map((item, idx) => (
+                      <div key={item.id + '-' + idx} className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                        <div className="text-xs text-gray-500 mb-1">Snippet {idx + 1} • {(item.score * 100).toFixed(1)}%</div>
+            <div dangerouslySetInnerHTML={{ __html: renderHighlightedSnippet(item) }} />
+                      </div>
+                    ))}
+                    {group.items.length > 3 && (
+                      <div className="text-xs text-gray-500">+{group.items.length - 3} more snippets</div>
+                    )}
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      {result.metadata.tags && result.metadata.tags.length > 0 && (
+                      {group.items[0]?.metadata.tags && group.items[0].metadata.tags.length > 0 && (
                         <div className="flex items-center gap-1">
                           <TagIcon className="w-4 h-4 text-gray-400" />
-                          {result.metadata.tags.slice(0, 3).map(tag => (
+                          {group.items[0].metadata.tags.slice(0, 3).map(tag => (
                             <span key={tag} className="bg-purple-100 dark:bg-purple-800 text-purple-800 dark:text-purple-200 px-2 py-1 rounded-full text-xs font-medium">
                               {tag}
                             </span>
                           ))}
-                          {result.metadata.tags.length > 3 && (
-                            <span className="text-xs text-gray-500">
-                              +{result.metadata.tags.length - 3} more
-                            </span>
+                          {group.items[0].metadata.tags.length > 3 && (
+                            <span className="text-xs text-gray-500">+{group.items[0].metadata.tags.length - 3} more</span>
                           )}
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="flex items-center space-x-2">
                       <button 
                         className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900 rounded-lg transition-all"
                         title="View full document"
+                        onClick={() => openPreview(group.noteId, group.title)}
                       >
                         <EyeIcon className="w-4 h-4" />
                       </button>
                       <button 
                         className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900 rounded-lg transition-all"
-                        title="Copy content"
+                        title="Copy top snippets"
+                        onClick={() => copyGroup(group.items)}
                       >
                         <DocumentDuplicateIcon className="w-4 h-4" />
                       </button>
                       <button 
                         className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900 rounded-lg transition-all"
-                        title="Share result"
+                        title="Share"
+                        onClick={shareQuery}
                       >
                         <ShareIcon className="w-4 h-4" />
                       </button>
@@ -1066,38 +1275,38 @@ const AdvancedSearchPage: React.FC = () => {
           )}
         </div>
 
-        {/* Search History Sidebar */}
-        {searchHistory.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="fixed right-4 top-1/2 transform -translate-y-1/2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-4 max-h-96 overflow-y-auto hidden xl:block"
-          >
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
-              <ClockIcon className="w-4 h-4 mr-2" />
-              Search History
-            </h3>
-            <div className="space-y-2">
-              {searchHistory.slice(0, 5).map((search, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    setQuery(search.query)
-                    setSearchMode(search.mode as SearchMode['id'])
-                  }}
-                  className="w-full text-left p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {search.query}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {search.mode} • {search.resultCount} results • {search.timestamp.toLocaleDateString()}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
+        {/* Search History Sidebar removed as requested */}
+
+        {/* Preview Modal */}
+        <AnimatePresence>
+          {isPreviewOpen && (
+            <motion.div
+              className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsPreviewOpen(false)}
+            >
+              <motion.div
+                className="bg-white dark:bg-gray-900 w-full max-w-3xl rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white truncate">{previewTitle}</h4>
+                  <button aria-label="Close preview" title="Close preview" className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white" onClick={() => setIsPreviewOpen(false)}>
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-4 max-h-[70vh] overflow-y-auto text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                  {isPreviewLoading ? 'Loading…' : (previewContent || 'No content available')}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

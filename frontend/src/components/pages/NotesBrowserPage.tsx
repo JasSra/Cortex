@@ -22,6 +22,7 @@ import { DocumentTextIcon as DocumentTextSolid } from '@heroicons/react/24/solid
 import { useMascot } from '@/contexts/MascotContext'
 import appBus from '@/lib/appBus'
 import { useNotesApi, useSearchApi } from '@/services/apiClient'
+import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
 
 interface Note {
   id: string
@@ -35,6 +36,19 @@ interface Note {
     fileType?: string
     chunkCount?: number
     wordCount?: number
+  }
+  status?: {
+    chunkCount: number
+    embeddingCount: number
+    embeddingCoverage: number // 0..1
+    indexingStatus: 'none' | 'partial' | 'complete'
+    searchReady: boolean
+    tagged: boolean
+    classified: boolean
+    redactionRequired: boolean
+    hasPii: boolean
+    hasSecrets: boolean
+    sensitivityLevel: number
   }
 }
 
@@ -74,9 +88,82 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
     })
   }
 
+  const coverageWidthClass = () => {
+    const pct = Math.round(((note.status?.embeddingCoverage ?? 0) * 100))
+    if (pct <= 0) return 'w-0'
+    if (pct < 10) return 'w-[8%]'
+    if (pct < 25) return 'w-1/5'
+    if (pct < 35) return 'w-1/3'
+    if (pct < 50) return 'w-2/5'
+    if (pct < 65) return 'w-1/2'
+    if (pct < 75) return 'w-3/5'
+    if (pct < 85) return 'w-2/3'
+    if (pct < 95) return 'w-5/6'
+    return 'w-full'
+  }
+
   const getExcerpt = (content: string, maxLength = 150) => {
     if (content.length <= maxLength) return content
     return content.substring(0, maxLength) + '...'
+  }
+
+  const IndexBadge = () => {
+    const s = note.status
+    if (!s) return null
+    const color = s.indexingStatus === 'complete' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+      : s.indexingStatus === 'partial' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
+      : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+    const label = s.indexingStatus === 'complete' ? 'Indexed' : s.indexingStatus === 'partial' ? 'Indexing…' : 'Not indexed'
+    return <span className={`px-2 py-0.5 rounded-full text-[10px] ${color}`}>{label}</span>
+  }
+
+  const SearchReadyBadge = () => {
+    const s = note.status
+    if (!s) return null
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-[10px] ${s.searchReady ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'}`}>
+        {s.searchReady ? 'Search-ready' : 'Not search-ready'}
+      </span>
+    )
+  }
+
+  const SensitiveBadges = () => {
+    const s = note.status
+    if (!s) return null
+    return (
+      <div className="flex flex-wrap items-center gap-1">
+        {s.redactionRequired && (
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">Sensitive</span>
+        )}
+        {s.hasPii && (
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">PII</span>
+        )}
+        {s.hasSecrets && (
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Secrets</span>
+        )}
+      </div>
+    )
+  }
+
+  const TagBadge = () => {
+    const s = note.status
+    const tagged = s ? s.tagged : (note.tags && note.tags.length > 0)
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-[10px] ${tagged ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'}`}>
+        {tagged ? 'Tagged' : 'Untagged'}
+      </span>
+    )
+  }
+
+  const ClassifiedBadge = () => {
+    const s = note.status
+    if (!s) return null
+    const isClassified = Boolean(s.classified)
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-[10px] ${isClassified ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'}`}>
+        {isClassified ? 'Classified' : 'Unclassified'}
+      </span>
+    )
   }
 
   return (
@@ -125,6 +212,25 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
             <span>{formatDate(note.updatedAt)}</span>
             <span>{note.metadata?.wordCount || 0} words</span>
           </div>
+          {/* Status badges */}
+          <div className="mt-3 flex items-center justify-between">
+            <div className="flex flex-wrap items-center gap-1">
+              <IndexBadge />
+              <SearchReadyBadge />
+              <TagBadge />
+              <ClassifiedBadge />
+            </div>
+            <SensitiveBadges />
+          </div>
+          {/* Coverage bar */}
+          {note.status && (
+            <div className="mt-2">
+              <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded">
+                <div className={`h-1.5 bg-purple-500 rounded ${coverageWidthClass()}`} />
+              </div>
+              <div className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">Embedding coverage: {Math.round((note.status.embeddingCoverage || 0) * 100)}%</div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-4">
@@ -146,6 +252,12 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
                       {tag}
                     </span>
                   ))}
+                  {/* Status badges (compact) */}
+                  <IndexBadge />
+                  <SearchReadyBadge />
+                  <TagBadge />
+                  <ClassifiedBadge />
+                  <SensitiveBadges />
                 </div>
               )}
             </div>
@@ -181,6 +293,9 @@ const NotesBrowserPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedNote, setSelectedNote] = useState<Note | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const { updateNote } = useNotesApi()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null)
   const [sortOption, setSortOption] = useState<SortOption>({
@@ -252,6 +367,7 @@ const NotesBrowserPage: React.FC = () => {
         const content = note.content || note.Content || ''
         const rawTags = note.tags ?? note.Tags
         const tags = toTagArray(rawTags)
+        const s = note.Status || note.status || {}
         return {
           id: note.id || note.Id || note.noteId,
           title: note.title || note.Title || `Note ${note.id ?? ''}`,
@@ -265,6 +381,19 @@ const NotesBrowserPage: React.FC = () => {
             chunkCount: note.chunkCount || note.ChunkCount || 0,
             wordCount: typeof content === 'string' ? (content.trim() ? content.trim().split(/\s+/).length : 0) : 0,
           },
+          status: {
+            chunkCount: s.ChunkCount ?? s.chunkCount ?? (note.chunkCount || note.ChunkCount || 0),
+            embeddingCount: s.EmbeddingCount ?? s.embeddingCount ?? 0,
+            embeddingCoverage: s.EmbeddingCoverage ?? s.embeddingCoverage ?? 0,
+            indexingStatus: (s.IndexingStatus ?? s.indexingStatus ?? 'none') as 'none'|'partial'|'complete',
+            searchReady: Boolean(s.SearchReady ?? s.searchReady ?? false),
+            tagged: Boolean(s.Tagged ?? s.tagged ?? (tags.length > 0)),
+            classified: Boolean(s.Classified ?? s.classified ?? false),
+            redactionRequired: Boolean(s.RedactionRequired ?? s.redactionRequired ?? false),
+            hasPii: Boolean(s.HasPii ?? s.hasPii ?? false),
+            hasSecrets: Boolean(s.HasSecrets ?? s.hasSecrets ?? false),
+            sensitivityLevel: s.SensitivityLevel ?? s.sensitivityLevel ?? (note.sensitivityLevel || note.SensitivityLevel || 0),
+          }
         }
       })
 
@@ -782,48 +911,79 @@ const NotesBrowserPage: React.FC = () => {
                 className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                      {selectedNote.title}
-                    </h2>
-                    <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600 dark:text-gray-400">
-                      <span>Created: {formatDate(selectedNote.createdAt)}</span>
-                      <span>Updated: {formatDate(selectedNote.updatedAt)}</span>
-                      <span>{selectedNote.metadata?.wordCount || 0} words</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedNote(null)}
-                    title="Close modal"
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <XMarkIcon className="w-6 h-6 text-gray-500" />
-                  </button>
-                </div>
-
-                <div className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
-                  {selectedNote.tags && selectedNote.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-6">
-                      {selectedNote.tags.map(tag => (
-                        <span
-                          key={tag}
-                          className="px-3 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-sm rounded-full"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="prose dark:prose-invert max-w-none">
-                    {selectedNote.content.split('\n').map((paragraph, index) => (
-                      <p key={index} className="mb-4 leading-relaxed">
-                        {paragraph}
-                      </p>
-                    ))}
-                  </div>
-                </div>
+                <>
+                      <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                        <div>
+                          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                            {selectedNote.title}
+                          </h2>
+                          <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600 dark:text-gray-400">
+                            <span>Created: {formatDate(selectedNote.createdAt)}</span>
+                            <span>Updated: {formatDate(selectedNote.updatedAt)}</span>
+                            <span>{selectedNote.metadata?.wordCount || 0} words</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setEditing((e) => !e)}
+                            className={`px-3 py-1.5 rounded-lg text-sm ${editing ? 'bg-gray-200 dark:bg-gray-700' : 'bg-purple-600 text-white'}`}
+                            title={editing ? 'Exit edit mode' : 'Edit note'}
+                          >{editing ? 'Viewing' : 'Edit'}</button>
+                          <button
+                            onClick={() => setSelectedNote(null)}
+                            title="Close modal"
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                            <XMarkIcon className="w-6 h-6 text-gray-500" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
+                        {editing ? (
+                          <NoteEditorAI
+                            initialContent={selectedNote.content}
+                            onSave={async (text) => {
+                              if (!selectedNote) return
+                              setSaving(true)
+                              try {
+                                await updateNote(selectedNote.id, text, selectedNote.title)
+                                setSelectedNote({ ...selectedNote, content: text, updatedAt: new Date().toISOString() })
+                                // Refresh notes list in background to update statuses/coverage
+                                try { await loadNotes(pagination.currentPage, true) } catch {}
+                              } finally {
+                                setSaving(false)
+                                setEditing(false)
+                              }
+                            }}
+                          />
+                        ) : (
+                          <>
+                            {selectedNote.tags && selectedNote.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-6">
+                                {selectedNote.tags.map(tag => (
+                                  <span
+                                    key={tag}
+                                    className="px-3 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-sm rounded-full"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <div className="prose dark:prose-invert max-w-none">
+                              {selectedNote.content.split('\n').map((paragraph, index) => (
+                                <p key={index} className="mb-4 leading-relaxed">
+                                  {paragraph}
+                                </p>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                        {saving && (
+                          <div className="mt-3 text-xs text-gray-500">Saving…</div>
+                        )}
+                      </div>
+                    </>
               </motion.div>
             </motion.div>
           )}

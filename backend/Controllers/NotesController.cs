@@ -36,6 +36,14 @@ public class NotesController : ControllerBase
     _db = db;
     }
 
+    private static string GetIndexingStatus(int chunkCount, int embeddingCount)
+    {
+        if (chunkCount <= 0) return "none";
+        if (embeddingCount <= 0) return "none";
+        if (embeddingCount < chunkCount) return "partial";
+        return "complete";
+    }
+
     /// <summary>
     /// Get a specific note by ID (Reader role required)
     /// </summary>
@@ -78,7 +86,73 @@ public class NotesController : ControllerBase
             _userContext.UserId, limit, offset);
 
         var notes = await _ingestService.GetUserNotesAsync(_userContext.UserId, limit, offset);
-        return Ok(notes);
+
+        // Compute embedding counts in one query for all returned notes
+        var noteIds = notes.Select(n => n.Id).ToList();
+        var embeddingCounts = await _db.Embeddings
+            .Where(e => noteIds.Contains(e.Chunk.NoteId))
+            .GroupBy(e => e.Chunk.NoteId)
+            .Select(g => new { NoteId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.NoteId, x => x.Count);
+
+        var response = notes.Select(n =>
+        {
+            var tagsCsv = n.Tags ?? string.Empty;
+            var hasTags = !string.IsNullOrWhiteSpace(tagsCsv);
+            var piiCsv = n.PiiFlags ?? string.Empty;
+            var secretCsv = n.SecretFlags ?? string.Empty;
+            var sens = n.SensitivityLevel;
+            var embeddingCount = embeddingCounts.TryGetValue(n.Id, out var c) ? c : 0;
+            var coverage = n.ChunkCount > 0 ? Math.Min(1.0, Math.Max(0.0, (double)embeddingCount / Math.Max(1, n.ChunkCount))) : 0.0;
+            var indexingStatus = GetIndexingStatus(n.ChunkCount, embeddingCount);
+            var searchReady = embeddingCount > 0 && n.ChunkCount > 0;
+            var hasPii = !string.IsNullOrWhiteSpace(piiCsv);
+            var hasSecrets = !string.IsNullOrWhiteSpace(secretCsv);
+            var classified = hasTags || !string.IsNullOrWhiteSpace(n.Summary) || sens > 0 || hasPii || hasSecrets;
+            var redactionRequired = sens > 0 || hasPii || hasSecrets;
+
+            // Return a superset object to keep backward compatibility while adding Status
+            return new
+            {
+                n.Id,
+                n.Title,
+                n.Content,
+                n.UserId,
+                n.Lang,
+                n.Source,
+                n.IsDeleted,
+                n.Version,
+                n.SensitivityLevel,
+                n.PiiFlags,
+                n.SecretFlags,
+                n.Summary,
+                n.OriginalPath,
+                n.FilePath,
+                n.FileType,
+                n.Sha256Hash,
+                n.FileSizeBytes,
+                n.CreatedAt,
+                n.UpdatedAt,
+                n.ChunkCount,
+                Tags = tagsCsv,
+                Status = new
+                {
+                    ChunkCount = n.ChunkCount,
+                    EmbeddingCount = embeddingCount,
+                    EmbeddingCoverage = coverage,
+                    IndexingStatus = indexingStatus, // none|partial|complete
+                    SearchReady = searchReady,
+                    Tagged = hasTags,
+                    Classified = classified,
+                    RedactionRequired = redactionRequired,
+                    HasPii = hasPii,
+                    HasSecrets = hasSecrets,
+                    SensitivityLevel = sens,
+                }
+            };
+        });
+
+        return Ok(response);
     }
 
     /// <summary>
@@ -168,4 +242,35 @@ public class NotesController : ControllerBase
     // Implementation would go here - for now, return placeholder
     return Ok(new { message = "Note deletion not yet implemented", noteId = id });
     }
+
+    /// <summary>
+    /// Update an existing note's title/content and retrigger classification + embeddings (Editor role required)
+    /// </summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateNote(string id, [FromBody] UpdateNoteRequest request)
+    {
+        if (!Rbac.RequireRole(_userContext, "Editor"))
+            return StatusCode(403, "Editor role required");
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest(new { error = "Content is required" });
+
+        try
+        {
+            var result = await _ingestService.UpdateNoteAsync(id, request.Title ?? string.Empty, request.Content);
+            if (result is null) return NotFound(new { error = "Note not found" });
+            return Ok(new { noteId = result.NoteId, title = result.Title, countChunks = result.CountChunks });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating note {NoteId} for user {UserId}", id, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to update note" });
+        }
+    }
+}
+
+public class UpdateNoteRequest
+{
+    public string? Title { get; set; }
+    public string Content { get; set; } = string.Empty;
 }
