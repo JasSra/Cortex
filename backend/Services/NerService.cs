@@ -26,6 +26,7 @@ public class NerService : INerService
     // NER model paths and configuration
     private readonly string? _modelPath;
     private readonly bool _useRuleBased;
+    private readonly string _provider; // openai | onnx | rulebased
     
     // Entity type patterns for rule-based NER
     private readonly Dictionary<string, List<string>> _entityPatterns = new()
@@ -66,14 +67,32 @@ public class NerService : INerService
         
         _useRuleBased = _config.GetValue<bool>("NER:UseRuleBased", true);
         _modelPath = _config.GetValue<string>("NER:ModelPath", "");
+        _provider = _config.GetValue<string>("NER:Provider", string.Empty).ToLowerInvariant();
         
-        _logger.LogInformation("NER Service initialized with rule-based: {UseRuleBased}", _useRuleBased);
+        _logger.LogInformation("NER Service initialized. Provider={Provider}, RuleBased={UseRuleBased}", string.IsNullOrEmpty(_provider) ? "(default)" : _provider, _useRuleBased);
     }
 
     public async Task<List<EntityExtraction>> ExtractEntitiesAsync(string text)
     {
         try
         {
+            // Preferred provider first
+            if (_provider == "openai")
+            {
+                var ai = await ExtractEntitiesOpenAiAsync(text);
+                if (ai.Count > 0) return ai;
+                _logger.LogDebug("OpenAI NER returned no entities; falling back to rule-based");
+                return await ExtractEntitiesRuleBasedAsync(text);
+            }
+            else if (_provider == "onnx")
+            {
+                var onnx = await ExtractEntitiesOnnxAsync(text);
+                if (onnx.Count > 0) return onnx;
+                _logger.LogDebug("ONNX NER returned no entities; falling back to rule-based");
+                return await ExtractEntitiesRuleBasedAsync(text);
+            }
+
+            // Legacy flags
             if (_useRuleBased)
             {
                 return await ExtractEntitiesRuleBasedAsync(text);
@@ -130,6 +149,76 @@ public class NerService : INerService
         // For now, fallback to rule-based
         _logger.LogWarning("ONNX NER not implemented, falling back to rule-based");
         return await ExtractEntitiesRuleBasedAsync(text);
+    }
+
+    private async Task<List<EntityExtraction>> ExtractEntitiesOpenAiAsync(string text)
+    {
+        try
+        {
+            var apiKey = _config["OpenAI:ApiKey"] ?? _config["OPENAI_API_KEY"];
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                _logger.LogWarning("OpenAI API key not configured for NER");
+                return new List<EntityExtraction>();
+            }
+
+            // Keep prompt short; request JSON structured entities
+            var model = _config["OpenAI:NerModel"] ?? _config["OPENAI_NER_MODEL"] ?? _config["OpenAI:Model"] ?? _config["OPENAI_MODEL"] ?? "gpt-4o-mini";
+            var maxLen = 6000; // keep payload modest
+            var sample = text.Length > maxLen ? text.Substring(0, maxLen) : text;
+
+            var system = "You extract entities from text. Return JSON only with an 'entities' array. Types: PERSON, ORG, LOCATION, PROJECT, ID, CONCEPT.";
+            var user = $"Text:\n{sample}\n\nReturn JSON: {{\"entities\":[{{\"type\":\"...\",\"value\":\"...\",\"start\":0,\"end\":0,\"confidence\":0.0}}]}}";
+
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            var payload = new
+            {
+                model,
+                messages = new object[]
+                {
+                    new { role = "system", content = system },
+                    new { role = "user", content = user }
+                },
+                temperature = 0.0,
+                response_format = new { type = "json_object" }
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(payload);
+            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            using var resp = await http.PostAsync("https://api.openai.com/v1/chat/completions", content);
+            var body = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("OpenAI NER failed: {Status} {Body}", (int)resp.StatusCode, body);
+                return new List<EntityExtraction>();
+            }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var contentStr = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "{}";
+
+            using var parsed = System.Text.Json.JsonDocument.Parse(contentStr);
+            var ents = new List<EntityExtraction>();
+            if (parsed.RootElement.TryGetProperty("entities", out var arr) && arr.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var el in arr.EnumerateArray())
+                {
+                    var type = el.TryGetProperty("type", out var t) ? (t.GetString() ?? "CONCEPT").ToUpperInvariant() : "CONCEPT";
+                    var value = el.TryGetProperty("value", out var v) ? (v.GetString() ?? string.Empty).Trim() : string.Empty;
+                    if (string.IsNullOrWhiteSpace(value)) continue;
+                    var start = el.TryGetProperty("start", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.Number ? s.GetInt32() : 0;
+                    var end = el.TryGetProperty("end", out var e) && e.ValueKind == System.Text.Json.JsonValueKind.Number ? e.GetInt32() : Math.Min(start + value.Length, sample.Length);
+                    var conf = el.TryGetProperty("confidence", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.Number ? c.GetDouble() : 0.8;
+                    ents.Add(new EntityExtraction { Type = type, Value = value, Start = start, End = end, Confidence = conf });
+                }
+            }
+            return ents;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "OpenAI NER error; falling back");
+            return new List<EntityExtraction>();
+        }
     }
 
     public async Task<Entity?> FindCanonicalEntityAsync(string type, string value)

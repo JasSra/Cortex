@@ -108,6 +108,12 @@
 			"type": "shell",
 			"command": "npm run --silent build",
 			"group": "build"
+		},
+		{
+			"label": "run-backend-8081-dev",
+			"type": "shell",
+			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:EMBEDDING__PROVIDER='local'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
+			"isBackground": true
 		}
 	]
 }

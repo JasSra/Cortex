@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MicrophoneIcon,
@@ -41,6 +42,13 @@ interface PendingTask {
   run: () => Promise<void>
 }
 
+interface ChatSessionMeta {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+}
+
 const LONG_RUNNING_TOOLS = new Set<string>(["reindex", "reembed", "export", "bulk", "statistics"]) // heuristic
 const DANGEROUS_TOOLS = new Set<string>(["reindex", "reembed", "export", "delete", "purge"]) // confirmation
 
@@ -63,6 +71,10 @@ const SmartLiveAssistant: React.FC = () => {
   const [resumedHistory, setResumedHistory] = useState(false)
   // Quick tool prompts for initial onboarding and post-response suggestions
   const [quickToolPrompts, setQuickToolPrompts] = useState<Array<{ tool: string; title: string; args?: any }>>([])
+  // Sessions
+  const [sessions, setSessions] = useState<ChatSessionMeta[]>([])
+  const [currentSessionId, setCurrentSessionId] = useState<string>('')
+  const [quickActionsRunTools, setQuickActionsRunTools] = useState<boolean>(false)
 
   const recognitionRef = useRef<any>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -109,14 +121,60 @@ const SmartLiveAssistant: React.FC = () => {
   if (themePref) setTheme(themePref)
   const autoExecPref = localStorage.getItem('cortex:chat:autoExecTools')
   if (autoExecPref != null) setAutoExecuteTools(autoExecPref === '1')
-      const raw = localStorage.getItem('cortex:chat:messages')
-      if (raw) {
-        const parsed = JSON.parse(raw) as Array<{ id: string; role: Role; content: string; timestamp: string }>
-        const restored: Message[] = (parsed || []).map(m => ({ ...m, timestamp: new Date(m.timestamp) }))
-        if (restored.length) {
+      const qart = localStorage.getItem('cortex:chat:quickActionsRunTools')
+      if (qart != null) setQuickActionsRunTools(qart === '1')
+
+      // Load sessions
+      const metaRaw = localStorage.getItem('cortex:chat:sessions')
+      const meta: ChatSessionMeta[] = metaRaw ? JSON.parse(metaRaw) : []
+      const savedCurrent = localStorage.getItem('cortex:chat:currentSessionId') || ''
+      // Back-compat: migrate single-key history if no sessions exist
+      if (!meta.length) {
+        const legacy = localStorage.getItem('cortex:chat:messages')
+        const id = Date.now().toString(36)
+        const createdAt = new Date().toISOString()
+        if (legacy) {
+          const parsed = JSON.parse(legacy) as Array<{ id: string; role: Role; content: string; timestamp: string }>
+          const restored: Message[] = (parsed || []).map(m => ({ ...m, timestamp: new Date(m.timestamp) }))
+          const title = restored.find(m => m.role === 'user')?.content?.slice(0, 48) || 'Session 1'
+          localStorage.setItem(`cortex:chat:messages:${id}`, JSON.stringify(restored.map(m => ({ ...m, timestamp: m.timestamp.toISOString() }))))
+          localStorage.removeItem('cortex:chat:messages')
+          const meta1 = [{ id, title, createdAt, updatedAt: createdAt }]
+          localStorage.setItem('cortex:chat:sessions', JSON.stringify(meta1))
+          localStorage.setItem('cortex:chat:currentSessionId', id)
+          setSessions(meta1)
+          setCurrentSessionId(id)
           setMessages(restored)
           setResumedHistory(true)
           return
+        } else {
+          // Create empty default session
+          const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }
+          const meta1 = [{ id, title: 'New chat', createdAt, updatedAt: createdAt }]
+          localStorage.setItem('cortex:chat:sessions', JSON.stringify(meta1))
+          localStorage.setItem('cortex:chat:currentSessionId', id)
+          localStorage.setItem(`cortex:chat:messages:${id}`, JSON.stringify([{ ...hello, timestamp: hello.timestamp.toISOString() }]))
+          setSessions(meta1)
+          setCurrentSessionId(id)
+          setMessages([hello])
+          mascotSpeak("I'm ready when you are. Start speaking!")
+          return
+        }
+      }
+      // Use existing sessions
+      setSessions(meta)
+      const sid = savedCurrent && meta.some(s => s.id === savedCurrent) ? savedCurrent : meta[0]?.id
+      if (sid) {
+        setCurrentSessionId(sid)
+        const raw = localStorage.getItem(`cortex:chat:messages:${sid}`)
+        if (raw) {
+          const parsed = JSON.parse(raw) as Array<{ id: string; role: Role; content: string; timestamp: string }>
+          const restored: Message[] = (parsed || []).map(m => ({ ...m, timestamp: new Date(m.timestamp) }))
+          if (restored.length) {
+            setMessages(restored)
+            setResumedHistory(true)
+            return
+          }
         }
       }
     } catch {}
@@ -129,11 +187,16 @@ const SmartLiveAssistant: React.FC = () => {
   useEffect(() => {
     try {
       // Avoid persisting empty default state
-      if (!messages || messages.length === 0) return
+      if (!messages || messages.length === 0 || !currentSessionId) return
       const serialized = JSON.stringify(messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() })))
-      localStorage.setItem('cortex:chat:messages', serialized)
+      localStorage.setItem(`cortex:chat:messages:${currentSessionId}`, serialized)
+      // Update session meta updatedAt and save current id
+      const next = sessions.map(s => s.id === currentSessionId ? { ...s, updatedAt: new Date().toISOString() } : s)
+      setSessions(next)
+      localStorage.setItem('cortex:chat:sessions', JSON.stringify(next))
+      localStorage.setItem('cortex:chat:currentSessionId', currentSessionId)
     } catch {}
-  }, [messages])
+  }, [messages, currentSessionId, sessions])
 
   // Persist UI prefs
   useEffect(() => {
@@ -142,6 +205,9 @@ const SmartLiveAssistant: React.FC = () => {
   useEffect(() => {
     try { localStorage.setItem('cortex:chat:autoExecTools', autoExecuteTools ? '1' : '0') } catch {}
   }, [autoExecuteTools])
+  useEffect(() => {
+    try { localStorage.setItem('cortex:chat:quickActionsRunTools', quickActionsRunTools ? '1' : '0') } catch {}
+  }, [quickActionsRunTools])
 
   // Preload available tools and current achievements
   useEffect(() => {
@@ -226,6 +292,49 @@ const SmartLiveAssistant: React.FC = () => {
     stopAudio()
   }, [stopAudio])
 
+  // Helper to execute a tool now (with confirmations if flagged)
+  const runToolNow = useCallback((t: { tool: string; args?: any; title?: string }, requireConfirm?: boolean) => {
+    const needsConfirm = requireConfirm || DANGEROUS_TOOLS.has(t.tool.toLowerCase()) || !autoExecuteTools
+    const exec = async () => {
+      const execToken = interruptTokenRef.current
+      try {
+        const result: any = await executeTool({ tool: t.tool, args: t.args || {} })
+        if (interruptTokenRef.current !== execToken) return
+        const card = (result?.card || result?.adaptiveCard || {
+          type: 'AdaptiveCard', version: '1.5', body: [
+            { type: 'TextBlock', text: t.title || t.tool, weight: 'Bolder', size: 'Medium' },
+            { type: 'TextBlock', text: 'Result', wrap: true },
+            { type: 'RichTextBlock', inlines: [{ type: 'TextRun', text: JSON.stringify(result, null, 2) }] }
+          ]
+        })
+        setWorkingItems(prev => [{ id: Date.now().toString(), title: t.title || t.tool, card, success: true }, ...prev])
+        try {
+          await checkAchievements()
+          const mine: any[] = await getMyAchievements()
+          const newOnes: Array<{ id: string; name: string; icon?: string }> = []
+          const nextSet = new Set(knownAchievementIds)
+          for (const a of mine || []) {
+            const id = (a.id ?? a.Id ?? '').toString()
+            if (id && !nextSet.has(id)) {
+              nextSet.add(id)
+              newOnes.push({ id, name: a.name ?? a.Name ?? 'Achievement Unlocked', icon: a.icon ?? a.Icon })
+            }
+          }
+          if (newOnes.length) {
+            setKnownAchievementIds(nextSet)
+            setAchievementToasts(prev => [...prev, ...newOnes])
+            setTimeout(() => { setAchievementToasts(prev => prev.slice(newOnes.length)) }, 6000)
+          }
+        } catch {}
+      } catch (e: any) {
+        const card = { type: 'AdaptiveCard', version: '1.5', body: [ { type: 'TextBlock', text: `${t.tool} failed`, weight: 'Bolder', color: 'Attention' }, { type: 'TextBlock', text: e?.message || 'Unknown error', wrap: true } ] }
+        setWorkingItems(prev => [{ id: Date.now().toString(), title: t.title || t.tool, card, success: false }, ...prev])
+      }
+    }
+    if (needsConfirm) setConfirmQueue(prev => [...prev, t])
+    else exec()
+  }, [autoExecuteTools, checkAchievements, executeTool, getMyAchievements, knownAchievementIds])
+
   const handleTranscript = useCallback(async (text: string) => {
     if (!text.trim()) return
     const tokenAtStart = interruptTokenRef.current
@@ -233,6 +342,13 @@ const SmartLiveAssistant: React.FC = () => {
 
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: text.trim(), timestamp: new Date() }
     setMessages(prev => [...prev, userMessage])
+    // If this is the first user message in the session, derive a title
+    if (messages.filter(m => m.role === 'user').length === 0 && currentSessionId) {
+      const title = userMessage.content.slice(0, 48)
+      const nextSessions = sessions.map(s => s.id === currentSessionId ? { ...s, title } : s)
+      setSessions(nextSessions)
+      try { localStorage.setItem('cortex:chat:sessions', JSON.stringify(nextSessions)) } catch {}
+    }
 
     setIsProcessing(true)
     think()
@@ -263,8 +379,8 @@ const SmartLiveAssistant: React.FC = () => {
 
       // Execute suggested tools if provided
       const tools: Array<{ tool: string; args?: any; title?: string }> = res?.suggestedTools || res?.SuggestedTools || []
-      // If we have tool suggestions but auto-exec is disabled, expose as quick actions beneath input
-      if ((!autoExecuteTools || res?.requiresConfirmation) && tools.length) {
+  // If we have tool suggestions but auto-exec is disabled, expose as quick actions beneath input
+  if ((!autoExecuteTools || res?.requiresConfirmation) && tools.length) {
         // Convert tool suggestions into lightweight UI prompts by pre-filling input on click
         // Stored transiently via stateful hint bar; we'll render from the latest assistant message context
         setQuickToolPrompts(tools.map(t => ({ tool: t.tool, title: t.title || t.tool, args: t.args })))
@@ -339,7 +455,7 @@ const SmartLiveAssistant: React.FC = () => {
       setIsProcessing(false)
       idle()
     }
-  }, [availableTools, autoExecuteTools, executeTool, idle, messages, processChat, speakTts, think, interrupt, checkAchievements, getMyAchievements, knownAchievementIds])
+  }, [availableTools, autoExecuteTools, executeTool, idle, messages, processChat, speakTts, think, interrupt, checkAchievements, getMyAchievements, knownAchievementIds, currentSessionId, sessions])
 
   // Try WebSocket streaming STT first, then fall back to browser STT
   const startListening = useCallback(async () => {
@@ -494,14 +610,25 @@ const SmartLiveAssistant: React.FC = () => {
 
   // Clear chat
   const newChat = useCallback(() => {
-    setMessages([{ id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }])
+    const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }
+    const id = Date.now().toString(36)
+    const createdAt = new Date().toISOString()
+    const meta: ChatSessionMeta = { id, title: 'New chat', createdAt, updatedAt: createdAt }
+    const nextSessions = [meta, ...sessions]
+    setSessions(nextSessions)
+    setCurrentSessionId(id)
+    setMessages([hello])
     setWorkingItems([])
     setTasks([])
     setConfirmQueue([])
     setQuickToolPrompts([])
     setResumedHistory(false)
-    try { localStorage.removeItem('cortex:chat:messages') } catch {}
-  }, [])
+    try {
+      localStorage.setItem('cortex:chat:sessions', JSON.stringify(nextSessions))
+      localStorage.setItem('cortex:chat:currentSessionId', id)
+      localStorage.setItem(`cortex:chat:messages:${id}`, JSON.stringify([{ ...hello, timestamp: hello.timestamp.toISOString() }]))
+    } catch {}
+  }, [sessions])
 
   const showWorkingPane = workingItems.length > 0 || tasks.length > 0 || confirmQueue.length > 0
 
@@ -542,9 +669,40 @@ const SmartLiveAssistant: React.FC = () => {
                 <div className="text-xs text-gray-500">Constant, interruptible interaction</div>
               </div>
               <div className="flex items-center gap-2">
+                {/* Compact session selector */}
+                <select
+                  className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
+                  value={currentSessionId}
+                  onChange={(e) => {
+                    const sid = e.target.value
+                    setCurrentSessionId(sid)
+                    try { localStorage.setItem('cortex:chat:currentSessionId', sid) } catch {}
+                    const raw = localStorage.getItem(`cortex:chat:messages:${sid}`)
+                    if (raw) {
+                      try {
+                        const parsed = JSON.parse(raw) as Array<{ id: string; role: Role; content: string; timestamp: string }>
+                        const restored: Message[] = (parsed || []).map(m => ({ ...m, timestamp: new Date(m.timestamp) }))
+                        setMessages(restored.length ? restored : [{ id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }])
+                      } catch {
+                        setMessages([{ id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }])
+                      }
+                    } else {
+                      setMessages([{ id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }])
+                    }
+                  }}
+                  title="Conversations"
+                >
+                  {sessions.map(s => (
+                    <option key={s.id} value={s.id}>{s.title || 'Untitled'}</option>
+                  ))}
+                </select>
                 <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 mr-2">
                   <input type="checkbox" className="accent-purple-600" checked={autoExecuteTools} onChange={e => setAutoExecuteTools(e.target.checked)} />
                   Auto-execute tools
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 mr-2">
+                  <input type="checkbox" className="accent-purple-600" checked={quickActionsRunTools} onChange={e => setQuickActionsRunTools(e.target.checked)} />
+                  Quick actions run tools
                 </label>
                 <button
                   className={`px-3 py-1 text-sm rounded ${liveMode ? 'bg-green-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}`}
@@ -585,9 +743,13 @@ const SmartLiveAssistant: React.FC = () => {
                     <button
                       key={`${t.tool}_${i}`}
                       onClick={() => {
-                        const phrase = `Use tool ${t.title}`
                         setInputText('')
-                        handleTranscript(phrase)
+                        if (quickActionsRunTools) {
+                          runToolNow(t)
+                        } else {
+                          const phrase = `Use tool ${t.title}`
+                          handleTranscript(phrase)
+                        }
                       }}
                       className="text-xs px-2 py-1 rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/50"
                     >
@@ -601,7 +763,13 @@ const SmartLiveAssistant: React.FC = () => {
               {messages.map(m => (
                 <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                   <div className={`max-w-[80%] rounded-lg px-3 py-2 border text-sm ${m.role === 'user' ? 'ml-auto bg-purple-50 dark:bg-purple-900/40 border-purple-200 dark:border-purple-800' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
-                    <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                    {m.role === 'assistant' ? (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown>{m.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                    )}
                     <div className="text-[10px] text-gray-500 mt-1">{m.timestamp.toLocaleTimeString()}</div>
                   </div>
                 </motion.div>
