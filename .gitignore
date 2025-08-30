@@ -20,6 +20,8 @@ node_modules/
 # Mono auto generated files
 mono_crash.*
 
+raw/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
