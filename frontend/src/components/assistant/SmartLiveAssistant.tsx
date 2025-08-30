@@ -56,7 +56,7 @@ const SmartLiveAssistant: React.FC = () => {
   const interruptTokenRef = useRef<string>('0')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const { listen, think, idle, respond, speak: mascotSpeak } = useMascot()
+  const { listen, think, idle, respond, speak: mascotSpeak, error: mascotError } = useMascot()
   const { processChat, executeTool } = useChatToolsApi()
   const voiceApi = useVoiceApi()
 
@@ -200,7 +200,7 @@ const SmartLiveAssistant: React.FC = () => {
   // Browser STT (fallback). Streaming WS STT can be added later.
   const startListening = useCallback(() => {
     if (!(globalThis as any).webkitSpeechRecognition) {
-      mascotSpeak("Voice input not supported in this browser.", 'error' as any)
+      mascotError("Voice input not supported in this browser.")
       return
     }
     interrupt()
@@ -358,4 +358,3 @@ const SmartLiveAssistant: React.FC = () => {
 }
 
 export default SmartLiveAssistant
-
