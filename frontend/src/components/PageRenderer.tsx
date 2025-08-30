@@ -10,6 +10,8 @@ import WelcomePage from './pages/WelcomePage'
 import NotesBrowserPage from './pages/NotesBrowserPage'
 import AdvancedSearchPage from './pages/AdvancedSearchPage'
 import ModernDashboard from './dashboard/ModernDashboard'
+import DocumentsPage from './pages/DocumentsPage'
+import KnowledgeGraphPage from './pages/KnowledgeGraphPage'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface PageRendererProps {
@@ -40,25 +42,11 @@ const PageRenderer: React.FC<PageRendererProps> = ({ activeView }) => {
     case 'notes-browser':
       return <NotesBrowserPage />
     case 'chat':
-  return <ChatAssistantPage />
+      return <ChatAssistantPage />
     case 'documents':
-      return (
-        <div className="p-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-4">Documents</h1>
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-700">
-            <p className="text-gray-600 dark:text-slate-400">Document management will be implemented here</p>
-          </div>
-        </div>
-      )
+      return <DocumentsPage />
     case 'graph':
-      return (
-        <div className="p-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-4">Knowledge Graph</h1>
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-700">
-            <p className="text-gray-600 dark:text-slate-400">Knowledge graph visualization will be implemented here</p>
-          </div>
-        </div>
-      )
+      return <KnowledgeGraphPage />
     default:
       return (
         <div className="p-6">

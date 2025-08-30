@@ -1,0 +1,4 @@
+{"text":"Public product announcement and general marketing copy.","sensitivityScore":0.1}
+{"text":"Internal roadmap and org planning, not to be shared externally.","sensitivityScore":0.6}
+{"text":"Confidential contract terms and pricing schedule.","sensitivityScore":0.85}
+{"text":"Contains personal information like emails and phone numbers.","sensitivityScore":0.75}

@@ -60,6 +60,9 @@ const SmartLiveAssistant: React.FC = () => {
   const [autoExecuteTools, setAutoExecuteTools] = useState(true)
   const [knownAchievementIds, setKnownAchievementIds] = useState<Set<string>>(new Set())
   const [achievementToasts, setAchievementToasts] = useState<Array<{ id: string; name: string; icon?: string }>>([])
+  const [resumedHistory, setResumedHistory] = useState(false)
+  // Quick tool prompts for initial onboarding and post-response suggestions
+  const [quickToolPrompts, setQuickToolPrompts] = useState<Array<{ tool: string; title: string; args?: any }>>([])
 
   const recognitionRef = useRef<any>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -100,10 +103,45 @@ const SmartLiveAssistant: React.FC = () => {
 
   // Greeting
   useEffect(() => {
-    const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Speak or type to begin.", timestamp: new Date() }
+    // Restore chat history from localStorage, else seed greeting
+    try {
+  const themePref = localStorage.getItem('cortex:chat:theme') as 'system'|'dark'|'light'|null
+  if (themePref) setTheme(themePref)
+  const autoExecPref = localStorage.getItem('cortex:chat:autoExecTools')
+  if (autoExecPref != null) setAutoExecuteTools(autoExecPref === '1')
+      const raw = localStorage.getItem('cortex:chat:messages')
+      if (raw) {
+        const parsed = JSON.parse(raw) as Array<{ id: string; role: Role; content: string; timestamp: string }>
+        const restored: Message[] = (parsed || []).map(m => ({ ...m, timestamp: new Date(m.timestamp) }))
+        if (restored.length) {
+          setMessages(restored)
+          setResumedHistory(true)
+          return
+        }
+      }
+    } catch {}
+    const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }
     setMessages([hello])
     mascotSpeak("I'm ready when you are. Start speaking!")
   }, [mascotSpeak])
+
+  // Persist chat history
+  useEffect(() => {
+    try {
+      // Avoid persisting empty default state
+      if (!messages || messages.length === 0) return
+      const serialized = JSON.stringify(messages.map(m => ({ ...m, timestamp: m.timestamp.toISOString() })))
+      localStorage.setItem('cortex:chat:messages', serialized)
+    } catch {}
+  }, [messages])
+
+  // Persist UI prefs
+  useEffect(() => {
+    try { localStorage.setItem('cortex:chat:theme', theme) } catch {}
+  }, [theme])
+  useEffect(() => {
+    try { localStorage.setItem('cortex:chat:autoExecTools', autoExecuteTools ? '1' : '0') } catch {}
+  }, [autoExecuteTools])
 
   // Preload available tools and current achievements
   useEffect(() => {
@@ -225,6 +263,14 @@ const SmartLiveAssistant: React.FC = () => {
 
       // Execute suggested tools if provided
       const tools: Array<{ tool: string; args?: any; title?: string }> = res?.suggestedTools || res?.SuggestedTools || []
+      // If we have tool suggestions but auto-exec is disabled, expose as quick actions beneath input
+      if ((!autoExecuteTools || res?.requiresConfirmation) && tools.length) {
+        // Convert tool suggestions into lightweight UI prompts by pre-filling input on click
+        // Stored transiently via stateful hint bar; we'll render from the latest assistant message context
+        setQuickToolPrompts(tools.map(t => ({ tool: t.tool, title: t.title || t.tool, args: t.args })))
+      } else {
+        setQuickToolPrompts([])
+      }
       for (const t of tools) {
         const isTask = LONG_RUNNING_TOOLS.has(t.tool.toLowerCase())
         const needsConfirm = !autoExecuteTools || DANGEROUS_TOOLS.has(t.tool.toLowerCase()) || !!res?.requiresConfirmation
@@ -293,7 +339,7 @@ const SmartLiveAssistant: React.FC = () => {
       setIsProcessing(false)
       idle()
     }
-  }, [availableTools, autoExecuteTools, executeTool, idle, messages, processChat, speakTts, think, interrupt, checkAchievements])
+  }, [availableTools, autoExecuteTools, executeTool, idle, messages, processChat, speakTts, think, interrupt, checkAchievements, getMyAchievements, knownAchievementIds])
 
   // Try WebSocket streaming STT first, then fall back to browser STT
   const startListening = useCallback(async () => {
@@ -446,32 +492,44 @@ const SmartLiveAssistant: React.FC = () => {
     }
   }
 
+  // Clear chat
+  const newChat = useCallback(() => {
+    setMessages([{ id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }])
+    setWorkingItems([])
+    setTasks([])
+    setConfirmQueue([])
+    setQuickToolPrompts([])
+    setResumedHistory(false)
+    try { localStorage.removeItem('cortex:chat:messages') } catch {}
+  }, [])
+
+  const showWorkingPane = workingItems.length > 0 || tasks.length > 0 || confirmQueue.length > 0
+
   return (
     <div className={`${containerThemeClass} h-full w-full`}>
       <div className="h-full flex bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-        {/* Working Area (left) */}
-        <div className="w-[36%] min-w-[300px] max-w-[520px] border-r border-gray-200 dark:border-gray-800 p-4 space-y-3 overflow-y-auto bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <WrenchScrewdriverIcon className="w-4 h-4 text-purple-500" />
-              <span className="text-sm font-semibold">Working Area</span>
+        {/* Working Area (left) - hidden if nothing to show */}
+        {showWorkingPane && (
+          <div className="w-[36%] min-w-[300px] max-w-[520px] border-r border-gray-200 dark:border-gray-800 p-4 space-y-3 overflow-y-auto bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <WrenchScrewdriverIcon className="w-4 h-4 text-purple-500" />
+                <span className="text-sm font-semibold">Working Area</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <QueueListIcon className="w-4 h-4 text-gray-500" />
+                <span className="text-xs text-gray-500">{tasks.length} queued</span>
+                <button onClick={runNextTask} disabled={!tasks.length} className="text-xs px-2 py-1 rounded bg-purple-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white">Run next</button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <QueueListIcon className="w-4 h-4 text-gray-500" />
-              <span className="text-xs text-gray-500">{tasks.length} queued</span>
-              <button onClick={runNextTask} disabled={!tasks.length} className="text-xs px-2 py-1 rounded bg-purple-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white">Run next</button>
-            </div>
+            {workingItems.map(item => (
+              <div key={item.id} className="space-y-2">
+                <div className="text-xs font-medium text-gray-600 dark:text-gray-400">{item.title}</div>
+                <AdaptiveCardView card={item.card} />
+              </div>
+            ))}
           </div>
-          {workingItems.length === 0 && (
-            <div className="text-xs text-gray-500">Tool outputs will appear here as cards.</div>
-          )}
-          {workingItems.map(item => (
-            <div key={item.id} className="space-y-2">
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400">{item.title}</div>
-              <AdaptiveCardView card={item.card} />
-            </div>
-          ))}
-        </div>
+        )}
 
         {/* Conversation (right) */}
         <div className="flex-1 flex flex-col">
@@ -495,6 +553,13 @@ const SmartLiveAssistant: React.FC = () => {
                   {liveMode ? 'Live: On' : 'Live: Off'}
                 </button>
                 <button
+                  onClick={newChat}
+                  className="px-3 py-1 text-sm rounded bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                  title="Start a new chat"
+                >
+                  New Chat
+                </button>
+                <button
                   onClick={toggleTheme}
                   className="p-2 rounded bg-gray-200 dark:bg-gray-700"
                   title="Toggle theme"
@@ -507,6 +572,31 @@ const SmartLiveAssistant: React.FC = () => {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Quick start tool prompts (initial state or when suggestions available and auto-exec is off) */}
+            {(messages.length <= 1 || quickToolPrompts.length > 0) && (
+              <div className="mb-2">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Quick actions</div>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    quickToolPrompts.length > 0
+                      ? quickToolPrompts
+                      : (availableTools || []).slice(0, 8).map(t => ({ tool: t, title: t }))
+                  ).map((t, i) => (
+                    <button
+                      key={`${t.tool}_${i}`}
+                      onClick={() => {
+                        const phrase = `Use tool ${t.title}`
+                        setInputText('')
+                        handleTranscript(phrase)
+                      }}
+                      className="text-xs px-2 py-1 rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/50"
+                    >
+                      {t.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <AnimatePresence>
               {messages.map(m => (
                 <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>

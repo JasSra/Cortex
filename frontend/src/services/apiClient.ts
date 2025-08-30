@@ -384,14 +384,41 @@ export function useJobsApi() {
 // Graph
 export function useGraphApi() {
   const client = useCortexApiClient()
-  const TTL = 30_000
-  return {
-    getGraph: (focus?: string, depth?: number, entityTypes?: string[], fromDate?: string, toDate?: string) =>
-      client.graph(focus ?? undefined, depth ?? undefined, entityTypes ?? undefined, fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined),
-    getConnectedEntities: (entityId: string, depth?: number) => client.connected(entityId, depth ?? undefined),
-    getEntitySuggestions: (entityId: string) => client.suggestions(entityId),
-    getStatistics: () => getCached('graph:statistics', TTL, () => client.statistics()),
-  }
+  // Short TTL + inflight dedupe to prevent storms when components mount/re-render
+  const TTL = 10_000
+
+  const getGraph = useCallback((focus?: string, depth?: number, entityTypes?: string[], fromDate?: string, toDate?: string) => {
+    const key = 'graph:getGraph:' + JSON.stringify({
+      f: focus ?? null,
+      d: depth ?? null,
+      t: (entityTypes ?? []).slice().sort(),
+      fd: fromDate ?? null,
+      td: toDate ?? null,
+    })
+    return getCached(key, TTL, () =>
+      client.graph(
+        focus ?? undefined,
+        depth ?? undefined,
+        (entityTypes ?? undefined),
+        fromDate ? new Date(fromDate) : undefined,
+        toDate ? new Date(toDate) : undefined
+      )
+    )
+  }, [client])
+
+  const getConnectedEntities = useCallback((entityId: string, depth?: number) => {
+    const key = `graph:connected:${entityId}:${depth ?? ''}`
+    return getCached(key, TTL, () => client.connected(entityId, depth ?? undefined))
+  }, [client])
+
+  const getEntitySuggestions = useCallback((q: string) => {
+    const key = `graph:suggest:${q}`
+    return getCached(key, TTL, () => client.suggestions(q))
+  }, [client])
+
+  const getStatistics = useCallback(() => getCached('graph:statistics', 30_000, () => client.statistics()), [client])
+
+  return useMemo(() => ({ getGraph, getConnectedEntities, getEntitySuggestions, getStatistics }), [getGraph, getConnectedEntities, getEntitySuggestions, getStatistics])
 }
 
 // Classification

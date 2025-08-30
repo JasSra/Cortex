@@ -13,7 +13,7 @@ import {
   ShareIcon
 } from '@heroicons/react/24/outline'
 import { useMascot } from '@/contexts/MascotContext'
-import { useGraphApi } from '@/services/apiClient'
+import { useGraphApi, useSearchApi } from '@/services/apiClient'
 
 interface GraphNode {
   id: string
@@ -65,65 +65,19 @@ const KnowledgeGraphPage: React.FC = () => {
   })
   const [availableEntityTypes, setAvailableEntityTypes] = useState<string[]>([])
   const [zoomLevel, setZoomLevel] = useState(1)
+  const [relatedResults, setRelatedResults] = useState<any[] | null>(null)
+  const [isCopying, setIsCopying] = useState(false)
+  const loadingRef = useRef(false)
   
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   
   const { speak, think, idle, suggest } = useMascot()
-  const { getGraph, getConnectedEntities, getEntitySuggestions } = useGraphApi()
-
-  // Load initial graph
-  useEffect(() => {
-    loadGraph()
-  }, [])
-
-  // Load graph data
-  const loadGraph = useCallback(async (focus?: string) => {
-    setIsLoading(true)
-    think()
-
-    try {
-      const params = new URLSearchParams()
-      if (focus) params.append('focus', focus)
-      params.append('depth', filters.maxDepth.toString())
-      if (filters.fromDate) params.append('fromDate', filters.fromDate)
-      if (filters.toDate) params.append('toDate', filters.toDate)
-      filters.entityTypes.forEach(type => params.append('entityTypes', type))
-
-      const response: any = await getGraph(
-        focus,
-        parseInt(params.get('depth') || '2', 10),
-        params.getAll('entityTypes'),
-        params.get('fromDate') || undefined,
-        params.get('toDate') || undefined
-      )
-      
-      // Process and layout nodes
-      const processedData = processGraphData(response)
-      setGraphData(processedData)
-      
-      // Extract available entity types
-      const nodeTypes = response.nodes?.map((n: GraphNode) => n.type) || []
-      const uniqueTypes = Array.from(new Set(nodeTypes)) as string[]
-      setAvailableEntityTypes(uniqueTypes)
-
-      if (response.nodes?.length > 0) {
-        speak(`Loaded ${response.nodes.length} entities and ${response.edges?.length || 0} relationships!`, 'responding')
-      } else {
-        speak("No entities found. Try uploading some documents first!", 'suggesting')
-      }
-
-    } catch (error) {
-      console.error('Graph loading error:', error)
-      speak("Failed to load the knowledge graph. Please try again.", 'error')
-    } finally {
-      setIsLoading(false)
-      idle()
-    }
-  }, [filters, getGraph, speak, think, idle])
+  const { getGraph, getConnectedEntities } = useGraphApi()
+  const { searchGet } = useSearchApi()
 
   // Process graph data for visualization
-  const processGraphData = (data: any): GraphData => {
+  const processGraphData = useCallback((data: any): GraphData => {
     const nodes = data.nodes || []
     const edges = data.edges || []
     
@@ -147,7 +101,64 @@ const KnowledgeGraphPage: React.FC = () => {
       focus: data.focus,
       depth: data.depth || 2
     }
-  }
+  }, [])
+
+  // Load graph data
+  const loadGraph = useCallback(async (focus?: string) => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    setIsLoading(true)
+    think()
+
+    try {
+      const depth = filters.maxDepth
+      const types = filters.entityTypes
+      const fromDate = filters.fromDate
+      const toDate = filters.toDate
+
+      const response: any = await getGraph(
+        focus,
+        depth,
+        types,
+        fromDate,
+        toDate
+      )
+      
+      // Process and layout nodes
+      const processedData = processGraphData(response)
+      setGraphData(processedData)
+      
+      // Extract available entity types
+      const nodeTypes = response.nodes?.map((n: GraphNode) => n.type) || []
+      const uniqueTypes = Array.from(new Set(nodeTypes)) as string[]
+      setAvailableEntityTypes(uniqueTypes)
+
+      if (response.nodes?.length > 0) {
+        speak(`Loaded ${response.nodes.length} entities and ${response.edges?.length || 0} relationships!`, 'responding')
+      } else {
+        speak("No entities found. Try uploading some documents first!", 'suggesting')
+      }
+
+    } catch (error) {
+      console.error('Graph loading error:', error)
+      speak("Failed to load the knowledge graph. Please try again.", 'error')
+    } finally {
+    setIsLoading(false)
+    idle()
+    loadingRef.current = false
+    }
+  }, [filters.maxDepth, filters.entityTypes, filters.fromDate, filters.toDate, getGraph, speak, think, idle, processGraphData])
+
+  // Load initial graph (respect optional ?focus=<entityId> param)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+      const focus = params.get('focus') || undefined
+      loadGraph(focus || undefined)
+    } catch {
+      loadGraph()
+    }
+  }, [loadGraph])
 
   // Get node color based on type
   const getNodeColor = (type: string): string => {
@@ -165,60 +176,145 @@ const KnowledgeGraphPage: React.FC = () => {
     return colors[type.toLowerCase()] || colors.default
   }
 
+  // Tailwind helper classes for text/bg based on type
+  const getNodeTextClass = (type: string): string => {
+    const map: Record<string, string> = {
+      'person': 'text-blue-600',
+      'organization': 'text-emerald-600',
+      'location': 'text-amber-600',
+      'concept': 'text-purple-600',
+      'document': 'text-red-600',
+      'event': 'text-pink-600',
+      'technology': 'text-indigo-600',
+      'project': 'text-teal-600',
+      'default': 'text-gray-600'
+    }
+    return map[type.toLowerCase()] || map.default
+  }
+
+  const getNodeBgClass = (type: string): string => {
+    const map: Record<string, string> = {
+      'person': 'bg-blue-500',
+      'organization': 'bg-emerald-500',
+      'location': 'bg-amber-500',
+      'concept': 'bg-purple-500',
+      'document': 'bg-red-500',
+      'event': 'bg-pink-500',
+      'technology': 'bg-indigo-500',
+      'project': 'bg-teal-500',
+      'default': 'bg-gray-500'
+    }
+    return map[type.toLowerCase()] || map.default
+  }
+
   // Handle node click
   const handleNodeClick = async (node: GraphNode) => {
     setSelectedNode(node)
     speak(`Selected ${node.name}. Loading connected entities...`)
     
     try {
-  const connectedEntities: any = await getConnectedEntities(node.id, 1)
+      const connectedEntities: any = await getConnectedEntities(node.id, 1)
       // You could expand the graph here or show related entities
-      console.log('Connected entities:', connectedEntities)
+      // Preload related results panel for fast follow-up actions
+      setRelatedResults(null)
+      void fetchRelatedResults(node)
     } catch (error) {
       console.error('Failed to load connected entities:', error)
     }
   }
 
-  // Search entities
-  const searchEntities = useCallback(async () => {
-    if (!searchQuery.trim()) {
-      suggest("Enter a search term to find specific entities in your knowledge graph!")
-      return
-    }
-
-    setIsLoading(true)
-    think()
-
+  // Expand graph by one hop from a node and merge into current graph
+  const expandFromNode = useCallback(async (node: GraphNode) => {
     try {
-      const params = new URLSearchParams({
-        query: searchQuery
-      })
-      filters.entityTypes.forEach(type => params.append('types', type))
+      setIsLoading(true)
+      think()
+      const neighbors: any[] = await getConnectedEntities(node.id, 1)
 
-  const results: any = await getEntitySuggestions(searchQuery)
-      
-      if (results?.length > 0) {
-        // Highlight found entities in the graph
-        const foundIds = new Set(results.map((r: GraphNode) => r.id))
-        const updatedNodes = graphData.nodes.map(node => ({
-          ...node,
-          highlighted: foundIds.has(node.id)
+      // Normalize to GraphNode[]
+      const existingIds = new Set(graphData.nodes.map(n => n.id))
+      const newNodes: GraphNode[] = (neighbors || [])
+        .filter((n: any) => n && n.id && !existingIds.has(String(n.id)))
+        .map((n: any, idx: number) => ({
+          id: String(n.id),
+          name: n.name ?? n.text ?? n.label ?? `Entity ${idx + 1}`,
+          type: String(n.type ?? n.Type ?? 'concept'),
+          properties: n.properties ?? n.Properties ?? {},
+          score: typeof n.score === 'number' ? n.score : (typeof n.Score === 'number' ? n.Score : 0.5),
+          // place in a small ring around the source node
+          x: (node.x ?? 400) + Math.cos((idx / Math.max(1, neighbors.length)) * 2 * Math.PI) * 120,
+          y: (node.y ?? 300) + Math.sin((idx / Math.max(1, neighbors.length)) * 2 * Math.PI) * 120,
+          size: Math.max(20, Math.min(60, ((typeof n.score === 'number' ? n.score : 0.5)) * 80)),
+          color: getNodeColor(String(n.type ?? 'concept')),
         }))
-        
-        setGraphData(prev => ({ ...prev, nodes: updatedNodes }))
-        speak(`Found ${results.length} matching entities!`, 'responding')
-      } else {
-        speak("No matching entities found. Try different search terms.", 'suggesting')
-      }
 
-    } catch (error) {
-      console.error('Search error:', error)
-      speak("Search failed. Please try again.", 'error')
+      // Create edges from center to each new node (best-effort when API doesn't return edges)
+      const newEdges: GraphEdge[] = newNodes.map((nbr) => ({
+        id: `${node.id}-${nbr.id}`,
+        source: node.id,
+        target: nbr.id,
+        type: 'related',
+        properties: {},
+        weight: 1,
+      }))
+
+      // Merge without duplicates
+      setGraphData(prev => {
+        const mergedNodes = [...prev.nodes]
+        for (const n of newNodes) {
+          if (!mergedNodes.find(x => x.id === n.id)) mergedNodes.push(n)
+        }
+        const edgeKey = (e: GraphEdge) => `${e.source}->${e.target}`
+        const seen = new Set(prev.edges.map(edgeKey))
+        const mergedEdges = [...prev.edges]
+        for (const e of newEdges) {
+          const k = edgeKey(e)
+          if (!seen.has(k)) {
+            mergedEdges.push(e)
+            seen.add(k)
+          }
+        }
+        return { ...prev, nodes: mergedNodes, edges: mergedEdges }
+      })
+      speak(`Expanded ${node.name} by ${newNodes.length} entities.`, 'responding')
+    } catch (err) {
+      console.error('Expand failed', err)
+      speak('Failed to expand from the selected node.', 'error')
     } finally {
       setIsLoading(false)
       idle()
     }
-  }, [searchQuery, filters.entityTypes, graphData.nodes, getEntitySuggestions, speak, think, idle, suggest])
+  }, [getConnectedEntities, graphData.nodes, idle, speak, think])
+
+  // Fetch related search results for a node name
+  const fetchRelatedResults = useCallback(async (node: GraphNode) => {
+    try {
+      const res = await searchGet(node.name, 5)
+      const hits = (res as any)?.hits ?? (res as any)?.Hits ?? []
+      setRelatedResults(hits.slice(0, 5))
+    } catch (e) {
+      // non-fatal
+      setRelatedResults([])
+    }
+  }, [searchGet])
+
+  // Search entities
+  const searchEntities = useCallback(async () => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) {
+      suggest("Enter a search term to find specific entities in your knowledge graph!")
+      return
+    }
+
+    // Local highlight search across currently loaded nodes (no API call)
+    const updatedNodes = graphData.nodes.map(node => ({
+      ...node,
+      highlighted: node.name?.toLowerCase().includes(q)
+    }))
+    const count = updatedNodes.filter((n: any) => n.highlighted).length
+    setGraphData(prev => ({ ...prev, nodes: updatedNodes }))
+    if (count > 0) speak(`Highlighted ${count} matching entities.`, 'responding')
+    else speak('No matching entities found. Try different search terms.', 'suggesting')
+  }, [graphData.nodes, searchQuery, speak, suggest])
 
   // Handle zoom
   const handleZoom = (delta: number) => {
@@ -376,10 +472,7 @@ const KnowledgeGraphPage: React.FC = () => {
                           className="mr-2"
                         />
                         <span 
-                          className="text-sm capitalize font-medium"
-                          style={{
-                            color: getNodeColor(type)
-                          }}
+                          className={`text-sm capitalize font-medium ${getNodeTextClass(type)}`}
                         >
                           {type}
                         </span>
@@ -405,6 +498,36 @@ const KnowledgeGraphPage: React.FC = () => {
                     className="w-full"
                     aria-label="Maximum depth for graph traversal"
                   />
+                </div>
+
+                {/* Date Range */}
+                <div className="mb-6 grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="graph-from-date" className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                      From Date
+                    </label>
+                    <input
+                      type="date"
+                      id="graph-from-date"
+                      title="Filter entities created on or after this date"
+                      value={filters.fromDate || ''}
+                      onChange={(e) => setFilters(prev => ({ ...prev, fromDate: e.target.value || undefined }))}
+                      className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="graph-to-date" className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                      To Date
+                    </label>
+                    <input
+                      type="date"
+                      id="graph-to-date"
+                      title="Filter entities created on or before this date"
+                      value={filters.toDate || ''}
+                      onChange={(e) => setFilters(prev => ({ ...prev, toDate: e.target.value || undefined }))}
+                      className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
+                    />
+                  </div>
                 </div>
 
                 {/* Min Score */}
@@ -450,11 +573,8 @@ const KnowledgeGraphPage: React.FC = () => {
           <svg
             ref={svgRef}
             className="w-full h-full"
-            style={{
-              transform: `scale(${zoomLevel})`,
-              transformOrigin: 'center'
-            }}
           >
+            <g transform={`translate(400,300) scale(${zoomLevel}) translate(-400,-300)`}>
             {/* Edges */}
             <g>
               {graphData.edges.map(edge => {
@@ -505,6 +625,7 @@ const KnowledgeGraphPage: React.FC = () => {
                 </g>
               ))}
             </g>
+            </g>
           </svg>
 
           {/* Node Details Panel */}
@@ -533,20 +654,18 @@ const KnowledgeGraphPage: React.FC = () => {
                   </button>
                 </div>
 
-                {selectedNode.score && (
+                {typeof selectedNode.score === 'number' && (
                   <div className="mb-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-600 dark:text-gray-400">Relevance Score</span>
                       <span className="font-medium">{(selectedNode.score * 100).toFixed(1)}%</span>
                     </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
-                      <div
-                        className="bg-purple-600 h-2 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${selectedNode.score * 100}%`
-                        }}
-                      />
-                    </div>
+                    <progress
+                      className="w-full h-2 mt-1 [&::-webkit-progress-bar]:bg-gray-200 [&::-webkit-progress-value]:bg-purple-600 rounded"
+                      value={Math.max(0, Math.min(100, (selectedNode.score || 0) * 100))}
+                      max={100}
+                      aria-label="Relevance score"
+                    />
                   </div>
                 )}
 
@@ -570,7 +689,7 @@ const KnowledgeGraphPage: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => loadGraph(selectedNode.id)}
                     className="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
@@ -578,13 +697,59 @@ const KnowledgeGraphPage: React.FC = () => {
                     Focus Here
                   </button>
                   <button
-                    onClick={() => handleNodeClick(selectedNode)}
-                    title="Share Entity"
+                    onClick={() => expandFromNode(selectedNode)}
+                    className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
+                  >
+                    Expand 1 hop
+                  </button>
+                  <button
+                    onClick={() => fetchRelatedResults(selectedNode)}
                     className="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors"
+                  >
+                    Search related
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setIsCopying(true)
+                        const url = new URL(window.location.href)
+                        url.searchParams.set('focus', selectedNode.id)
+                        await navigator.clipboard.writeText(url.toString())
+                      } finally {
+                        setTimeout(() => setIsCopying(false), 800)
+                      }
+                    }}
+                    title={isCopying ? 'Copied!' : 'Copy link'}
+                    className={`px-3 py-2 ${isCopying ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'} hover:bg-gray-300 dark:hover:bg-gray-600 text-sm rounded-lg transition-colors`}
                   >
                     <ShareIcon className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* Inline related results */}
+                {Array.isArray(relatedResults) && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Related notes/documents
+                    </h4>
+                    {relatedResults.length === 0 ? (
+                      <p className="text-sm text-gray-500">No related results.</p>
+                    ) : (
+                      <ul className="space-y-2 max-h-40 overflow-auto pr-1">
+                        {relatedResults.map((r: any, i: number) => (
+                          <li key={i} className="text-sm">
+                            <div className="font-medium text-gray-900 dark:text-white truncate">
+                              {r.title ?? r.Title ?? r.fileName ?? r.FileName ?? r.id ?? 'Untitled'}
+                            </div>
+                            {r.snippet || r.Snippet ? (
+                              <div className="text-gray-600 dark:text-gray-400 line-clamp-2 text-xs" dangerouslySetInnerHTML={{ __html: r.snippet ?? r.Snippet }} />
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -598,12 +763,7 @@ const KnowledgeGraphPage: React.FC = () => {
               <div className="space-y-1">
                 {availableEntityTypes.slice(0, 6).map(type => (
                   <div key={type} className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{
-                        backgroundColor: getNodeColor(type)
-                      }}
-                    />
+                    <div className={`w-3 h-3 rounded-full ${getNodeBgClass(type)}`} />
                     <span className="text-xs text-gray-700 dark:text-gray-300 capitalize">
                       {type} ({getEntityStats()[type] || 0})
                     </span>

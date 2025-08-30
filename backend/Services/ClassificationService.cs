@@ -34,7 +34,17 @@ public class ClassificationService : IClassificationService
         _logger = logger;
         _dbContext = dbContext;
         _mlContext = new MLContext(seed: 0);
-        _modelsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Models");
+        var envModels = Environment.GetEnvironmentVariable("MODELS_DIR");
+        if (!string.IsNullOrWhiteSpace(envModels))
+        {
+            _modelsPath = Path.IsPathRooted(envModels)
+                ? envModels
+                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, envModels);
+        }
+        else
+        {
+            _modelsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Models");
+        }
         Directory.CreateDirectory(_modelsPath);
         
     _ = LoadModelsAsync();
