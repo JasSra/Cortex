@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "frontend-build",
+			"type": "shell",
+			"command": "npm run -s build",
+			"group": "build"
+		}
+	]
+}

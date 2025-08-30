@@ -12,9 +12,10 @@ import {
   MoonIcon
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/contexts/AuthContext'
-import { useAppAuth } from '@/hooks/useAppAuth'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useGamificationApi } from '@/services/apiClient'
+import { useMascot } from '@/contexts/MascotContext'
+import MascotPicker from '@/components/mascot/MascotPicker'
 
 interface UserProfileDropdownProps {
   onNavigate?: (page: string) => void
@@ -24,11 +25,13 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
   const [isOpen, setIsOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const { user, isAuthenticated, logout } = useAppAuth()
+  const { user, isAuthenticated, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { getUserStats, getMyAchievements } = useGamificationApi()
   const [userStats, setUserStats] = useState<any>(null)
   const [topAchievement, setTopAchievement] = useState<string>('Administrator')
+  const { selectedMascotId, setSelectedMascotId } = useMascot()
+  const [isPickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -181,6 +184,14 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
               </button>
 
               <button 
+                onClick={() => setPickerOpen(true)}
+                className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-xl transition-colors"
+              >
+                <span className="inline-block h-5 w-5 rounded bg-gradient-to-br from-indigo-500 to-purple-600" />
+                <span>Choose Mascot</span>
+              </button>
+
+              <button 
                 onClick={() => handleNavigate('settings')}
                 className="w-full flex items-center space-x-3 px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-xl transition-colors"
               >
@@ -218,6 +229,12 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
           </motion.div>
         )}
       </AnimatePresence>
+      <MascotPicker
+        isOpen={isPickerOpen}
+        selectedId={selectedMascotId}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(id) => { setSelectedMascotId(id); setPickerOpen(false); }}
+      />
     </div>
   )
 }

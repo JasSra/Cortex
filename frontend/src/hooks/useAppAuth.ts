@@ -2,29 +2,7 @@
 
 import { useAuth } from '@/contexts/AuthContext'
 
-const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
-
-// Mock auth interface for development
-interface DevAuth {
-  isAuthenticated: boolean
-  user: { name: string; email: string } | null
-  login: () => Promise<void>
-  logout: () => void
-  getAccessToken: () => Promise<string | null>
-  loading: boolean
-}
-
-const mockDevAuth: DevAuth = {
-  isAuthenticated: true,
-  user: { name: 'Dev User', email: 'dev@cortex.local' },
-  login: async () => {},
-  logout: () => {},
-  getAccessToken: async () => 'dev-mock-token',
-  loading: false
-}
-
+// Development shim removed: always use real MSAL auth so logout works consistently
 export function useAppAuth() {
-  const prodAuth = useAuth()
-  
-  return isDevelopment ? mockDevAuth : prodAuth
+  return useAuth()
 }
