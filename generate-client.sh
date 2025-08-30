@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # Generate TypeScript API client from Swagger/OpenAPI spec
 echo "Generating TypeScript API client..."
 
@@ -86,16 +88,23 @@ if ! dotnet swagger tofile --output ../frontend/src/api/cortex-api.json bin/Rele
 	fi
 fi
 
-# Generate TypeScript client using NSwag
+# Generate TypeScript client using NSwag (Node CLI)
 echo "Generating TypeScript client..."
 # Ensure API output directory exists
 mkdir -p ../frontend/src/api
-nswag openapi2tsclient \
-	/input:../frontend/src/api/cortex-api.json \
-	/output:../frontend/src/api/cortex-api-client.ts \
-	/template:Fetch \
-	/className:CortexApiClient \
-	/runtime:Net80
+if ! nswag openapi2tsclient \
+		/input:../frontend/src/api/cortex-api.json \
+		/output:../frontend/src/api/cortex-api-client.ts \
+		/template:Fetch \
+		/className:CortexApiClient; then
+	echo "NSwag generation failed. Trying npx @hey-api/openapi-ts as fallback..."
+	if ! npx -y @hey-api/openapi-ts \
+			--input ../frontend/src/api/cortex-api.json \
+			--output ../frontend/src/api/cortex-api-client.ts; then
+		echo "ERROR: Failed to generate TypeScript client with both NSwag and openapi-ts."
+		exit 1
+	fi
+fi
 
 echo "TypeScript API client generated successfully!"
 echo "Location: frontend/src/api/cortex-api-client.ts"

@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import { 
@@ -14,6 +14,9 @@ import {
   UserGroupIcon,
   SparklesIcon
 } from '@heroicons/react/24/outline'
+import { useGamificationApi, useNotesApi, useGraphApi } from '@/services/apiClient'
+import { useAuth } from '@/contexts/AuthContext'
+import { useTheme } from '@/contexts/ThemeContext'
 
 // Dynamically import Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { 
@@ -37,17 +40,11 @@ interface DashboardProps {
 }
 
 const defaultStats = {
-  totalDocuments: 247,
-  totalSearches: 1392,
-  totalChats: 156,
-  totalConnections: 847,
-  recentActivity: [
-    { id: '1', type: 'document', title: 'Weekly Report Q3 analyzed', timestamp: '2 minutes ago' },
-    { id: '2', type: 'search', title: 'Found insights in "machine learning trends"', timestamp: '5 minutes ago' },
-    { id: '3', type: 'chat', title: 'AI Assistant helped with code review', timestamp: '12 minutes ago' },
-    { id: '4', type: 'graph', title: 'Discovered new connection: React → TypeScript', timestamp: '18 minutes ago' },
-    { id: '5', type: 'achievement', title: 'Unlocked "Knowledge Explorer" badge', timestamp: '1 hour ago' },
-  ]
+  totalDocuments: 0,
+  totalSearches: 0,
+  totalChats: 0,
+  totalConnections: 0,
+  recentActivity: [] as Array<{ id: string; type: string; title: string; timestamp: string }>,
 }
 
 const StatCard = ({ title, value, icon: Icon, trend, color }: {
@@ -60,12 +57,12 @@ const StatCard = ({ title, value, icon: Icon, trend, color }: {
   <motion.div
     whileHover={{ scale: 1.05, y: -5 }}
     transition={{ type: "spring", stiffness: 300 }}
-    className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300 group"
+    className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 dark:border-slate-700/40 hover:shadow-2xl transition-all duration-300 group"
   >
     <div className="flex items-center justify-between">
       <div className="flex-1">
-        <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">{title}</p>
-        <p className="text-3xl font-bold text-gray-900 mt-2 group-hover:text-gray-700 transition-colors">
+  <p className="text-sm font-medium text-gray-600 dark:text-slate-400 uppercase tracking-wide">{title}</p>
+  <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 mt-2 group-hover:text-gray-700 transition-colors">
           {value.toLocaleString()}
         </p>
         {trend && (
@@ -87,8 +84,56 @@ const StatCard = ({ title, value, icon: Icon, trend, color }: {
 )
 
 export default function ModernDashboard({ stats = defaultStats }: DashboardProps) {
+  const { isAuthenticated } = useAuth()
+  const { theme } = useTheme()
+  const { getUserStats } = useGamificationApi()
+  const { getNotes } = useNotesApi()
+  const { getStatistics } = useGraphApi() as any
+  const [live, setLive] = useState(defaultStats)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let mounted = true
+    if (!isAuthenticated) { setLoading(false); return }
+    ;(async () => {
+      try {
+        setLoading(true)
+        const [statsRes, notes, graphStats] = await Promise.all([
+          getUserStats().catch(() => ({ totalSearches: 0 })),
+          getNotes().catch(() => []),
+          getStatistics().catch(() => ({})),
+        ])
+        if (!mounted) return
+        const totalConnections = (() => {
+          try {
+            const vals = Object.values(graphStats || {})
+            return vals.reduce((a: number, v: any) => a + (typeof v === 'number' ? v : 0), 0)
+          } catch { return 0 }
+        })()
+        setLive({
+          totalDocuments: Array.isArray(notes) ? notes.length : 0,
+          totalSearches: statsRes.totalSearches ?? 0,
+          totalChats: 0,
+          totalConnections,
+          recentActivity: [],
+        })
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [isAuthenticated, getUserStats, getNotes, getStatistics])
+
+  const viewStats = useMemo(() => ({
+    totalDocuments: stats?.totalDocuments ?? live.totalDocuments,
+    totalSearches: stats?.totalSearches ?? live.totalSearches,
+    totalChats: stats?.totalChats ?? live.totalChats,
+    totalConnections: stats?.totalConnections ?? live.totalConnections,
+    recentActivity: stats?.recentActivity?.length ? stats.recentActivity : live.recentActivity,
+  }), [stats, live])
   // Sample data for charts
-  const searchTrendsData = {
+  const chartsEnabled = false // Disable demo charts until real analytics endpoints exist
+  const searchTrendsData = chartsEnabled ? {
     x: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     y: [120, 135, 147, 162, 181, 156, 143],
     type: 'scatter' as const,
@@ -96,9 +141,9 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
     line: { color: '#3B82F6', width: 3 },
     marker: { color: '#3B82F6', size: 8 },
     name: 'Searches'
-  }
+  } : null
 
-  const documentTypesData = {
+  const documentTypesData = chartsEnabled ? {
     values: [35, 25, 20, 15, 5],
     labels: ['PDFs', 'Text Files', 'Word Docs', 'Presentations', 'Other'],
     type: 'pie' as const,
@@ -106,9 +151,9 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
     marker: {
       colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6']
     }
-  }
+  } : null
 
-  const knowledgeGrowthData = [
+  const knowledgeGrowthData = chartsEnabled ? [
     {
       x: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
       y: [245, 389, 567, 723, 891, 1247],
@@ -123,26 +168,27 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
       marker: { color: '#10B981' },
       name: 'Connections'
     }
-  ]
+  ] : []
 
   const plotConfig = {
     displayModeBar: false,
     responsive: true
   }
 
+  const isDark = theme === 'dark'
   const plotLayout = {
     margin: { l: 40, r: 20, t: 30, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { family: 'Inter, sans-serif', size: 12, color: '#374151' },
+    font: { family: 'Inter, sans-serif', size: 12, color: isDark ? '#e5e7eb' : '#374151' },
     showlegend: false
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 relative overflow-hidden">
       {/* Background decoration */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(59,130,246,0.1)_1px,transparent_0)] bg-[length:24px_24px]" />
-      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-100/20 via-transparent to-purple-100/20" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(59,130,246,0.1)_1px,transparent_0)] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(59,130,246,0.05)_1px,transparent_0)] bg-[length:24px_24px]" />
+      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-100/20 via-transparent to-purple-100/20 dark:from-blue-900/10 dark:to-purple-900/10" />
       
       <div className="relative z-10 p-6 space-y-8">
       {/* Header */}
@@ -158,7 +204,7 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-gray-600 text-lg"
+          className="text-gray-600 dark:text-slate-300 text-lg"
         >
           Your intelligent knowledge management system
         </motion.p>
@@ -178,28 +224,28 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Documents"
-          value={stats.totalDocuments}
+          value={viewStats.totalDocuments}
           icon={DocumentTextIcon}
           trend="+12% this month"
           color="bg-gradient-to-br from-blue-500 to-blue-600"
         />
         <StatCard
           title="Searches"
-          value={stats.totalSearches}
+          value={viewStats.totalSearches}
           icon={MagnifyingGlassIcon}
           trend="+8% this week"
           color="bg-gradient-to-br from-green-500 to-green-600"
         />
         <StatCard
           title="Chat Sessions"
-          value={stats.totalChats}
+          value={viewStats.totalChats}
           icon={ChatBubbleLeftIcon}
           trend="+24% this month"
           color="bg-gradient-to-br from-yellow-500 to-orange-500"
         />
         <StatCard
           title="Knowledge Connections"
-          value={stats.totalConnections}
+          value={viewStats.totalConnections}
           icon={ShareIcon}
           trend="+18% this month"
           color="bg-gradient-to-br from-purple-500 to-purple-600"
@@ -213,24 +259,28 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300"
+          className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 dark:border-slate-700/40 hover:shadow-2xl transition-all duration-300"
         >
-          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center">
             <ChartBarIcon className="h-6 w-6 mr-3 text-blue-500" />
             Search Trends (Last 7 Days)
             <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Live</span>
           </h3>
-          <Plot
-            data={[searchTrendsData]}
-            layout={{
-              ...plotLayout,
-              height: 250,
-              xaxis: { showgrid: false },
-              yaxis: { showgrid: true, gridcolor: '#f3f4f6' }
-            }}
-            config={plotConfig}
-            className="w-full"
-          />
+          {chartsEnabled && searchTrendsData ? (
+            <Plot
+              data={[searchTrendsData]}
+              layout={{
+                ...plotLayout,
+                height: 250,
+                xaxis: { showgrid: false },
+                yaxis: { showgrid: true, gridcolor: isDark ? '#334155' : '#f3f4f6' }
+              }}
+              config={plotConfig}
+              className="w-full"
+            />
+          ) : (
+            <div className="h-40 flex items-center justify-center text-sm text-gray-500 dark:text-slate-400">No trend data yet</div>
+          )}
         </motion.div>
 
         {/* Document Types */}
@@ -238,22 +288,26 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3 }}
-          className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300"
+          className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 dark:border-slate-700/40 hover:shadow-2xl transition-all duration-300"
         >
-          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center">
             <DocumentTextIcon className="h-6 w-6 mr-3 text-green-500" />
             Document Types
             <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Updated</span>
           </h3>
-          <Plot
-            data={[documentTypesData]}
-            layout={{
-              ...plotLayout,
-              height: 250
-            }}
-            config={plotConfig}
-            className="w-full"
-          />
+          {chartsEnabled && documentTypesData ? (
+            <Plot
+              data={[documentTypesData]}
+              layout={{
+                ...plotLayout,
+                height: 250
+              }}
+              config={plotConfig}
+              className="w-full"
+            />
+          ) : (
+            <div className="h-40 flex items-center justify-center text-sm text-gray-500 dark:text-slate-400">No document type data yet</div>
+          )}
         </motion.div>
 
         {/* Knowledge Growth */}
@@ -261,27 +315,31 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300 lg:col-span-2"
+          className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white/20 dark:border-slate-700/40 hover:shadow-2xl transition-all duration-300 lg:col-span-2"
         >
-          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-4 flex items-center">
             <ArrowTrendingUpIcon className="h-6 w-6 mr-3 text-purple-500" />
             Knowledge Base Growth (Last 6 Months)
             <span className="ml-auto text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">Trending ↗</span>
           </h3>
-          <Plot
-            data={knowledgeGrowthData}
-            layout={{
-              ...plotLayout,
-              height: 300,
-              barmode: 'group',
-              showlegend: true,
-              legend: { orientation: 'h', y: -0.2 },
-              xaxis: { showgrid: false },
-              yaxis: { showgrid: true, gridcolor: '#f3f4f6' }
-            }}
-            config={plotConfig}
-            className="w-full"
-          />
+          {chartsEnabled && knowledgeGrowthData.length ? (
+            <Plot
+              data={knowledgeGrowthData}
+              layout={{
+                ...plotLayout,
+                height: 300,
+                barmode: 'group',
+                showlegend: true,
+                legend: { orientation: 'h', y: -0.2 },
+                xaxis: { showgrid: false },
+                yaxis: { showgrid: true, gridcolor: isDark ? '#334155' : '#f3f4f6' }
+              }}
+              config={plotConfig}
+              className="w-full"
+            />
+          ) : (
+            <div className="h-48 flex items-center justify-center text-sm text-gray-500 dark:text-slate-400">No growth data yet</div>
+          )}
         </motion.div>
       </div>
 
@@ -290,15 +348,15 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-white/80 backdrop-blur-lg rounded-3xl p-8 shadow-xl border border-white/20"
+        className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-lg rounded-3xl p-8 shadow-xl border border-white/20 dark:border-slate-700/40"
       >
-        <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+        <h3 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-6 flex items-center">
           <ClockIcon className="h-6 w-6 mr-3 text-orange-500" />
           Recent Activity
           <span className="ml-auto text-xs bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">Real-time</span>
         </h3>
         <div className="space-y-4">
-          {stats.recentActivity.map((activity, index) => (
+          {(viewStats.recentActivity || []).map((activity, index) => (
             <motion.div
               key={activity.id}
               initial={{ opacity: 0, x: -20 }}
@@ -320,14 +378,17 @@ export default function ModernDashboard({ stats = defaultStats }: DashboardProps
                 {activity.type === 'achievement' && <SparklesIcon className="h-5 w-5" />}
               </div>
               <div className="flex-1">
-                <p className="font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">{activity.title}</p>
-                <p className="text-sm text-gray-500 mt-1">{activity.timestamp}</p>
+                <p className="font-semibold text-gray-900 dark:text-slate-100 group-hover:text-blue-700 transition-colors">{activity.title}</p>
+                <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{activity.timestamp}</p>
               </div>
               <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
               </div>
             </motion.div>
           ))}
+          {loading && (
+            <div className="text-sm text-gray-500 dark:text-slate-400">Loading activity…</div>
+          )}
         </div>
       </motion.div>
 

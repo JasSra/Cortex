@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
+using Microsoft.EntityFrameworkCore;
 
 namespace CortexApi.Controllers;
 
@@ -16,17 +17,20 @@ public class SearchController : ControllerBase
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<SearchController> _logger;
     private readonly IGamificationService _gamificationService;
+    private readonly CortexApi.Data.CortexDbContext _db;
 
     public SearchController(
         ISearchService searchService,
         IUserContextAccessor userContext,
         ILogger<SearchController> logger,
-        IGamificationService gamificationService)
+    IGamificationService gamificationService,
+    CortexApi.Data.CortexDbContext db)
     {
         _searchService = searchService;
         _userContext = userContext;
         _logger = logger;
-        _gamificationService = gamificationService;
+    _gamificationService = gamificationService;
+    _db = db;
     }
 
     /// <summary>
@@ -48,9 +52,16 @@ public class SearchController : ControllerBase
         var response = await _searchService.SearchHybridAsync(request, _userContext.UserId);
 
         // Track search activity for gamification
-        var userProfileId = _userContext.UserId; // Get the actual profile ID
-        await _gamificationService.UpdateUserStatsAsync(userProfileId, "search");
-        await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search");
+        var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+        var userProfileId = await _db.UserProfiles
+            .Where(up => up.SubjectId == subjectId)
+            .Select(up => up.Id)
+            .FirstOrDefaultAsync();
+        if (!string.IsNullOrEmpty(userProfileId))
+        {
+            await _gamificationService.UpdateUserStatsAsync(userProfileId, "search_performed");
+            await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search_performed");
+        }
 
         _logger.LogInformation("Search returned {HitCount} results for user {UserId}", 
             response.Hits.Count, _userContext.UserId);
@@ -87,9 +98,16 @@ public class SearchController : ControllerBase
         var response = await _searchService.SearchHybridAsync(request, _userContext.UserId);
         
         // Track search activity for gamification
-        var userProfileId = _userContext.UserId; // Get the actual profile ID
-        await _gamificationService.UpdateUserStatsAsync(userProfileId, "search");
-        await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search");
+        var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+        var userProfileId = await _db.UserProfiles
+            .Where(up => up.SubjectId == subjectId)
+            .Select(up => up.Id)
+            .FirstOrDefaultAsync();
+        if (!string.IsNullOrEmpty(userProfileId))
+        {
+            await _gamificationService.UpdateUserStatsAsync(userProfileId, "search_performed");
+            await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search_performed");
+        }
         
         return Ok(response);
     }
@@ -115,9 +133,16 @@ public class SearchController : ControllerBase
         var response = await _searchService.SearchAdvancedAsync(request, _userContext.UserId);
 
         // Track search activity for gamification
-        var userProfileId = _userContext.UserId; // Get the actual profile ID
-        await _gamificationService.UpdateUserStatsAsync(userProfileId, "search");
-        await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search");
+        var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+        var userProfileId = await _db.UserProfiles
+            .Where(up => up.SubjectId == subjectId)
+            .Select(up => up.Id)
+            .FirstOrDefaultAsync();
+        if (!string.IsNullOrEmpty(userProfileId))
+        {
+            await _gamificationService.UpdateUserStatsAsync(userProfileId, "search_performed");
+            await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "search_performed");
+        }
 
         _logger.LogInformation("Advanced search returned {HitCount} results for user {UserId}", 
             response.Hits.Count, _userContext.UserId);

@@ -45,10 +45,9 @@ builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<INerService, NerService>();
 builder.Services.AddScoped<IGraphService, GraphService>();
 // Background job service temporarily disabled for testing
-// builder.Services.AddSingleton<BackgroundJobService>();
-// builder.Services.AddHostedService<BackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
-// builder.Services.AddScoped<IBackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
-builder.Services.AddScoped<IBackgroundJobService, BackgroundJobService>();
+builder.Services.AddSingleton<BackgroundJobService>();
+builder.Services.AddHostedService<BackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
+builder.Services.AddScoped<IBackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
 builder.Services.AddScoped<IRagService, RagService>();
 // Detection services for auto-classification
 builder.Services.AddScoped<IPiiDetectionService, PiiDetectionService>();

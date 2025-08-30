@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
+using Microsoft.EntityFrameworkCore;
 
 namespace CortexApi.Controllers;
 
@@ -17,19 +18,22 @@ public class NotesController : ControllerBase
     private readonly ILogger<NotesController> _logger;
     private readonly IGamificationService _gamificationService;
     private readonly IConfiguration _configuration;
+    private readonly CortexApi.Data.CortexDbContext _db;
 
     public NotesController(
         IIngestService ingestService,
         IUserContextAccessor userContext,
         ILogger<NotesController> logger,
-        IGamificationService gamificationService,
-        IConfiguration configuration)
+    IGamificationService gamificationService,
+    IConfiguration configuration,
+    CortexApi.Data.CortexDbContext db)
     {
         _ingestService = ingestService;
         _userContext = userContext;
         _logger = logger;
         _gamificationService = gamificationService;
         _configuration = configuration;
+    _db = db;
     }
 
     /// <summary>
@@ -87,7 +91,7 @@ public class NotesController : ControllerBase
     }
 
     /// <summary>
-    /// Create a note from text content (Editor role required)
+    /// Create a note from text content (Authenticated user required)
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> CreateNote([FromBody] CreateNoteRequest request)
@@ -97,9 +101,10 @@ public class NotesController : ControllerBase
             // In development mode, allow requests without authentication
             var isDevelopment = _configuration.GetValue<bool>("IsDevelopment", false) || 
                                Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
-                               
-            if (!isDevelopment && !Rbac.RequireRole(_userContext, "Editor"))
-                return StatusCode(403, "Editor role required");
+            
+            // Require authentication in non-development environments (no specific role needed)
+            if (!isDevelopment && !_userContext.IsAuthenticated)
+                return StatusCode(403, "Authentication required");
 
             if (string.IsNullOrWhiteSpace(request.Content))
                 return BadRequest("Content is required");
@@ -116,9 +121,17 @@ public class NotesController : ControllerBase
             // Track note creation for gamification (only if user context is available)
             if (!string.IsNullOrEmpty(_userContext.UserId))
             {
-                var userProfileId = _userContext.UserId;
-                await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_creation", 1);
-                await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_creation");
+                // Resolve actual UserProfile.Id from SubjectId
+                var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+                var userProfileId = await _db.UserProfiles
+                    .Where(up => up.SubjectId == subjectId)
+                    .Select(up => up.Id)
+                    .FirstOrDefaultAsync();
+                if (!string.IsNullOrEmpty(userProfileId))
+                {
+                    await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_created", 1);
+                    await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_created");
+                }
             }
             
             _logger.LogInformation("Successfully created note {NoteId} for user {UserId}", 

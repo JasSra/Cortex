@@ -134,11 +134,12 @@ const AdvancedSearchPage: React.FC = () => {
   }>>([])
 
   const { speak, think, idle, suggest } = useMascot()
-  const { searchGet } = useSearchApi()
+  const { searchGet, advancedSearch } = useSearchApi()
   const { ragQuery } = useChatApi()
   
   const searchInputRef = useRef<HTMLInputElement>(null)
   const recognition = useRef<any>(null)
+  const handleSearchRef = useRef<((q?: string) => void) | null>(null)
 
   // Search suggestions
   const searchSuggestions = [
@@ -166,7 +167,7 @@ const AdvancedSearchPage: React.FC = () => {
       recognition.current!.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript
         setQuery(transcript)
-        handleSearch(transcript)
+        handleSearchRef.current?.(transcript)
         speak(`Searching for "${transcript}"`, 'responding')
       }
 
@@ -183,6 +184,155 @@ const AdvancedSearchPage: React.FC = () => {
     }
   }, [speak, idle])
 
+  // Transform results and helpers (placed before search implementations to avoid TDZ in deps)
+  const transformResultsFromResponse = useCallback((response: any): SearchResult[] => {
+    const hits = response?.Hits || response?.hits || []
+    return hits.map((h: any, index: number) => ({
+      id: h.ChunkId || h.NoteId || `result-${index}`,
+      title: h.Title || `Result ${index + 1}`,
+      content: h.Snippet || h.Content || '',
+      score: h.Score ?? Math.random() * 0.3 + 0.7,
+      metadata: {
+        source: h.Source,
+        createdAt: h.CreatedAt,
+        sensitivityLevel: h.SensitivityLevel ?? 0,
+        tags: h.Tags || [],
+        fileType: h.FileType,
+        chunkIndex: h.ChunkIndex ?? 0,
+        wordCount: (h.Content || h.Snippet || '').split(/\s+/).length || 0,
+      }
+    }))
+  }, [])
+
+  const parseExpertQuery = (query: string): string => {
+    return query
+      .replace(/\bAND\b/gi, ' ')
+      .replace(/\bOR\b/gi, ' | ')
+      .replace(/\bNOT\b/gi, ' -')
+  }
+
+  const applyFilters = useCallback((input: SearchResult[]): SearchResult[] => {
+    return input.filter(result => {
+      if (filters.sensitivityLevels.length > 0 && 
+          !filters.sensitivityLevels.includes(result.metadata.sensitivityLevel || 0)) {
+        return false
+      }
+
+      if (filters.fromDate && result.metadata.createdAt) {
+        if (new Date(result.metadata.createdAt) < new Date(filters.fromDate)) {
+          return false
+        }
+      }
+      if (filters.toDate && result.metadata.createdAt) {
+        if (new Date(result.metadata.createdAt) > new Date(filters.toDate)) {
+          return false
+        }
+      }
+
+      if (filters.fileTypes.length > 0 && 
+          !filters.fileTypes.includes(result.metadata.fileType || '')) {
+        return false
+      }
+
+      if (filters.minScore && result.score < filters.minScore) {
+        return false
+      }
+
+      return true
+    })
+  }, [filters])
+
+  
+
+  // Different search implementations
+  const performSimpleSearch = useCallback(async (q: string): Promise<SearchResult[]> => {
+    const results = await searchGet(q)
+    return transformResultsFromResponse(results)
+  }, [searchGet, transformResultsFromResponse])
+
+  const performSemanticSearch = useCallback(async (q: string): Promise<SearchResult[]> => {
+    const res = await advancedSearch({
+      Q: q,
+      Mode: 'semantic',
+      K: 20,
+      Alpha: 0.6,
+      SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
+      FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
+      Tags: filters.tags.length ? filters.tags : undefined,
+      Source: filters.sources?.[0],
+      DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
+      DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
+    })
+    return transformResultsFromResponse(res)
+  }, [advancedSearch, transformResultsFromResponse, filters])
+
+  const performHybridSearch = useCallback(async (q: string): Promise<SearchResult[]> => {
+    const res = await advancedSearch({
+      Q: q,
+      Mode: 'hybrid',
+      K: 20,
+      Alpha: 0.6,
+      SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
+      FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
+      Tags: filters.tags.length ? filters.tags : undefined,
+      Source: filters.sources?.[0],
+      DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
+      DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
+    })
+    return transformResultsFromResponse(res)
+  }, [advancedSearch, transformResultsFromResponse, filters])
+
+  const performAISearch = useCallback(async (q: string): Promise<SearchResult[]> => {
+    try {
+      const messages = [{ role: 'user', content: `${aiContext ? aiContext + '\n\n' : ''}${q}` }]
+      await ragQuery(messages, {})
+      const res = await advancedSearch({
+        Q: q,
+        Mode: 'hybrid',
+        K: 20,
+        Alpha: 0.6,
+        SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
+        FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
+        Tags: filters.tags.length ? filters.tags : undefined,
+        Source: filters.sources?.[0],
+        DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
+        DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
+      })
+      return transformResultsFromResponse(res)
+    } catch (error) {
+      const res = await advancedSearch({
+        Q: q,
+        Mode: 'hybrid',
+        K: 20,
+        Alpha: 0.6,
+        SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
+        FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
+        Tags: filters.tags.length ? filters.tags : undefined,
+        Source: filters.sources?.[0],
+        DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
+        DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
+      })
+      return transformResultsFromResponse(res)
+    }
+  }, [aiContext, ragQuery, advancedSearch, transformResultsFromResponse, filters])
+
+  const performExpertSearch = useCallback(async (q: string): Promise<SearchResult[]> => {
+    const parsedQuery = parseExpertQuery(expertQuery || q)
+    const res = await advancedSearch({
+      Q: parsedQuery,
+      Mode: 'hybrid',
+      K: 20,
+      Alpha: 0.6,
+      SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
+      FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
+      Tags: filters.tags.length ? filters.tags : undefined,
+      Source: filters.sources?.[0],
+      DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
+      DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
+    })
+    return transformResultsFromResponse(res)
+  }, [expertQuery, advancedSearch, transformResultsFromResponse, filters])
+
   // Perform search based on mode
   const handleSearch = useCallback(async (searchQuery?: string) => {
     const queryToSearch = searchQuery || query
@@ -197,30 +347,23 @@ const AdvancedSearchPage: React.FC = () => {
 
       switch (searchMode) {
         case 'simple':
-          // Simple keyword search
           searchResults = await performSimpleSearch(queryToSearch)
           break
         case 'semantic':
-          // Semantic search only
           searchResults = await performSemanticSearch(queryToSearch)
           break
         case 'hybrid':
-          // Hybrid search (default backend behavior)
           searchResults = await performHybridSearch(queryToSearch)
           break
         case 'ai':
-          // AI-powered conversational search
           searchResults = await performAISearch(queryToSearch)
           break
         case 'expert':
-          // Expert search with boolean logic
           searchResults = await performExpertSearch(queryToSearch)
           break
       }
 
       const executionTime = Date.now() - startTime
-
-      // Apply filters
       const filteredResults = applyFilters(searchResults)
 
       setResults(filteredResults)
@@ -231,7 +374,6 @@ const AdvancedSearchPage: React.FC = () => {
         keyword: filteredResults.filter(r => r.score <= 0.7).length
       })
 
-      // Update search history
       setSearchHistory(prev => [
         {
           query: queryToSearch,
@@ -239,10 +381,9 @@ const AdvancedSearchPage: React.FC = () => {
           timestamp: new Date(),
           resultCount: filteredResults.length
         },
-        ...prev.slice(0, 9) // Keep last 10 searches
+        ...prev.slice(0, 9)
       ])
 
-      // Update recent searches
       if (!recentSearches.includes(queryToSearch)) {
         setRecentSearches(prev => [queryToSearch, ...prev.slice(0, 4)])
       }
@@ -260,109 +401,25 @@ const AdvancedSearchPage: React.FC = () => {
       setIsSearching(false)
       idle()
     }
-  }, [query, searchMode, filters, speak, think, idle, recentSearches])
+  }, [
+    query,
+    searchMode,
+    speak,
+    think,
+    idle,
+    recentSearches,
+    performSimpleSearch,
+    performSemanticSearch,
+    performHybridSearch,
+    performAISearch,
+    performExpertSearch,
+    applyFilters,
+  ])
 
-  // Different search implementations
-  const performSimpleSearch = async (query: string): Promise<SearchResult[]> => {
-    // Use the backend search API with keyword focus
-    const results = await searchGet(query)
-    return transformResults(results)
-  }
-
-  const performSemanticSearch = async (query: string): Promise<SearchResult[]> => {
-    // Use the backend search API with semantic focus
-    const results = await searchGet(query)
-    return transformResults(results)
-  }
-
-  const performHybridSearch = async (query: string): Promise<SearchResult[]> => {
-    // Use the backend search API (default hybrid mode)
-    const results = await searchGet(query)
-    return transformResults(results)
-  }
-
-  const performAISearch = async (query: string): Promise<SearchResult[]> => {
-    // Use RAG query for conversational search
-    try {
-      const messages = [{ role: 'user', content: `${aiContext ? aiContext + '\n\n' : ''}${query}` }]
-      const response = await ragQuery(messages, {})
-      // Extract search results from RAG response
-      const results = await searchGet(query)
-      return transformResults(results)
-    } catch (error) {
-      // Fallback to regular search
-      const results = await searchGet(query)
-      return transformResults(results)
-    }
-  }
-
-  const performExpertSearch = async (query: string): Promise<SearchResult[]> => {
-    // Parse expert query and use backend search
-    const parsedQuery = parseExpertQuery(expertQuery || query)
-    const results = await searchGet(parsedQuery)
-    return transformResults(results)
-  }
-
-  const transformResults = (backendResults: any[]): SearchResult[] => {
-    return backendResults.map((result: any, index: number) => ({
-      id: result.id || `result-${index}`,
-      title: result.title || `Result ${index + 1}`,
-      content: result.content || result.snippet || '',
-      score: result.score || Math.random() * 0.3 + 0.7, // Mock score if not provided
-      metadata: {
-        source: result.source || result.metadata?.source,
-        createdAt: result.createdAt || result.metadata?.createdAt,
-        sensitivityLevel: result.metadata?.sensitivityLevel || 0,
-        tags: result.tags || result.metadata?.tags || [],
-        fileType: result.fileType || result.metadata?.fileType,
-        chunkIndex: result.chunkIndex || 0,
-        wordCount: result.content?.split(/\s+/).length || 0
-      }
-    }))
-  }
-
-  const parseExpertQuery = (query: string): string => {
-    // Parse boolean logic (AND, OR, NOT) and convert to backend format
-    return query
-      .replace(/\bAND\b/gi, ' ')
-      .replace(/\bOR\b/gi, ' | ')
-      .replace(/\bNOT\b/gi, ' -')
-  }
-
-  const applyFilters = (results: SearchResult[]): SearchResult[] => {
-    return results.filter(result => {
-      // Sensitivity level filter
-      if (filters.sensitivityLevels.length > 0 && 
-          !filters.sensitivityLevels.includes(result.metadata.sensitivityLevel || 0)) {
-        return false
-      }
-
-      // Date range filter
-      if (filters.fromDate && result.metadata.createdAt) {
-        if (new Date(result.metadata.createdAt) < new Date(filters.fromDate)) {
-          return false
-        }
-      }
-      if (filters.toDate && result.metadata.createdAt) {
-        if (new Date(result.metadata.createdAt) > new Date(filters.toDate)) {
-          return false
-        }
-      }
-
-      // File type filter
-      if (filters.fileTypes.length > 0 && 
-          !filters.fileTypes.includes(result.metadata.fileType || '')) {
-        return false
-      }
-
-      // Score filter
-      if (filters.minScore && result.score < filters.minScore) {
-        return false
-      }
-
-      return true
-    })
-  }
+  // Keep a stable ref to the latest handleSearch to use inside speech-recognition callbacks
+  useEffect(() => {
+    handleSearchRef.current = handleSearch
+  }, [handleSearch])
 
   const clearFilters = () => {
     setFilters({

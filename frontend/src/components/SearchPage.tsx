@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchApi } from '@/services/apiClient'
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { 
   faSearch, faFilter, faCalendar, faFile, faRobot, faShield, 
@@ -39,6 +40,7 @@ const AVAILABLE_TOPICS = [
 ];
 
 export default function SearchPage({ onNoteSelect }: SearchPageProps) {
+  const searchApi = useSearchApi()
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -57,49 +59,51 @@ export default function SearchPage({ onNoteSelect }: SearchPageProps) {
   const [voicePin, setVoicePin] = useState("");
   const [showVoicePinDialog, setShowVoicePinDialog] = useState(false);
 
-  const handleSearch = async () => {
+  const handleSearch = useCallback(async () => {
     if (!query.trim()) {
-      setResults([]);
-      return;
+      setResults([])
+      return
     }
 
-    setLoading(true);
+    setLoading(true)
     try {
-      const searchPayload = {
-        q: query,
-        k: 20,
-        mode: searchMode,
-        filters: {
-          ...(filters.fileType && { fileType: filters.fileType }),
-          ...(filters.topics.length > 0 && { topics: filters.topics }),
-          ...(filters.sensitivity.length > 0 && { sensitivity: filters.sensitivity }),
-          ...(filters.hasPii !== undefined && { hasPii: filters.hasPii }),
-          ...(filters.hasSecrets !== undefined && { hasSecrets: filters.hasSecrets }),
-          ...(filters.dateFrom && filters.dateTo && { 
-            dateRange: { start: filters.dateFrom, end: filters.dateTo } 
-          }),
-        }
-      };
-
-      const response = await fetch("/api/search/advanced", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(searchPayload),
-      });
-
-      if (!response.ok) {
-        throw new Error("Search failed");
+      // Map UI filters to backend AdvancedSearchRequest
+      const req: any = {
+        Q: query,
+        K: 20,
+        Mode: searchMode,
+        Alpha: 0.6,
       }
+      if (filters.sensitivity.length > 0) req.SensitivityLevels = filters.sensitivity
+      if (filters.topics.length > 0) req.Tags = filters.topics
+      if (filters.hasPii === true) req.ExcludePii = false
+      if (filters.hasSecrets === true) req.ExcludeSecrets = false
+      if (filters.fileType) req.FileTypes = [filters.fileType]
+      if (filters.dateFrom) req.DateFrom = new Date(filters.dateFrom).toISOString()
+      if (filters.dateTo) req.DateTo = new Date(filters.dateTo).toISOString()
 
-      const data = await response.json();
-      setResults(data.results || []);
+      const res = await searchApi.advancedSearch(req)
+      const hits = res?.Hits || res?.hits || []
+      const mapped: SearchResult[] = hits.map((h: any) => ({
+        noteId: h.NoteId || h.noteId,
+        title: h.Title || h.title || 'Untitled',
+        chunkContent: h.Snippet || h.Content || h.snippet || h.content || '',
+        fileType: h.FileType || h.fileType || '',
+        createdAt: h.CreatedAt || h.createdAt || new Date().toISOString(),
+        score: h.Score || h.score || 0,
+        sensitivity: h.SensitivityLevel ?? h.sensitivityLevel ?? undefined,
+        tags: (h.Tags || h.tags || []) as string[],
+        hasPii: h.HasPii ?? h.hasPii ?? false,
+        hasSecrets: h.HasSecrets ?? h.hasSecrets ?? false,
+      }))
+      setResults(mapped)
     } catch (error) {
-      console.error("Search error:", error);
-      setResults([]);
+      console.error('Search error:', error)
+      setResults([])
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }, [query, searchMode, filters, searchApi])
 
   const handleTopicToggle = (topic: string) => {
     setFilters(prev => ({
@@ -174,7 +178,7 @@ export default function SearchPage({ onNoteSelect }: SearchPageProps) {
     const searchInput = document.getElementById("search-input");
     searchInput?.addEventListener("keypress", handleKeyPress);
     return () => searchInput?.removeEventListener("keypress", handleKeyPress);
-  }, [query, searchMode, filters]);
+  }, [query, searchMode, filters, handleSearch]);
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -515,6 +519,8 @@ export default function SearchPage({ onNoteSelect }: SearchPageProps) {
               <button
                 onClick={() => setShowVoicePinDialog(false)}
                 className="text-gray-500 hover:text-gray-700"
+                aria-label="Close voice PIN dialog"
+                title="Close"
               >
                 <FontAwesomeIcon icon={faTimes} />
               </button>

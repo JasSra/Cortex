@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
+using Microsoft.EntityFrameworkCore;
 
 namespace CortexApi.Controllers;
 
@@ -16,38 +17,40 @@ public class IngestController : ControllerBase
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<IngestController> _logger;
     private readonly IGamificationService _gamificationService;
+    private readonly CortexApi.Data.CortexDbContext _db;
 
     public IngestController(
         IIngestService ingestService,
         IUserContextAccessor userContext,
         ILogger<IngestController> logger,
-        IGamificationService gamificationService)
+    IGamificationService gamificationService,
+    CortexApi.Data.CortexDbContext db)
     {
         _ingestService = ingestService;
         _userContext = userContext;
         _logger = logger;
         _gamificationService = gamificationService;
+    _db = db;
     }
 
-    private bool EnsureEditor()
+    private bool EnsureAuthenticated()
     {
-        if (_userContext.IsInRole("Editor") || _userContext.IsInRole("Admin")) return true;
-        // In development, grant minimal roles on first activity to enable self-management
+        // Allow any authenticated user; in Development also allow unauthenticated for local testing
+        if (_userContext.IsAuthenticated) return true;
         if (HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>().IsDevelopment())
         {
-            // UserContextAccessor has dev fallback to Admin/Editor/Reader when no roles
-            return _userContext.IsInRole("Editor") || _userContext.IsInRole("Admin");
+            return true;
         }
         return false;
     }
 
     /// <summary>
-    /// Upload and ingest multiple files (Editor role required)
+    /// Upload and ingest multiple files (Authenticated user required)
     /// </summary>
     [HttpPost("files")]
     public async Task<IActionResult> IngestFiles(IFormFileCollection files)
     {
-        if (!EnsureEditor())
+        if (!EnsureAuthenticated())
             return Forbid();
 
         if (files == null || files.Count == 0)
@@ -59,11 +62,18 @@ public class IngestController : ControllerBase
         try
         {
             var results = await _ingestService.IngestFilesAsync(files);
-            
-            // Track note creation for gamification
-            var userProfileId = _userContext.UserId; // Get the actual profile ID
-            await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_creation", files.Count);
-            await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_creation");
+
+            // Track note creation for gamification (resolve real profile ID)
+            var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+            var userProfileId = await _db.UserProfiles
+                .Where(up => up.SubjectId == subjectId)
+                .Select(up => up.Id)
+                .FirstOrDefaultAsync();
+            if (!string.IsNullOrEmpty(userProfileId))
+            {
+                await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_created", files.Count);
+                await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_created");
+            }
             
             _logger.LogInformation("Successfully ingested {FileCount} files for user {UserId}", 
                 files.Count, _userContext.UserId);
@@ -78,12 +88,12 @@ public class IngestController : ControllerBase
     }
 
     /// <summary>
-    /// Ingest an entire folder (Editor role required)
+    /// Ingest an entire folder (Authenticated user required)
     /// </summary>
     [HttpPost("folder")]
     public async Task<IActionResult> IngestFolder([FromBody] FolderIngestRequest request)
     {
-        if (!EnsureEditor())
+        if (!EnsureAuthenticated())
             return Forbid();
 
         if (string.IsNullOrWhiteSpace(request.Path))
@@ -95,14 +105,24 @@ public class IngestController : ControllerBase
         try
         {
             var results = await _ingestService.IngestFolderAsync(request.Path);
-            
+
             // Track note creation for gamification - assume one note per file in folder
-            var userProfileId = _userContext.UserId; // Get the actual profile ID
-            if (results != null)
+            var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+            var userProfileId = await _db.UserProfiles
+                .Where(up => up.SubjectId == subjectId)
+                .Select(up => up.Id)
+                .FirstOrDefaultAsync();
+            if (!string.IsNullOrEmpty(userProfileId) && results != null)
             {
-                var noteCount = results.GetType().GetProperty("Count")?.GetValue(results) as int? ?? 1;
-                await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_creation", noteCount);
-                await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_creation");
+                int noteCount = 1;
+                if (results is System.Collections.IEnumerable enumerable)
+                {
+                    noteCount = 0;
+                    foreach (var _ in enumerable) noteCount++;
+                    if (noteCount == 0) noteCount = 1;
+                }
+                await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_created", noteCount);
+                await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_created");
             }
             
             _logger.LogInformation("Successfully ingested folder '{FolderPath}' for user {UserId}", 

@@ -51,6 +51,31 @@ function createAuthedFetch(
   }
 }
 
+// --- Lightweight in-memory TTL cache for deduping frequent calls ---
+type CacheEntry<T> = { ts: number; data: T }
+const __cache = new Map<string, CacheEntry<any>>()
+const __inflight = new Map<string, Promise<any>>()
+
+function getCached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+  const now = Date.now()
+  const hit = __cache.get(key) as CacheEntry<T> | undefined
+  if (hit && now - hit.ts < ttlMs) return Promise.resolve(hit.data)
+  const pending = __inflight.get(key) as Promise<T> | undefined
+  if (pending) return pending
+  const p = fetcher()
+    .then((data) => {
+      __cache.set(key, { ts: Date.now(), data })
+      __inflight.delete(key)
+      return data
+    })
+    .catch((err) => {
+      __inflight.delete(key)
+      throw err
+    })
+  __inflight.set(key, p)
+  return p
+}
+
 // Main hook: use the generated CortexApiClient everywhere
 export function useCortexApiClient(): CortexApiClient {
   const { getAccessToken, logout } = useAppAuth()
@@ -99,10 +124,11 @@ function useAuthedFetch() {
 export function useGamificationApi() {
   // Use authed fetch because the generated client lacks response schemas (typed as void)
   const http = useAuthedFetch()
+  const TTL = 30_000 // 30s cache for sidebar/dashboard widgets
 
-  const getAllAchievements = useCallback(() => http.get<any[]>('/api/Gamification/achievements'), [http])
-  const getMyAchievements = useCallback(() => http.get<any[]>('/api/Gamification/my-achievements'), [http])
-  const getUserStats = useCallback(async () => {
+  const getAllAchievements = useCallback(() => getCached('gamification:all', TTL, () => http.get<any[]>('/api/Gamification/achievements')), [http])
+  const getMyAchievements = useCallback(() => getCached('gamification:mine', TTL, () => http.get<any[]>('/api/Gamification/my-achievements')), [http])
+  const getUserStats = useCallback(async () => getCached('gamification:stats', TTL, async () => {
     const s = await http.get<any>('/api/Gamification/stats')
     return {
       totalNotes: s?.TotalNotes ?? s?.totalNotes ?? 0,
@@ -112,8 +138,8 @@ export function useGamificationApi() {
       loginStreak: s?.LoginStreak ?? s?.loginStreak ?? 0,
       lastLoginAt: s?.LastLoginAt ?? s?.lastLoginAt ?? null,
     }
-  }, [http])
-  const getUserProgress = useCallback(async () => {
+  }), [http])
+  const getUserProgress = useCallback(async () => getCached('gamification:progress', TTL, async () => {
     const p = await http.get<any>('/api/Gamification/progress')
     return {
       currentLevel: p?.currentLevel ?? p?.CurrentLevel ?? 1,
@@ -122,7 +148,7 @@ export function useGamificationApi() {
       totalProgressNeeded: p?.totalProgressNeeded ?? p?.TotalProgressNeeded ?? 0,
       progressPercentage: p?.progressPercentage ?? p?.ProgressPercentage ?? 0,
     }
-  }, [http])
+  }), [http])
   const checkAchievements = useCallback(() => http.post<any>('/api/Gamification/check-achievements'), [http])
   const seedAchievements = useCallback(() => http.post<any>('/api/Gamification/seed'), [http])
   const getAllAchievementsTest = useCallback(() => http.get<any>('/api/Gamification/all-achievements'), [http])
@@ -160,8 +186,9 @@ export function useAdminApi() {
 // Notes (fallback to raw fetch until OpenAPI adds response schemas)
 export function useNotesApi() {
   const http = useAuthedFetch()
+  const TTL = 20_000 // 20s cache
   return useMemo(() => ({
-    getNotes: () => http.get<any[]>('/api/Notes'),
+    getNotes: () => getCached('notes:list', TTL, () => http.get<any[]>('/api/Notes')),
     getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
   }), [http])
 }
@@ -233,23 +260,131 @@ export function useIngestApi() {
 
 // Search
 export function useSearchApi() {
-  const client = useCortexApiClient()
+  // Use raw authed fetch because generated client returns void for search endpoints
+  const http = useAuthedFetch()
+  const normalize = useCallback((raw: any) => {
+    // Accept array or object; produce both Hits and hits for compatibility
+    const hits = Array.isArray(raw)
+      ? raw
+      : (raw?.Hits ?? raw?.hits ?? raw?.Results ?? raw?.results ?? [])
+    const total = raw?.Total ?? raw?.total ?? hits.length ?? 0
+    const mode = raw?.Mode ?? raw?.mode
+    const k = raw?.K ?? raw?.k
+    const alpha = raw?.Alpha ?? raw?.alpha
+    const durationMs = raw?.DurationMs ?? raw?.durationMs ?? raw?.took ?? undefined
+    return { Hits: hits, hits, Total: total, total, Mode: mode, K: k, Alpha: alpha, DurationMs: durationMs }
+  }, [])
+
+  const search = useCallback(async (request: any) => {
+    const body = {
+      Q: request?.Q ?? request?.q ?? request?.query ?? '',
+      Mode: request?.Mode ?? request?.mode ?? 'hybrid',
+      K: request?.K ?? request?.k ?? 20,
+      Alpha: request?.Alpha ?? request?.alpha ?? 0.6,
+      Filters: request?.Filters ?? request?.filters,
+    }
+    const res = await http.post<any>('/api/Search', body)
+    return normalize(res)
+  }, [http, normalize])
+
+  const searchGet = useCallback(async (q: string, k?: number, mode?: string, alpha?: number) => {
+    const params = new URLSearchParams()
+    if (q) params.set('q', q)
+    if (k != null) params.set('k', String(k))
+    if (mode) params.set('mode', mode)
+    if (alpha != null) params.set('alpha', String(alpha))
+    const res = await http.get<any>(`/api/Search?${params.toString()}`)
+    return normalize(res)
+  }, [http, normalize])
+
+  const advancedSearch = useCallback(async (request: any) => {
+    const body = {
+      Q: request?.Q ?? request?.q ?? request?.query ?? '',
+      Mode: request?.Mode ?? request?.mode ?? 'hybrid',
+      K: request?.K ?? request?.k ?? 20,
+      Alpha: request?.Alpha ?? request?.alpha ?? 0.6,
+      SensitivityLevels: request?.SensitivityLevels ?? request?.sensitivityLevels,
+      FileTypes: request?.FileTypes ?? request?.fileTypes,
+      Tags: request?.Tags ?? request?.tags,
+  // Backend expects singular Source and DateFrom/DateTo
+  Source: request?.Source ?? request?.source ?? (Array.isArray(request?.Sources ?? request?.sources) ? (request?.Sources ?? request?.sources)[0] : request?.Sources ?? request?.sources),
+  DateFrom: request?.DateFrom ?? request?.dateFrom ?? request?.FromDate ?? request?.fromDate,
+  DateTo: request?.DateTo ?? request?.dateTo ?? request?.ToDate ?? request?.toDate,
+      ExcludePii: request?.ExcludePii ?? request?.excludePii,
+      ExcludeSecrets: request?.ExcludeSecrets ?? request?.excludeSecrets,
+  PiiTypes: request?.PiiTypes ?? request?.piiTypes,
+  SecretTypes: request?.SecretTypes ?? request?.secretTypes,
+  // Non-backend fields are intentionally omitted
+    }
+    const res = await http.post<any>('/api/Search/advanced', body)
+    return normalize(res)
+  }, [http, normalize])
+
+  return { search, searchGet, advancedSearch }
+}
+
+// Jobs / background processing
+export function useJobsApi() {
+  const http = useAuthedFetch()
+  const { getAccessToken } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
   return {
-    search: (request: any) => client.searchPOST(request) as any,
-    searchGet: (q: string, k?: number, mode?: string, alpha?: number) => client.searchGET(q, k as any, mode as any, alpha as any) as any,
-    advancedSearch: (request: any) => client.advanced(request) as any,
+    getStatus: async () => {
+      const res = await http.get<any>(`/api/Jobs/status`)
+      return {
+        summary: res?.summary ?? res?.Summary ?? 'Background workers are idle.',
+        pending: res?.pending ?? res?.Pending ?? 0,
+        processed: res?.processed ?? res?.Processed ?? 0,
+        failed: res?.failed ?? res?.Failed ?? 0,
+        avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
+      }
+    },
+    subscribeStatusStream: (onUpdate: (s: { summary: string; pending: number; processed: number; failed: number; avgMs: number }) => void) => {
+      let es: EventSource | null = null
+      let closed = false
+      ;(async () => {
+        try {
+          const token = await getAccessToken()
+          const url = new URL(`${baseUrl}/api/Jobs/status/stream`)
+          if (token) url.searchParams.set('access_token', token)
+          if (typeof window !== 'undefined' && 'EventSource' in window) {
+            es = new EventSource(url.toString())
+            es.onmessage = (ev) => {
+              try {
+                const data = ev.data ? JSON.parse(ev.data) : {}
+                onUpdate({
+                  summary: data?.summary ?? data?.Summary ?? 'Background workers are idle.',
+                  pending: data?.pending ?? data?.Pending ?? 0,
+                  processed: data?.processed ?? data?.Processed ?? 0,
+                  failed: data?.failed ?? data?.Failed ?? 0,
+                  avgMs: data?.avgMs ?? data?.AverageMs ?? 0,
+                })
+              } catch {
+                // ignore
+              }
+            }
+          }
+        } catch {
+          // ignore
+        } finally {
+          if (closed && es) es.close()
+        }
+      })()
+      return () => { closed = true; if (es) es.close() }
+    }
   }
 }
 
 // Graph
 export function useGraphApi() {
   const client = useCortexApiClient()
+  const TTL = 30_000
   return {
     getGraph: (focus?: string, depth?: number, entityTypes?: string[], fromDate?: string, toDate?: string) =>
       client.graph(focus ?? undefined, depth ?? undefined, entityTypes ?? undefined, fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined),
     getConnectedEntities: (entityId: string, depth?: number) => client.connected(entityId, depth ?? undefined),
-  getEntitySuggestions: (entityId: string) => client.suggestions(entityId),
-  getStatistics: () => client.statistics(),
+    getEntitySuggestions: (entityId: string) => client.suggestions(entityId),
+    getStatistics: () => getCached('graph:statistics', TTL, () => client.statistics()),
   }
 }
 
