@@ -13,8 +13,7 @@ import {
   PlayIcon
 } from '@heroicons/react/24/outline'
 import { useMascot } from '@/contexts/MascotContext'
-import { useChatToolsApi } from '@/services/apiClient'
-import { useAppAuth } from '@/hooks/useAppAuth'
+import { useChatToolsApi, useVoiceApi } from '@/services/apiClient'
 
 interface Message {
   id: string
@@ -60,8 +59,7 @@ const ChatAssistantPage: React.FC = () => {
   
   const { speak, listen, think, respond, idle, suggest } = useMascot()
   const { processChat, executeTool, getAvailableTools } = useChatToolsApi()
-  const { getAccessToken } = useAppAuth()
-  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+  const voiceApi = useVoiceApi()
 
   // Initialize speech synthesis
   useEffect(() => {
@@ -92,18 +90,15 @@ const ChatAssistantPage: React.FC = () => {
 
   // Initialize conversation with greeting
   useEffect(() => {
-    const initConversation = () => {
-      const welcomeMessage: Message = {
-        id: 'welcome',
-        role: 'assistant',
-        content: "Hello! I'm your AI assistant. I can help you search your knowledge base, answer questions, and use various tools. You can type your message or use voice input. How can I help you today?",
-        timestamp: new Date()
-      }
-      setMessages([welcomeMessage])
-      speak("Hi there! I'm ready to help you explore your knowledge base. What would you like to know?")
+    const welcomeMessage: Message = {
+      id: 'welcome',
+      role: 'assistant',
+      content:
+        "Hello! I'm your AI assistant. I can help you search your knowledge base, answer questions, and use various tools. You can type your message or use voice input. How can I help you today?",
+      timestamp: new Date(),
     }
-
-    initConversation()
+    setMessages([welcomeMessage])
+    speak("Hi there! I'm ready to help you explore your knowledge base. What would you like to know?")
   }, [speak])
 
   // Voice recognition setup
@@ -161,55 +156,46 @@ const ChatAssistantPage: React.FC = () => {
   }
 
   // Text-to-speech for responses
-  const speakResponse = useCallback(async (text: string) => {
-    if (!speechSynthesisRef.current) return
+  const speakResponse = useCallback(
+    async (text: string) => {
+      setIsSpeaking(true)
+      respond()
 
-    setIsSpeaking(true)
-    respond()
-
-    try {
-      // Try using backend TTS first
-      const token = await getAccessToken()
-      const res = await fetch(`${baseUrl}/api/voice/tts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ text })
-      })
-      const audioResponse = await res.blob()
-      
-      if (audioResponse instanceof Blob) {
-        const audioUrl = URL.createObjectURL(audioResponse)
+      // Try backend TTS first
+      try {
+        const audioBlob = await voiceApi.tts(text)
+        const audioUrl = URL.createObjectURL(audioBlob)
         const audio = new Audio(audioUrl)
-        
         audio.onended = () => {
           setIsSpeaking(false)
           idle()
           URL.revokeObjectURL(audioUrl)
         }
-        
-        audio.play()
+        await audio.play()
         return
+      } catch (error) {
+        console.warn('Backend TTS failed, falling back to browser TTS:', error)
       }
-    } catch (error) {
-      console.warn('Backend TTS failed, falling back to browser TTS:', error)
-    }
 
-    // Fallback to browser TTS
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = 0.9
-    utterance.pitch = 1.0
-    utterance.volume = 0.8
-
-    utterance.onend = () => {
-      setIsSpeaking(false)
-      idle()
-    }
-
-    speechSynthesisRef.current.speak(utterance)
-  }, [getAccessToken, baseUrl, respond, idle])
+      // Fallback to browser TTS if available
+      if (speechSynthesisRef.current) {
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.rate = 0.9
+        utterance.pitch = 1.0
+        utterance.volume = 0.8
+        utterance.onend = () => {
+          setIsSpeaking(false)
+          idle()
+        }
+        speechSynthesisRef.current.speak(utterance)
+      } else {
+        // As a last resort, just stop speaking state
+        setIsSpeaking(false)
+        idle()
+      }
+    },
+    [respond, idle, voiceApi]
+  )
 
   // Stop speaking
   const stopSpeaking = () => {
@@ -244,21 +230,12 @@ const ChatAssistantPage: React.FC = () => {
       }))
 
       // Send to RAG endpoint
-      const token = await getAccessToken()
-      const res = await fetch(`${baseUrl}/api/Rag/query`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          messages: conversationMessages,
-          temperature: 0.7,
-          maxTokens: 500,
-          useRag: true
-        })
-      })
-      const response: any = await res.json()
+      const response: any = await processChat({
+        messages: conversationMessages,
+        temperature: 0.7,
+        maxTokens: 500,
+        useRag: true
+      } as any)
 
       const assistantMessage: Message = {
         id: Date.now().toString() + '_assistant',

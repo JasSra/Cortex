@@ -18,7 +18,7 @@ import {
   UserGroupIcon,
   GlobeAltIcon
 } from '@heroicons/react/24/outline'
-import { useGamificationApi } from '@/services/apiClient'
+import { useGamificationApi, useGraphApi } from '@/services/apiClient'
 import { useAppAuth } from '@/hooks/useAppAuth'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMascot } from '@/contexts/MascotContext'
@@ -70,6 +70,7 @@ const AnalyticsPage: React.FC = () => {
   const [showCelebration, setShowCelebration] = useState(false)
 
   const { getUserStats, getUserProgress, getAllAchievements, getMyAchievements } = useGamificationApi()
+  const { getStatistics } = useGraphApi()
   const { isAuthenticated } = useAuth()
   const { speak, celebrate, suggest, idle, think } = useMascot()
   const { getAccessToken } = useAppAuth()
@@ -120,15 +121,14 @@ const AnalyticsPage: React.FC = () => {
         if (token) h.set('Authorization', `Bearer ${token}`)
         return h
       }
-      const [searchAnalytics, graphStats, activityData] = await Promise.all([
-        fetch(`${baseUrl}/api/search/analytics`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({})),
-        fetch(`${baseUrl}/api/graph/stats`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({})),
-        fetch(`${baseUrl}/api/user/activity?start=${dateRange.start.toISOString()}&end=${dateRange.end.toISOString()}`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({}))
+      // Use existing typed endpoints; the specific analytics endpoints don't exist server-side yet
+      const [graphStatistics] = await Promise.all([
+        getStatistics().catch(() => ({}))
       ])
 
-      const searchData = searchAnalytics as any
-      const graphData = graphStats as any
-      const activityInfo = activityData as any
+  const searchData = {} as any
+  const graphData = graphStatistics as any
+  const activityInfo = {} as any
 
       const unlockedCount = userAchievements.filter((ua: any) => ua.isUnlocked).length
 
@@ -175,7 +175,7 @@ const AnalyticsPage: React.FC = () => {
 
       setAnalytics({
         totalNotes: userStats.totalNotes || 0,
-        totalXp: userStats.experiencePoints || 0,
+  totalXp: userStats.totalXp || 0,
         level: userStats.level || 1,
         loginStreak: userStats.loginStreak || 0,
         achievementsUnlocked: unlockedCount,
@@ -198,9 +198,9 @@ const AnalyticsPage: React.FC = () => {
           preferredLanguage: 'English'
         },
         knowledgeGraph: {
-          totalEntities: graphData?.totalEntities || 1247,
-          totalRelations: graphData?.totalRelations || 3456,
-          mostConnectedEntity: graphData?.mostConnected || 'Artificial Intelligence'
+          totalEntities: (Object.values(graphData || {}) as any[]).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0) || 0,
+          totalRelations: 0,
+          mostConnectedEntity: 'N/A'
         },
         timeDistribution,
         activityHeatmap: heatmapData
@@ -217,7 +217,7 @@ const AnalyticsPage: React.FC = () => {
         speak(`Congratulations! You've unlocked ${newAchievements.length} new achievement${newAchievements.length > 1 ? 's' : ''}!`)
         setTimeout(() => setShowCelebration(false), 3000)
       } else {
-        speak(`Welcome back! Your analytics look great. You're level ${userStats.level || 1} with ${userStats.experiencePoints || 0} XP!`)
+  speak(`Welcome back! Your analytics look great. You're level ${userStats.level || 1} with ${userStats.totalXp || 0} XP!`)
       }
 
     } catch (error) {

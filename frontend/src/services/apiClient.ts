@@ -41,15 +41,36 @@ function useAuthedFetch() {
 
 // Gamification
 export function useGamificationApi() {
-  const client = useCortexApiClient()
+  // Use authed fetch because the generated client lacks response schemas (typed as void)
+  const http = useAuthedFetch()
   return {
-    getAllAchievements: () => client.achievements() as any,
-    getMyAchievements: () => client.myAchievements() as any,
-    getUserStats: () => client.stats2() as any,
-    getUserProgress: () => client.progress() as any,
-    checkAchievements: () => client.checkAchievements(),
-    seedAchievements: () => client.seed(),
-    getAllAchievementsTest: () => client.achievements() as any,
+    getAllAchievements: () => http.get<any[]>('/api/Gamification/achievements'),
+    getMyAchievements: () => http.get<any[]>('/api/Gamification/my-achievements'),
+    getUserStats: async () => {
+      const s = await http.get<any>('/api/Gamification/stats')
+      // Normalize field names to camelCase expected by UI
+      return {
+        totalNotes: s?.TotalNotes ?? s?.totalNotes ?? 0,
+        totalSearches: s?.TotalSearches ?? s?.totalSearches ?? 0,
+        totalXp: s?.ExperiencePoints ?? s?.experiencePoints ?? s?.totalXp ?? 0,
+        level: s?.Level ?? s?.level ?? 1,
+        loginStreak: s?.LoginStreak ?? s?.loginStreak ?? 0,
+        lastLoginAt: s?.LastLoginAt ?? s?.lastLoginAt ?? null,
+      }
+    },
+    getUserProgress: async () => {
+      const p = await http.get<any>('/api/Gamification/progress')
+      return {
+        currentLevel: p?.currentLevel ?? p?.CurrentLevel ?? 1,
+        currentXp: p?.currentXP ?? p?.currentXp ?? p?.CurrentXP ?? 0,
+        progressToNext: p?.progressToNext ?? p?.ProgressToNext ?? 0,
+        totalProgressNeeded: p?.totalProgressNeeded ?? p?.TotalProgressNeeded ?? 0,
+        progressPercentage: p?.progressPercentage ?? p?.ProgressPercentage ?? 0,
+      }
+    },
+    checkAchievements: () => http.post<any>('/api/Gamification/check-achievements'),
+    seedAchievements: () => http.post<any>('/api/Gamification/seed'),
+    getAllAchievementsTest: () => http.get<any>('/api/Gamification/all-achievements'),
   }
 }
 
@@ -69,8 +90,8 @@ export function useAdminApi() {
 export function useNotesApi() {
   const http = useAuthedFetch()
   return {
-    getNotes: () => http.get<any[]>('/api/Notes'),
-    getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
+  getNotes: () => http.get<any[]>('/api/Notes'),
+  getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
   }
 }
 
@@ -91,7 +112,8 @@ export function useGraphApi() {
     getGraph: (focus?: string, depth?: number, entityTypes?: string[], fromDate?: string, toDate?: string) =>
       client.graph(focus ?? undefined, depth ?? undefined, entityTypes ?? undefined, fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined),
     getConnectedEntities: (entityId: string, depth?: number) => client.connected(entityId, depth ?? undefined),
-    getEntitySuggestions: (entityId: string) => client.suggestions(entityId),
+  getEntitySuggestions: (entityId: string) => client.suggestions(entityId),
+  getStatistics: () => client.statistics(),
   }
 }
 
@@ -111,5 +133,43 @@ export function useChatToolsApi() {
     processChat: (request: any) => client.tools(request),
     executeTool: (request: any) => client.execute(request),
     getAvailableTools: () => client.toolsAll(),
+  }
+}
+
+// User profile API (not fully present in generated client yet)
+export function useUserApi() {
+  const http = useAuthedFetch()
+  return {
+    getProfile: () => http.get<any>('/api/User/profile'),
+    createOrUpdateProfile: (body: any) => http.post<any>('/api/User/profile', body),
+  }
+}
+
+// Seed API (not in generated client)
+export function useSeedApi() {
+  const http = useAuthedFetch()
+  return {
+    seedIfNeeded: () => http.post<any>('/api/seed-data'),
+  }
+}
+
+// Voice API convenience
+export function useVoiceApi() {
+  const { getAccessToken } = useAppAuth()
+  return {
+    tts: async (text: string) => {
+      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+      const token = await getAccessToken()
+      const resp = await fetch(`${baseUrl}/api/Voice/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ text }),
+      })
+      if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`)
+      return await resp.blob()
+    }
   }
 }
