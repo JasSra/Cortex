@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useCortexStore } from '@/store/cortexStore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotesApi } from '@/services/apiClient'
 import ModernLayout from '@/components/layout/ModernLayout'
 import ModernDashboard from '@/components/dashboard/ModernDashboard'
-import ModernChatInterface from '@/components/chat/ModernChatInterface'
+import SmartLiveAssistant from '@/components/assistant/SmartLiveAssistant'
 import KnowledgeGraphVisualizer from '@/components/graph/KnowledgeGraphVisualizer'
 import EnhancedSearchPage from '@/components/EnhancedSearchPage'
 import { UserProfile } from '@/components/UserProfile'
@@ -19,24 +19,24 @@ export default function Home() {
   const notesApi = useNotesApi()
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load initial data when authenticated
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      loadInitialData()
-    }
-  }, [isAuthenticated, user])
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true)
       // Load user's notes
-  await notesApi.getNotes()
+      await notesApi.getNotes()
     } catch (error) {
       console.error('Failed to load initial data:', error)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [notesApi])
+
+  // Load initial data when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      loadInitialData()
+    }
+  }, [isAuthenticated, user, loadInitialData])
 
   const renderActiveView = () => {
     if (isLoading) {
@@ -62,7 +62,7 @@ export default function Home() {
         return <ModernDashboard />
       
       case 'chat':
-        return <ModernChatInterface />
+        return <SmartLiveAssistant />
       
       case 'search':
         return <EnhancedSearchPage onNoteSelect={() => {}} />

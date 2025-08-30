@@ -1,20 +1,26 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppAuth } from '@/hooks/useAppAuth'
 import { LoginPage } from './LoginPage'
+import WelcomeDialog from './WelcomeDialog'
 
 interface AuthWrapperProps {
   children: ReactNode
 }
 
-const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
-
 export function AuthWrapper({ children }: AuthWrapperProps) {
-  // Use appropriate auth based on development mode
-  const auth = isDevelopment ? useAppAuth() : useAuth()
-  const { isAuthenticated, loading } = auth
+  const { isAuthenticated, loading, recentAuthEvent, clearRecentAuthEvent } = useAuth()
+  const [showWelcome, setShowWelcome] = useState(false)
+  const [welcomeType, setWelcomeType] = useState<'signup' | 'login'>('login')
+
+  useEffect(() => {
+    if (recentAuthEvent) {
+      setWelcomeType(recentAuthEvent)
+      setShowWelcome(true)
+    }
+  }, [recentAuthEvent])
 
   if (loading) {
     return (
@@ -37,5 +43,14 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
     return <LoginPage />
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {children}
+      <WelcomeDialog 
+        open={showWelcome} 
+        type={welcomeType}
+        onClose={() => { setShowWelcome(false); clearRecentAuthEvent?.() }} 
+      />
+    </>
+  )
 }

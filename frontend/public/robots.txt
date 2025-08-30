@@ -4,4 +4,4 @@ Disallow: /_next/
 Disallow: /admin/
 Allow: /
 
-Sitemap: https://cortex.yourdomian.com/sitemap.xml
+Sitemap: https://cortex.yourdomain.com/sitemap.xml

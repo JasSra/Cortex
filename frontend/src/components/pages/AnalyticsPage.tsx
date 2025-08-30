@@ -18,7 +18,7 @@ import {
   UserGroupIcon,
   GlobeAltIcon
 } from '@heroicons/react/24/outline'
-import { useGamificationApi } from '@/services/apiClient'
+import { useGamificationApi, useGraphApi } from '@/services/apiClient'
 import { useAppAuth } from '@/hooks/useAppAuth'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMascot } from '@/contexts/MascotContext'
@@ -70,10 +70,10 @@ const AnalyticsPage: React.FC = () => {
   const [showCelebration, setShowCelebration] = useState(false)
 
   const { getUserStats, getUserProgress, getAllAchievements, getMyAchievements } = useGamificationApi()
+  const { getStatistics } = useGraphApi()
   const { isAuthenticated } = useAuth()
   const { speak, celebrate, suggest, idle, think } = useMascot()
   const { getAccessToken } = useAppAuth()
-  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
 
   // Date range presets
   const dateRanges: DateRange[] = [
@@ -100,35 +100,33 @@ const AnalyticsPage: React.FC = () => {
   ]
 
   const loadAnalytics = useCallback(async () => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated) {
+      setAnalytics(null)
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
       think()
 
       const [userStats, userProgress, allAchievements, userAchievements] = await Promise.all([
-        getUserStats(),
-        getUserProgress(),
-        getAllAchievements(),
-        getMyAchievements()
+        getUserStats().catch(() => ({ totalNotes: 0, totalXp: 0, level: 1, loginStreak: 0 })),
+        getUserProgress().catch(() => ({ currentLevel: 1, currentXp: 0, progressToNext: 0 })),
+        getAllAchievements().catch(() => [] as any[]),
+        getMyAchievements().catch(() => [] as any[])
       ])
 
       // Load additional analytics data
-      const token = await getAccessToken()
-      const makeHeaders = () => {
-        const h = new Headers({ 'Content-Type': 'application/json' })
-        if (token) h.set('Authorization', `Bearer ${token}`)
-        return h
-      }
-      const [searchAnalytics, graphStats, activityData] = await Promise.all([
-        fetch(`${baseUrl}/api/search/analytics`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({})),
-        fetch(`${baseUrl}/api/graph/stats`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({})),
-        fetch(`${baseUrl}/api/user/activity?start=${dateRange.start.toISOString()}&end=${dateRange.end.toISOString()}`, { headers: makeHeaders() }).then(r => r.ok ? r.json() : ({})).catch(() => ({}))
+  const token = await getAccessToken().catch(() => null)
+      // Use existing typed endpoints; the specific analytics endpoints don't exist server-side yet
+      const [graphStatistics] = await Promise.all([
+        getStatistics().catch(() => ({}))
       ])
 
-      const searchData = searchAnalytics as any
-      const graphData = graphStats as any
-      const activityInfo = activityData as any
+  const searchData = {} as any
+  const graphData = graphStatistics as any
+  const activityInfo = {} as any
 
       const unlockedCount = userAchievements.filter((ua: any) => ua.isUnlocked).length
 
@@ -173,9 +171,9 @@ const AnalyticsPage: React.FC = () => {
         { action: 'Voice session: 15 minutes', date: '5 days ago', xp: 12, type: 'voice' as const }
       ]
 
-      setAnalytics({
+  setAnalytics({
         totalNotes: userStats.totalNotes || 0,
-        totalXp: userStats.experiencePoints || 0,
+  totalXp: userStats.totalXp || 0,
         level: userStats.level || 1,
         loginStreak: userStats.loginStreak || 0,
         achievementsUnlocked: unlockedCount,
@@ -198,9 +196,9 @@ const AnalyticsPage: React.FC = () => {
           preferredLanguage: 'English'
         },
         knowledgeGraph: {
-          totalEntities: graphData?.totalEntities || 1247,
-          totalRelations: graphData?.totalRelations || 3456,
-          mostConnectedEntity: graphData?.mostConnected || 'Artificial Intelligence'
+          totalEntities: (Object.values(graphData || {}) as any[]).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0) || 0,
+          totalRelations: 0,
+          mostConnectedEntity: 'N/A'
         },
         timeDistribution,
         activityHeatmap: heatmapData
@@ -217,17 +215,42 @@ const AnalyticsPage: React.FC = () => {
         speak(`Congratulations! You've unlocked ${newAchievements.length} new achievement${newAchievements.length > 1 ? 's' : ''}!`)
         setTimeout(() => setShowCelebration(false), 3000)
       } else {
-        speak(`Welcome back! Your analytics look great. You're level ${userStats.level || 1} with ${userStats.experiencePoints || 0} XP!`)
+  speak(`Welcome back! Your analytics look great. You're level ${userStats.level || 1} with ${userStats.totalXp || 0} XP!`)
       }
 
     } catch (error) {
       console.error('Failed to load analytics:', error)
-      speak('Failed to load your analytics. Let me try again shortly.', 'error')
+      // Provide minimal fallback analytics to avoid empty UI
+      setAnalytics({
+        totalNotes: 0,
+        totalXp: 0,
+        level: 1,
+        loginStreak: 0,
+        achievementsUnlocked: 0,
+        totalAchievements: 0,
+        weeklyActivity: [
+          { day: 'Mon', notes: 0, searches: 0, xp: 0 },
+          { day: 'Tue', notes: 0, searches: 0, xp: 0 },
+          { day: 'Wed', notes: 0, searches: 0, xp: 0 },
+          { day: 'Thu', notes: 0, searches: 0, xp: 0 },
+          { day: 'Fri', notes: 0, searches: 0, xp: 0 },
+          { day: 'Sat', notes: 0, searches: 0, xp: 0 },
+          { day: 'Sun', notes: 0, searches: 0, xp: 0 }
+        ],
+        recentActivity: [],
+        monthlyProgress: [],
+        searchStats: { totalSearches: 0, avgResponseTime: 0, favoriteSearchTypes: [] },
+        voiceStats: { totalVoiceCommands: 0, avgSessionLength: 0, preferredLanguage: 'English' },
+        knowledgeGraph: { totalEntities: 0, totalRelations: 0, mostConnectedEntity: 'N/A' },
+        timeDistribution: Array(24).fill(null).map((_, hour) => ({ hour, activity: 0 })),
+        activityHeatmap: Array(7).fill(null).map(() => Array(24).fill(0))
+      })
+      speak('Failed to load some analytics, showing partial data.', 'error')
     } finally {
       setLoading(false)
       idle()
     }
-  }, [isAuthenticated, dateRange, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, speak, celebrate, think, idle, getAccessToken])
+  }, [isAuthenticated, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, getStatistics, speak, celebrate, think, idle, getAccessToken])
 
   useEffect(() => {
     loadAnalytics()
@@ -324,7 +347,7 @@ const AnalyticsPage: React.FC = () => {
                 New Achievement!
               </h2>
               <p className="text-gray-600 dark:text-gray-400">
-                You're making great progress!
+                You&apos;re making great progress!
               </p>
             </motion.div>
           </motion.div>
@@ -668,7 +691,7 @@ const AnalyticsPage: React.FC = () => {
                 <TrophyIcon className="w-8 h-8 text-yellow-300" />
                 <div>
                   <h3 className="text-xl font-semibold">Achievement Progress</h3>
-                  <p className="text-purple-100">You're doing amazing!</p>
+                  <p className="text-purple-100">You&apos;re doing amazing!</p>
                 </div>
               </div>
               <div className="text-right">

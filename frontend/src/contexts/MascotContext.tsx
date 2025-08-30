@@ -1,7 +1,8 @@
 'use client'
 
-import React, { createContext, useContext, useState, useCallback } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import Mascot, { MascotState } from '../components/Mascot'
+import SpriteMascot from '@/components/mascot/SpriteMascot'
 
 interface MascotContextType {
   state: MascotState
@@ -16,6 +17,8 @@ interface MascotContextType {
   think: () => void
   respond: () => void
   idle: () => void
+  selectedMascotId?: string
+  setSelectedMascotId: (id?: string) => void
 }
 
 const MascotContext = createContext<MascotContextType | undefined>(undefined)
@@ -33,6 +36,40 @@ export const MascotProvider: React.FC<MascotProviderProps> = ({
 }) => {
   const [state, setState] = useState<MascotState>('idle')
   const [message, setMessage] = useState<string | undefined>()
+  const [selectedMascotId, setSelectedMascotIdState] = useState<string | undefined>(undefined)
+
+  // Load/persist selected mascot
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('cortex.selectedMascotId')
+      if (saved) setSelectedMascotIdState(saved)
+    } catch {}
+  }, [])
+
+  // First-run default: if no selection, pick the first mascot from registry (if available)
+  useEffect(() => {
+    if (selectedMascotId) return
+    let active = true
+    fetch('/mascots/registry.json')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { mascots?: Array<{ id: string }> } | null) => {
+        if (!active || !data?.mascots?.length) return
+        const firstId = data.mascots[0].id
+        // call the state setter directly to avoid dependency on callback definition order
+        setSelectedMascotIdState(firstId)
+        try { localStorage.setItem('cortex.selectedMascotId', firstId) } catch {}
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [selectedMascotId])
+
+  const setSelectedMascotId = useCallback((id?: string) => {
+    setSelectedMascotIdState(id)
+    try {
+      if (id) localStorage.setItem('cortex.selectedMascotId', id)
+      else localStorage.removeItem('cortex.selectedMascotId')
+    } catch {}
+  }, [])
 
   // Helper functions for common mascot interactions
   const speak = useCallback((msg: string, newState: MascotState = 'responding') => {
@@ -117,19 +154,32 @@ export const MascotProvider: React.FC<MascotProviderProps> = ({
     listen,
     think,
     respond,
-    idle
+  idle,
+  selectedMascotId,
+  setSelectedMascotId
   }
 
   return (
     <MascotContext.Provider value={contextValue}>
       {children}
-      <Mascot
-        state={state}
-        message={message}
-        position={position}
-        size={size}
-        onInteraction={handleMascotInteraction}
-      />
+      {selectedMascotId ? (
+        <SpriteMascot
+          mascotId={selectedMascotId}
+          state={state}
+          message={message}
+          position={position}
+          size={size}
+          onInteraction={handleMascotInteraction}
+        />
+      ) : (
+        <Mascot
+          state={state}
+          message={message}
+          position={position}
+          size={size}
+          onInteraction={handleMascotInteraction}
+        />
+      )}
     </MascotContext.Provider>
   )
 }

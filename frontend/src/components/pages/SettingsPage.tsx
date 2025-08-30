@@ -22,8 +22,8 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { useMascot } from '@/contexts/MascotContext'
-import { useAppAuth } from '@/hooks/useAppAuth'
 import { useAuth } from '@/contexts/AuthContext'
+import { useUserApi } from '@/services/apiClient'
 
 interface UserSettings {
   // Account settings
@@ -93,9 +93,8 @@ const SettingsPage: React.FC = () => {
   const [showConfirmation, setShowConfirmation] = useState<string | null>(null)
 
   const { speak, suggest, celebrate, think, idle } = useMascot()
-  const { getAccessToken } = useAppAuth()
-  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, logout } = useAuth()
+  const { exportAccountData, deleteAccountData, deleteAccount, getProfile, createOrUpdateProfile, getSettings, updateSettings } = useUserApi()
 
   const sections: SettingsSection[] = [
     {
@@ -148,7 +147,7 @@ const SettingsPage: React.FC = () => {
     }
   ]
 
-  // Load user settings
+  // Load user settings (from profile via generated client)
   useEffect(() => {
     if (!isAuthenticated) return
 
@@ -157,49 +156,47 @@ const SettingsPage: React.FC = () => {
       think()
 
       try {
-        const token = await getAccessToken()
-        const headers = new Headers({ 'Content-Type': 'application/json' })
-        if (token) headers.set('Authorization', `Bearer ${token}`)
-        const response: any = await fetch(`${baseUrl}/api/user/settings`, { headers }).then(r => r.ok ? r.json() : {})
+  const profile: any = await getProfile()
+  const prefs: any = await getSettings()
         
         // Provide defaults for missing settings
         const defaultSettings: UserSettings = {
-          displayName: response.displayName || 'User',
-          email: response.email || '',
-          avatar: response.avatar,
-          bio: response.bio || '',
-          timezone: response.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-          language: response.language || 'en',
-          profileVisibility: response.profileVisibility || 'private',
-          dataSharing: response.dataSharing ?? false,
-          analyticsOptIn: response.analyticsOptIn ?? true,
-          searchHistory: response.searchHistory ?? true,
-          voiceEnabled: response.voiceEnabled ?? true,
-          wakeWord: response.wakeWord || 'Hey Cortex',
-          voiceLanguage: response.voiceLanguage || 'en-US',
-          voiceSpeed: response.voiceSpeed ?? 1.0,
-          voiceVolume: response.voiceVolume ?? 0.8,
-          microphoneSensitivity: response.microphoneSensitivity ?? 0.7,
-          continuousListening: response.continuousListening ?? false,
-          mascotEnabled: response.mascotEnabled ?? true,
-          mascotPersonality: response.mascotPersonality || 'friendly',
-          mascotAnimations: response.mascotAnimations ?? true,
-          mascotVoice: response.mascotVoice ?? true,
-          mascotProactivity: response.mascotProactivity ?? 0.5,
-          theme: response.theme || 'auto',
-          primaryColor: response.primaryColor || '#7c3aed',
-          fontSize: response.fontSize || 'medium',
-          reducedMotion: response.reducedMotion ?? false,
-          highContrast: response.highContrast ?? false,
-          emailNotifications: response.emailNotifications ?? true,
-          pushNotifications: response.pushNotifications ?? true,
-          achievementNotifications: response.achievementNotifications ?? true,
-          weeklyDigest: response.weeklyDigest ?? true,
-          maintenanceAlerts: response.maintenanceAlerts ?? true,
-          twoFactorEnabled: response.twoFactorEnabled ?? false,
-          loginAlerts: response.loginAlerts ?? true,
-          sessionTimeout: response.sessionTimeout ?? 30,
-          dataEncryption: response.dataEncryption ?? true
+          displayName: profile?.name || 'User',
+          email: profile?.email || '',
+          avatar: profile?.avatar,
+          bio: profile?.bio || '',
+          timezone: prefs?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+          language: prefs?.language || 'en',
+          profileVisibility: prefs?.profileVisibility || 'private',
+          dataSharing: prefs?.dataSharing ?? false,
+          analyticsOptIn: prefs?.analyticsOptIn ?? true,
+          searchHistory: prefs?.searchHistory ?? true,
+          voiceEnabled: prefs?.voiceEnabled ?? true,
+          wakeWord: prefs?.wakeWord || 'Hey Cortex',
+          voiceLanguage: prefs?.voiceLanguage || 'en-US',
+          voiceSpeed: prefs?.voiceSpeed ?? 1.0,
+          voiceVolume: prefs?.voiceVolume ?? 0.8,
+          microphoneSensitivity: prefs?.microphoneSensitivity ?? 0.7,
+          continuousListening: prefs?.continuousListening ?? false,
+          mascotEnabled: prefs?.mascotEnabled ?? true,
+          mascotPersonality: prefs?.mascotPersonality || 'friendly',
+          mascotAnimations: prefs?.mascotAnimations ?? true,
+          mascotVoice: prefs?.mascotVoice ?? true,
+          mascotProactivity: prefs?.mascotProactivity ?? 0.5,
+          theme: prefs?.theme || 'auto',
+          primaryColor: prefs?.primaryColor || '#7c3aed',
+          fontSize: prefs?.fontSize || 'medium',
+          reducedMotion: prefs?.reducedMotion ?? false,
+          highContrast: prefs?.highContrast ?? false,
+          emailNotifications: prefs?.emailNotifications ?? true,
+          pushNotifications: prefs?.pushNotifications ?? true,
+          achievementNotifications: prefs?.achievementNotifications ?? true,
+          weeklyDigest: prefs?.weeklyDigest ?? true,
+          maintenanceAlerts: prefs?.maintenanceAlerts ?? true,
+          twoFactorEnabled: prefs?.twoFactorEnabled ?? false,
+          loginAlerts: prefs?.loginAlerts ?? true,
+          sessionTimeout: prefs?.sessionTimeout ?? 30,
+          dataEncryption: prefs?.dataEncryption ?? true
         }
 
         setSettings(defaultSettings)
@@ -253,9 +250,9 @@ const SettingsPage: React.FC = () => {
     }
 
     loadSettings()
-  }, [isAuthenticated, speak, think, idle, getAccessToken])
+  }, [isAuthenticated, speak, think, idle, getProfile, getSettings])
 
-  // Save settings
+  // Save settings (profile subset via generated client)
   const saveSettings = async () => {
     if (!settings) return
 
@@ -263,10 +260,48 @@ const SettingsPage: React.FC = () => {
     think()
 
     try {
-      const token = await getAccessToken()
-      const headers = new Headers({ 'Content-Type': 'application/json' })
-      if (token) headers.set('Authorization', `Bearer ${token}`)
-      await fetch(`${baseUrl}/api/user/settings`, { method: 'PUT', headers, body: JSON.stringify(settings) })
+      // Save profile subset
+      await createOrUpdateProfile({
+        email: settings.email,
+        name: settings.displayName,
+        bio: settings.bio,
+        avatar: settings.avatar
+      })
+      // Save typed preferences
+      await updateSettings({
+        timezone: settings.timezone,
+        language: settings.language,
+        profileVisibility: settings.profileVisibility,
+        dataSharing: settings.dataSharing,
+        analyticsOptIn: settings.analyticsOptIn,
+        searchHistory: settings.searchHistory,
+        voiceEnabled: settings.voiceEnabled,
+        wakeWord: settings.wakeWord,
+        voiceLanguage: settings.voiceLanguage,
+        voiceSpeed: settings.voiceSpeed,
+        voiceVolume: settings.voiceVolume,
+        microphoneSensitivity: settings.microphoneSensitivity,
+        continuousListening: settings.continuousListening,
+        mascotEnabled: settings.mascotEnabled,
+        mascotPersonality: settings.mascotPersonality,
+        mascotAnimations: settings.mascotAnimations,
+        mascotVoice: settings.mascotVoice,
+        mascotProactivity: settings.mascotProactivity,
+        theme: settings.theme,
+        primaryColor: settings.primaryColor,
+        fontSize: settings.fontSize,
+        reducedMotion: settings.reducedMotion,
+        highContrast: settings.highContrast,
+        emailNotifications: settings.emailNotifications,
+        pushNotifications: settings.pushNotifications,
+        achievementNotifications: settings.achievementNotifications,
+        weeklyDigest: settings.weeklyDigest,
+        maintenanceAlerts: settings.maintenanceAlerts,
+        twoFactorEnabled: settings.twoFactorEnabled,
+        loginAlerts: settings.loginAlerts,
+        sessionTimeout: settings.sessionTimeout,
+        dataEncryption: settings.dataEncryption,
+      })
       setSavedRecently(true)
       celebrate()
       speak('Settings saved successfully!', 'responding')
@@ -299,6 +334,63 @@ const SettingsPage: React.FC = () => {
       }
       setShowConfirmation(null)
     }, 100)
+  }
+
+  // Account actions
+  const onExportData = async () => {
+    try {
+      think()
+      const data = await exportAccountData()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cortex-account-export-${new Date().toISOString().slice(0,10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      speak('Your data export is ready and downloading.', 'responding')
+    } catch (e) {
+      console.error('Export failed', e)
+      speak('Failed to export account data. Please try again.', 'error')
+    } finally {
+      idle()
+    }
+  }
+
+  const onDeleteAccountData = async () => {
+    handleDangerousAction('delete your account data (keep account)', async () => {
+      try {
+        think()
+        await deleteAccountData()
+        celebrate()
+        speak('All your data has been deleted. Your account remains active.', 'responding')
+      } catch (e) {
+        console.error('Delete data failed', e)
+        speak('Failed to delete your data. Please try again.', 'error')
+      } finally {
+        idle()
+      }
+    })
+  }
+
+  const onDeleteAccount = async () => {
+    handleDangerousAction('delete your account permanently', async () => {
+      try {
+        think()
+        await deleteAccount()
+  celebrate()
+  speak('Your account has been deleted. We hope to see you again.', 'responding')
+  // Sign out and redirect instead of reload
+  setTimeout(() => { logout() }, 600)
+      } catch (e) {
+        console.error('Delete account failed', e)
+        speak('Failed to delete your account. Please try again.', 'error')
+      } finally {
+        idle()
+      }
+    })
   }
 
   if (!isAuthenticated) {
@@ -491,6 +583,43 @@ const SettingsPage: React.FC = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Danger Zone */}
+                  <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Danger Zone</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+                        <h4 className="font-medium text-gray-900 dark:text-white mb-2">Export Account Data</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Download your profile, notes, classifications, and achievements as JSON.</p>
+                        <button
+                          onClick={onExportData}
+                          className="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                        >
+                          Export Data
+                        </button>
+                      </div>
+                      <div className="p-4 rounded-lg border border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-900/20">
+                        <h4 className="font-medium text-red-800 dark:text-red-300 mb-2">Delete Account Data</h4>
+                        <p className="text-sm text-red-700 dark:text-red-400 mb-3">Remove all your content. Your account stays so you can start fresh.</p>
+                        <button
+                          onClick={onDeleteAccountData}
+                          className="w-full px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
+                        >
+                          Delete Data
+                        </button>
+                      </div>
+                      <div className="p-4 rounded-lg border border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-900/20">
+                        <h4 className="font-medium text-red-800 dark:text-red-300 mb-2">Delete Account</h4>
+                        <p className="text-sm text-red-700 dark:text-red-400 mb-3">Permanently delete your account and all associated data.</p>
+                        <button
+                          onClick={onDeleteAccount}
+                          className="w-full px-4 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white transition-colors"
+                        >
+                          Delete Account
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -649,7 +778,7 @@ const SettingsPage: React.FC = () => {
                 <div className="space-y-6">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Mascot Companion</h2>
-                    <p className="text-gray-600 dark:text-gray-400">Customize your AI companion's behavior and appearance</p>
+                    <p className="text-gray-600 dark:text-gray-400">Customize your AI companion&apos;s behavior and appearance</p>
                   </div>
 
                   <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">

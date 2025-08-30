@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   TrophyIcon, 
@@ -12,6 +12,7 @@ import {
 import { TrophyIcon as TrophyIconSolid } from '@heroicons/react/24/solid'
 import { useGamificationApi } from '@/services/apiClient'
 import { Achievement } from '@/api/cortex-api-client'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface GamificationWidgetProps {
   compact?: boolean
@@ -25,13 +26,11 @@ export function GamificationWidget({ compact = false, className = '' }: Gamifica
   const [isLoading, setIsLoading] = useState(true)
   const [isExpanded, setIsExpanded] = useState(!compact)
   const gamificationApi = useGamificationApi()
+  const { isAuthenticated } = useAuth()
 
-  useEffect(() => {
-    loadGamificationData()
-  }, [])
-
-  const loadGamificationData = async () => {
-    try {
+  const loadGamificationData = useCallback(async () => {
+  if (!isAuthenticated) return
+  try {
       setIsLoading(true)
       
       // Load user stats and progress
@@ -62,7 +61,11 @@ export function GamificationWidget({ compact = false, className = '' }: Gamifica
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [gamificationApi, isAuthenticated])
+
+  useEffect(() => {
+    loadGamificationData()
+  }, [loadGamificationData])
 
   if (isLoading) {
     return (
@@ -114,7 +117,7 @@ export function GamificationWidget({ compact = false, className = '' }: Gamifica
                 Level {userStats.level}
               </h3>
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                {userStats.experiencePoints} XP
+                {userStats.totalXp ?? userStats.experiencePoints ?? 0} XP
               </p>
             </div>
           </div>

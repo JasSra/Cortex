@@ -16,9 +16,11 @@ interface AuthContextType {
   isAuthenticated: boolean
   user: AccountInfo | null
   login: () => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   getAccessToken: () => Promise<string | null>
   loading: boolean
+  recentAuthEvent: 'signup' | 'login' | null
+  clearRecentAuthEvent: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -31,7 +33,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [user, setUser] = useState<AccountInfo | null>(null)
   const [loading, setLoading] = useState(true)
+  const [recentAuthEvent, setRecentAuthEvent] = useState<'signup' | 'login' | null>(null)
 
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+
+  // Local authed fetch that does NOT depend on useAuth to avoid circular deps
+  const authedFetch = async (path: string, init?: RequestInit, tokenOverride?: string | null) => {
+    let token = tokenOverride ?? null
+    if (!token) {
+      token = await getAccessToken()
+    }
+    const headers = new Headers(init?.headers || {})
+    if (!headers.has('Content-Type') && init?.body) headers.set('Content-Type', 'application/json')
+    if (token) headers.set('Authorization', `Bearer ${token}`)
+    const res = await fetch(`${baseUrl}${path}`, { ...(init || {}), headers })
+    return res
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const initializeAuth = async () => {
       await msalInstance.initialize()
@@ -44,13 +63,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setIsAuthenticated(true)
         
         // Create or get user profile and trigger seed data creation
-        await handleUserProfile(response.account, response.accessToken)
+        const created = await handleUserProfile(response.account, response.accessToken)
+        setRecentAuthEvent(created ? 'signup' : 'login')
       } else {
-        // Check for existing accounts
+        // Check for existing accounts and validate token
         const accounts = msalInstance.getAllAccounts()
         if (accounts.length > 0) {
-          setUser(accounts[0])
-          setIsAuthenticated(true)
+          try {
+            const token = await msalInstance.acquireTokenSilent({ ...tokenRequest, account: accounts[0] })
+            if (token && token.accessToken) {
+              setUser(accounts[0])
+              setIsAuthenticated(true)
+            } else {
+              await msalInstance.logoutRedirect({ postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri })
+              return
+            }
+          } catch (e) {
+            console.warn('Existing session invalid, logging out', e)
+            await msalInstance.logoutRedirect({ postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri })
+            return
+          }
         }
       }
       
@@ -81,14 +113,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  const logout = () => {
-    setLoading(true)
-    msalInstance.logoutRedirect({
-      postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri
-    }).catch((error) => {
+  const logout = async () => {
+    try {
+      setLoading(true)
+      await msalInstance.logoutRedirect({
+        postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri
+      })
+    } catch (error) {
       console.error('Logout failed:', error)
       setLoading(false)
-    })
+    }
   }
 
   const getAccessToken = async (): Promise<string | null> => {
@@ -122,28 +156,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  const createSeedDataIfNeeded = async (accessToken: string) => {
+  const createSeedDataIfNeeded = async (accessToken: string | null) => {
     try {
-      // Check if user already has notes
-      const response = await fetch('/api/notes', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-      
-      if (response.ok) {
-        const notes = await response.json()
-        
-        // If user has no notes, create seed data
-        if (notes.length === 0) {
-          await fetch('/api/seed-data', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            }
-          })
-        }
+      // Check notes count
+      const notesRes = await authedFetch('/api/Notes', undefined, accessToken)
+      if (!notesRes.ok) throw new Error(`Notes fetch failed: ${notesRes.status}`)
+      const notes = await notesRes.json()
+      if (!Array.isArray(notes) || notes.length === 0) {
+        const seedRes = await authedFetch('/api/seed-data', { method: 'POST' }, accessToken)
+        if (!seedRes.ok) throw new Error(`Seed failed: ${seedRes.status}`)
       }
     } catch (error) {
       console.error('Failed to create seed data:', error)
@@ -152,51 +173,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const handleUserProfile = async (account: AccountInfo, accessToken: string) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
-      
       // First, try to get existing user profile
-      const profileResponse = await fetch(`${baseUrl}/api/user/profile`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      })
+      let existing: any | null = null
+      try {
+        const res = await authedFetch('/api/User/profile', undefined, accessToken)
+        if (res.ok) existing = await res.json()
+      } catch {}
 
-      if (profileResponse.status === 404) {
+      if (!existing) {
         // User profile doesn't exist, create it
         console.log('Creating new user profile...')
-        const createProfileResponse = await fetch(`${baseUrl}/api/user/profile`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            email: account.username || account.localAccountId,
-            name: account.name || 'User',
-            subjectId: account.localAccountId || account.homeAccountId
-          })
-        })
-
-        if (createProfileResponse.ok) {
+        try {
+          const res = await authedFetch('/api/User/profile', {
+            method: 'POST',
+            body: JSON.stringify({
+              email: account.username || account.localAccountId,
+              name: account.name || 'User',
+              subjectId: account.localAccountId || account.homeAccountId
+            })
+          }, accessToken)
+          if (!res.ok) throw new Error(`Create profile failed: ${res.status}`)
           console.log('User profile created successfully')
           // Create seed data for new user
           await createSeedDataIfNeeded(accessToken)
-        } else {
+          return true // created new profile
+        } catch {
           console.error('Failed to create user profile')
         }
-      } else if (profileResponse.ok) {
+      } else {
         // User profile exists, check for seed data
         console.log('User profile found, checking for existing data...')
         await createSeedDataIfNeeded(accessToken)
-      } else {
-        console.error('Failed to retrieve user profile')
+        return false // existing profile
       }
     } catch (error) {
       console.error('Error handling user profile:', error)
       // Still try to create seed data even if profile handling fails
       await createSeedDataIfNeeded(accessToken)
     }
+    return false
   }
 
   const value: AuthContextType = {
@@ -205,7 +220,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     login,
     logout,
     getAccessToken,
-    loading
+  loading,
+  recentAuthEvent,
+  clearRecentAuthEvent: () => setRecentAuthEvent(null)
   }
 
   return (

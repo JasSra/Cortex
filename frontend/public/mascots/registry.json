@@ -1,0 +1,47 @@
+{
+  "mascots": [
+    {
+      "id": "pixel-buddy",
+      "name": "Pixel Buddy",
+      "author": "Kenney (CC0)",
+      "license": "CC0 1.0",
+      "homepage": "https://kenney.nl/assets",
+  "sprite": "/mascots/pixel-buddy/sheet.svg",
+      "meta": {
+        "frameWidth": 32,
+        "frameHeight": 32,
+        "scale": 2,
+        "states": {
+          "idle": { "row": 0, "frames": 4, "fps": 6 },
+          "listening": { "row": 1, "frames": 4, "fps": 8 },
+          "thinking": { "row": 2, "frames": 4, "fps": 6 },
+          "responding": { "row": 3, "frames": 4, "fps": 10 },
+          "suggesting": { "row": 4, "frames": 4, "fps": 10 },
+          "celebrating": { "row": 5, "frames": 6, "fps": 12 },
+          "error": { "row": 6, "frames": 2, "fps": 4 }
+        }
+      }
+    },
+    {
+      "id": "slime",
+      "name": "Tiny Slime",
+      "author": "Kenney (CC0)",
+      "license": "CC0 1.0",
+      "homepage": "https://kenney.nl/assets",
+  "sprite": "/mascots/slime/sheet.svg",
+      "meta": {
+        "frameWidth": 16,
+        "frameHeight": 16,
+        "scale": 3,
+        "states": {
+          "idle": { "row": 0, "frames": 4, "fps": 6 },
+          "listening": { "row": 1, "frames": 4, "fps": 8 },
+          "thinking": { "row": 2, "frames": 4, "fps": 6 },
+          "responding": { "row": 3, "frames": 4, "fps": 10 },
+          "celebrating": { "row": 4, "frames": 6, "fps": 12 },
+          "error": { "row": 5, "frames": 2, "fps": 4 }
+        }
+      }
+    }
+  ]
+}
