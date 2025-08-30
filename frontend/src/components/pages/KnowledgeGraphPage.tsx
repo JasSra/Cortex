@@ -65,6 +65,11 @@ const KnowledgeGraphPage: React.FC = () => {
   })
   const [availableEntityTypes, setAvailableEntityTypes] = useState<string[]>([])
   const [zoomLevel, setZoomLevel] = useState(1)
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef<{ x: number; y: number } | null>(null)
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   const [relatedResults, setRelatedResults] = useState<any[] | null>(null)
   const [isCopying, setIsCopying] = useState(false)
   const loadingRef = useRef(false)
@@ -73,33 +78,68 @@ const KnowledgeGraphPage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null)
   
   const { speak, think, idle, suggest } = useMascot()
-  const { getGraph, getConnectedEntities } = useGraphApi()
+  const { getGraph, getConnectedEntities, discoverAll } = useGraphApi()
   const { searchGet } = useSearchApi()
 
   // Process graph data for visualization
   const processGraphData = useCallback((data: any): GraphData => {
-    const nodes = data.nodes || []
-    const edges = data.edges || []
-    
-    // Calculate layout using force-directed algorithm (simplified)
-    const processedNodes = nodes.map((node: GraphNode, index: number) => {
-      const angle = (index / nodes.length) * 2 * Math.PI
-      const radius = Math.min(300, 50 + nodes.length * 10)
-      
+    const rawNodes = Array.isArray(data?.nodes) ? data.nodes : []
+    const rawEdges = Array.isArray(data?.edges) ? data.edges : []
+
+    // Normalize backend -> UI node shape
+    const normalizedNodes: GraphNode[] = rawNodes.map((n: any) => {
+      const id = String(n?.id ?? n?.Id ?? '')
+      const type = String(n?.type ?? n?.Type ?? 'concept')
+      const name = String(n?.name ?? n?.Name ?? n?.value ?? n?.Value ?? id)
+      const connectionCount = n?.connectionCount ?? n?.ConnectionCount
+      const lastSeen = n?.lastSeen ?? n?.LastSeen
+      return {
+        id,
+        name,
+        type,
+        properties: {
+          connectionCount: typeof connectionCount === 'number' ? connectionCount : undefined,
+          lastSeen: lastSeen ?? undefined,
+        },
+        score: typeof connectionCount === 'number' && connectionCount >= 0 ? Math.min(1, (connectionCount || 0) / 10) : 0.5,
+      }
+    })
+
+    // Normalize backend -> UI edge shape
+    const normalizedEdges: GraphEdge[] = rawEdges.map((e: any) => {
+      const id = String(e?.id ?? e?.Id ?? `${e?.fromId ?? e?.FromId}-${e?.toId ?? e?.ToId}`)
+      const source = String(e?.source ?? e?.Source ?? e?.fromId ?? e?.FromId ?? '')
+      const target = String(e?.target ?? e?.Target ?? e?.toId ?? e?.ToId ?? '')
+      const type = String(e?.type ?? e?.Type ?? e?.relationType ?? e?.RelationType ?? 'related')
+      const confidence = e?.confidence ?? e?.Confidence
+      return {
+        id,
+        source,
+        target,
+        type,
+        properties: { confidence: confidence ?? undefined },
+        weight: typeof confidence === 'number' ? Math.max(0.5, Math.min(2, confidence)) : 1,
+      }
+    })
+
+    // Calculate a simple radial layout
+    const processedNodes = normalizedNodes.map((node: GraphNode, index: number) => {
+      const angle = (index / Math.max(1, normalizedNodes.length)) * 2 * Math.PI
+      const radius = Math.min(300, 50 + normalizedNodes.length * 10)
       return {
         ...node,
         x: 400 + Math.cos(angle) * radius,
         y: 300 + Math.sin(angle) * radius,
-        size: Math.max(20, Math.min(60, (node.score || 0.5) * 80)),
+        size: Math.max(20, Math.min(60, ((node as any).score || 0.5) * 80)),
         color: getNodeColor(node.type)
       }
     })
 
     return {
       nodes: processedNodes,
-      edges,
-      focus: data.focus,
-      depth: data.depth || 2
+      edges: normalizedEdges,
+      focus: data?.focus ?? data?.Focus,
+      depth: data?.depth ?? data?.Depth ?? 2,
     }
   }, [])
 
@@ -129,7 +169,7 @@ const KnowledgeGraphPage: React.FC = () => {
       setGraphData(processedData)
       
       // Extract available entity types
-      const nodeTypes = response.nodes?.map((n: GraphNode) => n.type) || []
+      const nodeTypes = processedData.nodes?.map((n: GraphNode) => n.type) || []
       const uniqueTypes = Array.from(new Set(nodeTypes)) as string[]
       setAvailableEntityTypes(uniqueTypes)
 
@@ -236,7 +276,7 @@ const KnowledgeGraphPage: React.FC = () => {
         .filter((n: any) => n && n.id && !existingIds.has(String(n.id)))
         .map((n: any, idx: number) => ({
           id: String(n.id),
-          name: n.name ?? n.text ?? n.label ?? `Entity ${idx + 1}`,
+          name: n.name ?? n.text ?? n.label ?? n.value ?? n.Value ?? `Entity ${idx + 1}`,
           type: String(n.type ?? n.Type ?? 'concept'),
           properties: n.properties ?? n.Properties ?? {},
           score: typeof n.score === 'number' ? n.score : (typeof n.Score === 'number' ? n.Score : 0.5),
@@ -321,6 +361,93 @@ const KnowledgeGraphPage: React.FC = () => {
     setZoomLevel(prev => Math.max(0.1, Math.min(3, prev + delta)))
   }
 
+  // Convert screen coords to graph coords (accounting for pan and zoom)
+  const toGraphCoords = (clientX: number, clientY: number): { x: number; y: number } => {
+    const svg = svgRef.current
+    if (!svg) return { x: 0, y: 0 }
+    const rect = svg.getBoundingClientRect()
+    const sx = clientX - rect.left
+    const sy = clientY - rect.top
+    // s = pan + (400,300) + (g - (400,300)) * z
+    const z = zoomLevel
+    const gx = ((sx - pan.x - 400) / z) + 400
+    const gy = ((sy - pan.y - 300) / z) + 300
+    return { x: gx, y: gy }
+  }
+
+  // Pan handlers (background drag)
+  const onSvgMouseDown = (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
+    // Only start panning if not starting on a node
+    if (e.button !== 0) return
+    setIsPanning(true)
+    panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }
+  }
+  const onSvgMouseMove = (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
+    if (isPanning && panStartRef.current) {
+      setPan({ x: e.clientX - panStartRef.current.x, y: e.clientY - panStartRef.current.y })
+    } else if (draggingNodeId) {
+      const { x, y } = toGraphCoords(e.clientX, e.clientY)
+      setGraphData(prev => {
+        const idx = prev.nodes.findIndex(n => n.id === draggingNodeId)
+        if (idx === -1) return prev
+        const updated = [...prev.nodes]
+        const off = dragOffsetRef.current || { dx: 0, dy: 0 }
+        updated[idx] = { ...updated[idx], x: x + off.dx, y: y + off.dy }
+        return { ...prev, nodes: updated }
+      })
+    }
+  }
+  const onSvgMouseUp = () => {
+    setIsPanning(false)
+    panStartRef.current = null
+    setDraggingNodeId(null)
+    dragOffsetRef.current = null
+  }
+
+  // Node drag start
+  const onNodeMouseDown = (node: GraphNode) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDraggingNodeId(node.id)
+    const { x, y } = toGraphCoords(e.clientX, e.clientY)
+    dragOffsetRef.current = { dx: (node.x ?? 0) - x, dy: (node.y ?? 0) - y }
+  }
+
+  // Fit graph to viewport
+  const fitToView = useCallback(() => {
+    const div = containerRef.current
+    if (!div || graphData.nodes.length === 0) return
+    const width = div.clientWidth || 800
+    const height = div.clientHeight || 600
+    const xs = graphData.nodes.map(n => n.x || 0)
+    const ys = graphData.nodes.map(n => n.y || 0)
+    const minX = Math.min(...xs), maxX = Math.max(...xs)
+    const minY = Math.min(...ys), maxY = Math.max(...ys)
+    const gWidth = Math.max(50, maxX - minX)
+    const gHeight = Math.max(50, maxY - minY)
+    const pad = 80
+    const z = Math.min(3, Math.max(0.2, Math.min((width - pad) / gWidth, (height - pad) / gHeight)))
+    setZoomLevel(z)
+    // Center
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    const panX = (width / 2) - (400 + (cx - 400) * z)
+    const panY = (height / 2) - (300 + (cy - 300) * z)
+    setPan({ x: panX, y: panY })
+  }, [graphData.nodes])
+
+  // Center on selected node
+  const centerOnNode = (node: GraphNode) => {
+    const div = containerRef.current
+    if (!div) return
+    const width = div.clientWidth || 800
+    const height = div.clientHeight || 600
+    const nx = node.x ?? 400
+    const ny = node.y ?? 300
+    const panX = (width / 2) - (400 + (nx - 400) * zoomLevel)
+    const panY = (height / 2) - (300 + (ny - 300) * zoomLevel)
+    setPan({ x: panX, y: panY })
+  }
+
   // Get entity type statistics
   const getEntityStats = () => {
     const stats: Record<string, number> = {}
@@ -328,6 +455,25 @@ const KnowledgeGraphPage: React.FC = () => {
       stats[node.type] = (stats[node.type] || 0) + 1
     })
     return stats
+  }
+
+  // Relayout nodes (deterministic radial by degree)
+  const relayout = () => {
+    const degree = new Map<string, number>()
+    for (const e of graphData.edges) {
+      degree.set(e.source, (degree.get(e.source) || 0) + 1)
+      degree.set(e.target, (degree.get(e.target) || 0) + 1)
+    }
+    const sorted = [...graphData.nodes].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))
+    const n = Math.max(1, sorted.length)
+    const radius = Math.min(350, 80 + n * 10)
+    const laid = sorted.map((node, index) => {
+      const angle = (index / n) * 2 * Math.PI
+      return { ...node, x: 400 + Math.cos(angle) * radius, y: 300 + Math.sin(angle) * radius }
+    })
+    // Map back to original order
+    const byId = new Map(laid.map(n => [n.id, n]))
+    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => byId.get(n.id) || n) }))
   }
 
   return (
@@ -391,7 +537,28 @@ const KnowledgeGraphPage: React.FC = () => {
               <AdjustmentsHorizontalIcon className="w-4 h-4" />
             </motion.button>
 
-            {/* Zoom Controls */}
+            {/* Run Discovery */}
+            <button
+              onClick={async () => {
+                try {
+                  setIsLoading(true)
+                  think()
+                  await discoverAll()
+                  await loadGraph(graphData.focus)
+                  speak('Graph relationships discovered and refreshed.', 'responding')
+                } catch (e) {
+                  console.error(e)
+                  speak('Failed to run discovery.', 'error')
+                } finally {
+                  setIsLoading(false)
+                  idle()
+                }
+              }}
+              title="Discover relationships and refresh graph"
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
+            >Run Discovery</button>
+
+            {/* Zoom + Fit Controls */}
             <div className="flex gap-1">
               <button
                 onClick={() => handleZoom(0.1)}
@@ -407,6 +574,16 @@ const KnowledgeGraphPage: React.FC = () => {
               >
                 <ArrowsPointingInIcon className="w-4 h-4" />
               </button>
+              <button
+                onClick={fitToView}
+                title="Auto-fit graph"
+                className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs"
+              >Fit</button>
+              <button
+                onClick={relayout}
+                title="Re-layout"
+                className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs"
+              >Layout</button>
             </div>
           </div>
         </div>
@@ -573,7 +750,12 @@ const KnowledgeGraphPage: React.FC = () => {
           <svg
             ref={svgRef}
             className="w-full h-full"
+            onMouseDown={onSvgMouseDown}
+            onMouseMove={onSvgMouseMove}
+            onMouseUp={onSvgMouseUp}
+            onMouseLeave={onSvgMouseUp}
           >
+            <g transform={`translate(${pan.x},${pan.y})`}>
             <g transform={`translate(400,300) scale(${zoomLevel}) translate(-400,-300)`}>
             {/* Edges */}
             <g>
@@ -611,7 +793,11 @@ const KnowledgeGraphPage: React.FC = () => {
                     strokeWidth={selectedNode?.id === node.id ? 3 : 2}
                     opacity={(node as any).highlighted ? 1 : 0.8}
                     className="cursor-pointer hover:opacity-100"
-                    onClick={() => handleNodeClick(node)}
+                    onMouseDown={onNodeMouseDown(node)}
+                    onClick={() => {
+                      handleNodeClick(node)
+                      centerOnNode(node)
+                    }}
                   />
                   <text
                     x={node.x}
@@ -624,6 +810,7 @@ const KnowledgeGraphPage: React.FC = () => {
                   </text>
                 </g>
               ))}
+            </g>
             </g>
             </g>
           </svg>
@@ -674,8 +861,8 @@ const KnowledgeGraphPage: React.FC = () => {
                     <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Properties
                     </h4>
-                    <div className="space-y-1 text-sm">
-                      {Object.entries(selectedNode.properties).slice(0, 5).map(([key, value]) => (
+                    <div className="space-y-1 text-sm max-h-40 overflow-auto pr-1">
+                      {Object.entries(selectedNode.properties).map(([key, value]) => (
                         <div key={key} className="flex justify-between">
                           <span className="text-gray-600 dark:text-gray-400 capitalize">
                             {key}:
@@ -701,6 +888,12 @@ const KnowledgeGraphPage: React.FC = () => {
                     className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
                   >
                     Expand 1 hop
+                  </button>
+                  <button
+                    onClick={() => centerOnNode(selectedNode)}
+                    className="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors"
+                  >
+                    Center
                   </button>
                   <button
                     onClick={() => fetchRelatedResults(selectedNode)}

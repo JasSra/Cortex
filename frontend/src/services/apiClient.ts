@@ -188,7 +188,15 @@ export function useNotesApi() {
   const http = useAuthedFetch()
   const TTL = 20_000 // 20s cache
   return useMemo(() => ({
-    getNotes: () => getCached('notes:list', TTL, () => http.get<any[]>('/api/Notes')),
+    getNotes: (page = 1, pageSize = 20) => {
+      const limit = Math.max(1, Math.min(100, pageSize))
+      const offset = Math.max(0, (page - 1) * limit)
+      const key = `notes:list:${limit}:${offset}`
+      return getCached(key, TTL, async () => {
+        const res = await http.get<any[]>(`/api/Notes?limit=${limit}&offset=${offset}&includeContent=false`)
+        return res
+      })
+    },
     getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
     updateNote: (id: string, content: string, title?: string) => http.put<any>(`/api/Notes/${id}`, { content, title }).then((data) => ({
       noteId: data?.noteId ?? data?.NoteId ?? id,
@@ -327,6 +335,7 @@ export function useJobsApi() {
   const { getAccessToken } = useAppAuth()
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
   return {
+    // One-shot status (normalized)
     getStatus: async () => {
       const res = await http.get<any>(`/api/Jobs/status`)
       return {
@@ -341,16 +350,27 @@ export function useJobsApi() {
         redisConnected: res?.redisConnected ?? res?.RedisConnected ?? false,
       }
     },
+    // Helper to build SSE URL with token
+    statusStreamUrl: async () => {
+      const token = await getAccessToken()
+      const url = new URL(`${baseUrl}/api/Jobs/status/stream`)
+      if (token) url.searchParams.set('access_token', token)
+      return url.toString()
+    },
+    // Subscribe and push normalized updates
     subscribeStatusStream: (onUpdate: (s: { summary: string; pending: number; processed: number; failed: number; avgMs: number; pendingStreams?: number; pendingBacklog?: number; usingStreams?: boolean; redisConnected?: boolean }) => void) => {
       let es: EventSource | null = null
       let closed = false
       ;(async () => {
         try {
-          const token = await getAccessToken()
-          const url = new URL(`${baseUrl}/api/Jobs/status/stream`)
-          if (token) url.searchParams.set('access_token', token)
+          const url = await (async () => {
+            const token = await getAccessToken()
+            const u = new URL(`${baseUrl}/api/Jobs/status/stream`)
+            if (token) u.searchParams.set('access_token', token)
+            return u.toString()
+          })()
           if (typeof window !== 'undefined' && 'EventSource' in window) {
-            es = new EventSource(url.toString())
+            es = new EventSource(url)
             es.onmessage = (ev) => {
               try {
                 const data = ev.data ? JSON.parse(ev.data) : {}
@@ -365,18 +385,21 @@ export function useJobsApi() {
                   usingStreams: data?.usingStreams ?? data?.UsingStreams ?? false,
                   redisConnected: data?.redisConnected ?? data?.RedisConnected ?? false,
                 })
-              } catch {
-                // ignore
-              }
+              } catch {}
             }
           }
         } catch {
-          // ignore
         } finally {
           if (closed && es) es.close()
         }
       })()
       return () => { closed = true; if (es) es.close() }
+    },
+    // Enqueue server-side graph enrich (requires Redis)
+    enqueueGraphEnrich: (noteId?: string) => {
+      return noteId
+        ? http.post<any>(`/api/Jobs/graph-enrich/${encodeURIComponent(noteId)}`)
+        : http.post<any>('/api/Jobs/graph-enrich', {})
     }
   }
 }
@@ -418,7 +441,16 @@ export function useGraphApi() {
 
   const getStatistics = useCallback(() => getCached('graph:statistics', 30_000, () => client.statistics()), [client])
 
-  return useMemo(() => ({ getGraph, getConnectedEntities, getEntitySuggestions, getStatistics }), [getGraph, getConnectedEntities, getEntitySuggestions, getStatistics])
+  // Trigger server-side relationship discovery (no params)
+  const discoverAll = useCallback(async () => {
+    // Use raw fetch via client.http or reuse authed fetch
+    const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+    const res = await (client as any).http.fetch(`${baseUrl}/api/Graph/discover/all`, { method: 'POST', headers: { Accept: 'application/json' } })
+    if (!res.ok) throw new Error(`Discover all failed: ${res.status}`)
+    return await res.json().catch(() => ({}))
+  }, [client])
+
+  return useMemo(() => ({ getGraph, getConnectedEntities, getEntitySuggestions, getStatistics, discoverAll }), [getGraph, getConnectedEntities, getEntitySuggestions, getStatistics, discoverAll])
 }
 
 // Classification
@@ -478,6 +510,9 @@ export function useSeedApi() {
     seedIfNeeded: () => http.post<any>('/api/seed-data'),
   }
 }
+
+// Jobs API (enqueue + status + SSE URL)
+// (duplicate useJobsApi removed; consolidated earlier)
 
 // Voice API convenience
 export function useVoiceApi() {

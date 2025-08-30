@@ -1,0 +1,12 @@
+{
+  "name": "cortex-root",
+  "private": true,
+  "scripts": {
+    "test:e2e": "playwright test -c playwright.config.ts --reporter=dot"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0",
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

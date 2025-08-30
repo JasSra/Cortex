@@ -48,8 +48,8 @@ public class SearchController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Q))
             return BadRequest("Query 'q' is required");
 
-        _logger.LogInformation("Search query '{Query}' for user {UserId} (mode: {Mode}, k: {K})", 
-            request.Q, _userContext.UserId, request.Mode, request.K);
+        _logger.LogInformation("Search query '{Query}' for user {UserId} (mode: {Mode}, k: {K}, offset: {Offset})", 
+            request.Q, _userContext.UserId, request.Mode, request.K, request.Offset);
 
         // Ensure user ID is set for scoped search
         var response = await _searchService.SearchHybridAsync(request, _userContext.UserId);
@@ -82,6 +82,7 @@ public class SearchController : ControllerBase
     public async Task<ActionResult<SearchResponse>> SearchGet(
         [FromQuery] string q = "",
         [FromQuery] int k = 10,
+        [FromQuery] int offset = 0,
         [FromQuery] string mode = "hybrid",
         [FromQuery] double alpha = 0.6)
     {
@@ -95,11 +96,12 @@ public class SearchController : ControllerBase
         { 
             Q = q, 
             K = k, 
+            Offset = offset,
             Mode = mode, 
             Alpha = alpha 
         };
 
-        _logger.LogInformation("GET search query '{Query}' for user {UserId}", q, _userContext.UserId);
+        _logger.LogInformation("GET search query '{Query}' for user {UserId} (k: {K}, offset: {Offset})", q, _userContext.UserId, k, offset);
 
         var response = await _searchService.SearchHybridAsync(request, _userContext.UserId);
         

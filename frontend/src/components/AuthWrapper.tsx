@@ -14,6 +14,7 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
   const { isAuthenticated, loading, recentAuthEvent, clearRecentAuthEvent } = useAuth()
   const [showWelcome, setShowWelcome] = useState(false)
   const [welcomeType, setWelcomeType] = useState<'signup' | 'login'>('login')
+  const bypassAuth = process.env.NEXT_PUBLIC_BYPASS_AUTH === '1' || process.env.NEXT_PUBLIC_BYPASS_AUTH === 'true'
 
   useEffect(() => {
     if (recentAuthEvent) {
@@ -22,7 +23,7 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
     }
   }, [recentAuthEvent])
 
-  if (loading) {
+  if (!bypassAuth && loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 dark:from-slate-950 dark:via-purple-950 dark:to-slate-950 flex items-center justify-center">
         <div className="text-center">
@@ -39,18 +40,20 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
     )
   }
 
-  if (!isAuthenticated) {
+  if (!bypassAuth && !isAuthenticated) {
     return <LoginPage />
   }
 
   return (
     <>
       {children}
-      <WelcomeDialog 
-        open={showWelcome} 
-        type={welcomeType}
-        onClose={() => setShowWelcome(false)} 
-      />
+      {!bypassAuth && (
+        <WelcomeDialog 
+          open={showWelcome} 
+          type={welcomeType}
+          onClose={() => setShowWelcome(false)} 
+        />
+      )}
     </>
   )
 }

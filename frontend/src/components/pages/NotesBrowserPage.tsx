@@ -23,6 +23,7 @@ import { useMascot } from '@/contexts/MascotContext'
 import appBus from '@/lib/appBus'
 import { useNotesApi, useSearchApi } from '@/services/apiClient'
 import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
+import { useJobsApi } from '@/services/apiClient'
 
 interface Note {
   id: string
@@ -295,7 +296,8 @@ const NotesBrowserPage: React.FC = () => {
   const [selectedNote, setSelectedNote] = useState<Note | null>(null)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const { updateNote } = useNotesApi()
+  // Notes API helpers
+  const { updateNote, getNote, getNotes } = useNotesApi()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null)
   const [sortOption, setSortOption] = useState<SortOption>({
@@ -317,8 +319,9 @@ const NotesBrowserPage: React.FC = () => {
   })
 
   const { speak, think, idle, suggest } = useMascot()
-  const { getNotes } = useNotesApi()
+  // getNotes is obtained above from useNotesApi
   const { searchGet } = useSearchApi()
+  const { enqueueGraphEnrich } = useJobsApi()
 
   const sortOptions: SortOption[] = [
     { field: 'updatedAt', direction: 'desc', label: 'Recently Updated' },
@@ -823,7 +826,21 @@ const NotesBrowserPage: React.FC = () => {
               </div>
             )}
           </div>
-          
+          {/* Pagination controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadNotes(Math.max(1, pagination.currentPage - 1), true)}
+              disabled={pagination.currentPage <= 1 || isLoading || refreshing}
+              className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-sm disabled:opacity-50"
+            >Prev</button>
+            <span className="text-xs text-gray-600 dark:text-gray-400">Page {pagination.currentPage}</span>
+            <button
+              onClick={() => loadNotes(pagination.currentPage + 1, true)}
+              disabled={isLoading || refreshing || notes.length < pagination.pageSize}
+              className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-sm disabled:opacity-50"
+            >Next</button>
+          </div>
+
           {filteredNotes.length > 0 && (
             <div className="text-sm text-gray-600 dark:text-gray-400">
               Total: {filteredNotes.reduce((sum, note) => sum + (note.metadata?.wordCount || 0), 0)} words
@@ -846,7 +863,13 @@ const NotesBrowserPage: React.FC = () => {
                 note={note}
                 viewMode={viewMode}
                 highlighted={highlightedNoteId === note.id}
-                onClick={() => setSelectedNote(note)}
+                onClick={async () => {
+                  setSelectedNote(note)
+                  try {
+                    const full = await getNote(note.id)
+                    setSelectedNote({ ...note, content: full?.content || full?.Content || note.content })
+                  } catch {}
+                }}
               />
             ))}
           </div>
@@ -929,6 +952,11 @@ const NotesBrowserPage: React.FC = () => {
                             className={`px-3 py-1.5 rounded-lg text-sm ${editing ? 'bg-gray-200 dark:bg-gray-700' : 'bg-purple-600 text-white'}`}
                             title={editing ? 'Exit edit mode' : 'Edit note'}
                           >{editing ? 'Viewing' : 'Edit'}</button>
+                          <button
+                            onClick={async () => { try { if (selectedNote) await enqueueGraphEnrich(selectedNote.id) } catch {} }}
+                            className="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
+                            title="Trigger knowledge graph enrichment for this note"
+                          >Build Graph Now</button>
                           <button
                             onClick={() => setSelectedNote(null)}
                             title="Close modal"

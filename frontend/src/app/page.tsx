@@ -14,12 +14,13 @@ import DocumentsPage from '@/components/pages/DocumentsPage'
 import { UserProfile } from '@/components/UserProfile'
 
 export default function Home() {
-  const [activeView, setActiveView] = useState('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Default landing is Search; sidebar starts collapsed
+  const [activeView, setActiveView] = useState('search')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const { notes, searchResults } = useCortexStore()
   const { isAuthenticated, user } = useAuth()
   const notesApi = useNotesApi()
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
 
   const loadInitialData = useCallback(async () => {
     try {
@@ -37,6 +38,9 @@ export default function Home() {
   useEffect(() => {
     if (isAuthenticated && user) {
       loadInitialData()
+    } else {
+      // Don't block the UI when not authenticated
+      setIsLoading(false)
     }
   }, [isAuthenticated, user, loadInitialData])
 

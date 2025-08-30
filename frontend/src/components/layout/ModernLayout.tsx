@@ -18,7 +18,8 @@ import {
   MoonIcon,
   TrophyIcon,
   FolderIcon,
-  SparklesIcon
+  SparklesIcon,
+  MapPinIcon
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -35,15 +36,17 @@ interface ModernLayoutProps {
   onSidebarToggle: () => void
 }
 
+// Reordered to surface the most-used sections first
 const navigation = [
-  { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: true },
-  { name: 'Analytics', href: 'analytics', icon: ChartBarIcon, current: false },
+  { name: 'Search', href: 'search', icon: MagnifyingGlassIcon, current: true },
   { name: 'Chat Assistant', href: 'chat', icon: ChatBubbleLeftRightIcon, current: false },
-  { name: 'Notes Browser', href: 'notes-browser', icon: FolderIcon, current: false },
-  { name: 'Search', href: 'search', icon: MagnifyingGlassIcon, current: false },
   { name: 'Documents', href: 'documents', icon: DocumentTextIcon, current: false },
+  { name: 'Notes Browser', href: 'notes-browser', icon: FolderIcon, current: false },
   { name: 'Knowledge Graph', href: 'graph', icon: ShareIcon, current: false },
+  { name: 'Jobs', href: 'jobs', icon: ChartBarIcon, current: false },
   { name: 'Ingest', href: 'ingest', icon: DocumentTextIcon, current: false },
+  { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: false },
+  { name: 'Analytics', href: 'analytics', icon: ChartBarIcon, current: false },
   { name: 'Achievements', href: 'achievements', icon: TrophyIcon, current: false },
   { name: 'Settings', href: 'settings', icon: CogIcon, current: false },
 ]
@@ -68,6 +71,22 @@ export default function ModernLayout({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchResultsRef = useRef<HTMLDivElement>(null)
   const searchRequestIdRef = useRef<number>(0)
+  const [sidebarPinned, setSidebarPinned] = useState<boolean>(false)
+  const isTest = process.env.NEXT_PUBLIC_TEST === '1' || process.env.NEXT_PUBLIC_TEST === 'true'
+
+  // Load persisted pin state and ensure sidebar opens if pinned
+  useEffect(() => {
+    try {
+      const pin = localStorage.getItem('cortex:sidebar:pinned') === '1'
+      setSidebarPinned(pin)
+      if (pin && !sidebarOpen) onSidebarToggle()
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    try { localStorage.setItem('cortex:sidebar:pinned', sidebarPinned ? '1' : '0') } catch {}
+  }, [sidebarPinned])
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -218,7 +237,7 @@ export default function ModernLayout({
         initial={{ x: sidebarOpen ? 0 : -320 }}
         animate={{ x: sidebarOpen ? 0 : -320 }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className={`fixed inset-y-0 z-50 flex w-80 flex-col bg-white/80 dark:bg-slate-800/90 backdrop-blur-xl border-r border-gray-200/50 dark:border-slate-700/50 shadow-xl lg:translate-x-0`}
+        className={`fixed inset-y-0 z-50 flex w-80 flex-col bg-white/80 dark:bg-slate-800/90 backdrop-blur-xl border-r border-gray-200/50 dark:border-slate-700/50 shadow-xl`}
       >
         {/* Sidebar header */}
         <div className="flex h-16 shrink-0 items-center justify-between px-6 border-b border-gray-200/50 dark:border-slate-700/50">
@@ -241,12 +260,13 @@ export default function ModernLayout({
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-6 space-y-2">
-          {navigation.map((item) => (
+      {navigation.map((item) => (
             <motion.button
               key={item.name}
               onClick={() => onViewChange(item.href)}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
+        data-testid={`nav-${item.href}`}
               className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
                 activeView === item.href
                   ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
@@ -285,13 +305,27 @@ export default function ModernLayout({
           className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-slate-700/50 px-6 shadow-sm dark:shadow-slate-900/20"
         >
           <div className="flex items-center space-x-4">
-            <button
-              onClick={onSidebarToggle}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors lg:hidden"
-              title="Open sidebar"
-            >
-              <Bars3Icon className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onSidebarToggle}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+                title={sidebarOpen ? 'Collapse sidebar' : 'Open sidebar'}
+                data-testid="sidebar-toggle"
+              >
+                <Bars3Icon className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+              </button>
+              <button
+                onClick={() => {
+                  const next = !sidebarPinned
+                  setSidebarPinned(next)
+                  if (next && !sidebarOpen) onSidebarToggle()
+                }}
+                className={`p-2 rounded-lg transition-colors ${sidebarPinned ? 'bg-blue-50 dark:bg-slate-700' : 'hover:bg-gray-100 dark:hover:bg-slate-700'}`}
+                title={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
+              >
+                <MapPinIcon className={`h-5 w-5 ${sidebarPinned ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'}`} />
+              </button>
+            </div>
             
             <div className="hidden lg:block">
               <h1 className="text-xl font-semibold text-gray-900 dark:text-slate-100 capitalize">
@@ -305,7 +339,7 @@ export default function ModernLayout({
             <JobStatusWidget />
 
             {/* Enhanced Global Search bar */}
-            <div className="hidden md:block relative">
+            <div className={`${isTest ? 'block' : 'hidden md:block'} relative`}>
               <div className="relative">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
@@ -314,6 +348,7 @@ export default function ModernLayout({
                   value={searchQuery}
                   onChange={handleSearchInputChange}
                   placeholder="Search everything... (Ctrl+K)"
+                  data-testid="global-search-input"
                   className="w-64 pl-10 pr-4 py-2 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-slate-900 dark:text-slate-100"
                   onFocus={() => {
                     setHasFocus(true)

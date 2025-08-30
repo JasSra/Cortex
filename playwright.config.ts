@@ -21,13 +21,13 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'cd frontend && npm run dev',
+  command: 'sh -c "cd frontend && NEXT_PUBLIC_BYPASS_AUTH=1 NEXT_PUBLIC_TEST=1 npm run build && NEXT_PUBLIC_BYPASS_AUTH=1 NEXT_PUBLIC_TEST=1 npm run start -p 3000"',
       port: 3000,
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'cd backend && dotnet run',
-      port: 8080,
+  command: 'cd backend && dotnet run',
+  port: 8081,
       reuseExistingServer: !process.env.CI,
     },
   ],

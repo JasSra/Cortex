@@ -77,7 +77,7 @@ public class NotesController : ControllerBase
     /// Get all notes for the current user (Reader role required)
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetNotes([FromQuery] int limit = 20, [FromQuery] int offset = 0)
+    public async Task<IActionResult> GetNotes([FromQuery] int limit = 20, [FromQuery] int offset = 0, [FromQuery] bool includeContent = false)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
             return StatusCode(403, "Reader role required");
@@ -111,12 +111,16 @@ public class NotesController : ControllerBase
             var classified = hasTags || !string.IsNullOrWhiteSpace(n.Summary) || sens > 0 || hasPii || hasSecrets;
             var redactionRequired = sens > 0 || hasPii || hasSecrets;
 
-            // Return a superset object to keep backward compatibility while adding Status
+            // Compute preview string for list views
+            var preview = string.IsNullOrEmpty(n.Content) ? string.Empty : (n.Content.Length > 500 ? n.Content.Substring(0, 500) + "…" : n.Content);
+
+            // Return a superset object: include Content only when requested, always provide Preview
             return new
             {
                 n.Id,
                 n.Title,
-                n.Content,
+                Content = includeContent ? n.Content : string.Empty,
+                Preview = preview,
                 n.UserId,
                 n.Lang,
                 n.Source,
