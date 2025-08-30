@@ -15,7 +15,7 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 // Build an absolute SQLite connection string so DB path is consistent regardless of CWD
-var originalCs = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=.\\data\\cortex.db";
+var originalCs = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=./data/cortex.db";
 var csb = new SqliteConnectionStringBuilder(originalCs);
 if (!Path.IsPathRooted(csb.DataSource))
 {
@@ -200,20 +200,38 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbDir = Path.GetDirectoryName(csb.DataSource);
-        if (!string.IsNullOrEmpty(dbDir) && !Directory.Exists(dbDir)) Directory.CreateDirectory(dbDir);
+        if (!string.IsNullOrEmpty(dbDir) && !Directory.Exists(dbDir)) 
+        {
+            Directory.CreateDirectory(dbDir);
+            Console.WriteLine($"[DB] Created database directory: {dbDir}");
+        }
     }
-    catch { /* ignore */ }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[DB] Failed to create database directory: {ex.Message}");
+    }
 
     var context = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     try
     {
+        Console.WriteLine("[DB] Applying migrations...");
         context.Database.Migrate();
+        Console.WriteLine("[DB] Migrations applied successfully");
     }
     catch (Exception ex)
     {
         Console.WriteLine($"[DB] Migration failed: {ex.Message}");
         // As a last resort in local dev, create DB if it doesn't exist
-        try { context.Database.EnsureCreated(); } catch { }
+        try 
+        { 
+            Console.WriteLine("[DB] Attempting to create database schema...");
+            context.Database.EnsureCreated(); 
+            Console.WriteLine("[DB] Database schema created successfully");
+        } 
+        catch (Exception createEx) 
+        {
+            Console.WriteLine($"[DB] Failed to create database: {createEx.Message}");
+        }
     }
 
     // Ensure vector index exists
