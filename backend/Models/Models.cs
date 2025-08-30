@@ -312,6 +312,8 @@ public class SearchRequest
 {
     public string Q { get; set; } = string.Empty;
     public int K { get; set; } = 10;
+    // Pagination: zero-based offset. If provided, service will fetch (offset+K) candidates and then slice
+    public int Offset { get; set; } = 0;
     public Dictionary<string, string>? Filters { get; set; }
     public string Mode { get; set; } = "hybrid"; // hybrid|semantic|bm25
     public double Alpha { get; set; } = 0.6; // weight for vector score
@@ -322,6 +324,7 @@ public class AdvancedSearchRequest
 {
     public string Q { get; set; } = string.Empty;
     public int K { get; set; } = 10;
+    public int Offset { get; set; } = 0;
     public string Mode { get; set; } = "hybrid"; // hybrid|semantic|bm25
     public double Alpha { get; set; } = 0.6; // weight for vector score
     public bool UseReranking { get; set; } = true; // Enable cross-encoder reranking
@@ -372,6 +375,9 @@ public class SearchHit
 public class SearchResponse
 {
     public List<SearchHit> Hits { get; set; } = new();
+    public int Total { get; set; }
+    public int Offset { get; set; }
+    public int K { get; set; }
 }
 
 public class ClassificationResponse

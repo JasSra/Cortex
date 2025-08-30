@@ -125,6 +125,8 @@ const AdvancedSearchPage: React.FC = () => {
     semantic: 0,
     keyword: 0
   })
+  const [page, setPage] = useState(1)
+  const pageSize = 20
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [savedSearches, setSavedSearches] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -148,6 +150,14 @@ const AdvancedSearchPage: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const recognition = useRef<any>(null)
   const handleSearchRef = useRef<((q?: string) => void) | null>(null)
+
+  // When page changes, re-run search for the current query
+  useEffect(() => {
+    if (query.trim()) {
+      handleSearch()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page])
 
   // Search suggestions
   const searchSuggestions = [
@@ -267,7 +277,8 @@ const AdvancedSearchPage: React.FC = () => {
     const res = await advancedSearch({
       Q: q,
       Mode: 'semantic',
-      K: 20,
+      K: pageSize,
+      Offset: (page - 1) * pageSize,
       Alpha: 0.6,
       SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
       FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
@@ -276,14 +287,16 @@ const AdvancedSearchPage: React.FC = () => {
       DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
       DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
     })
+    setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
     return transformResultsFromResponse(res)
-  }, [advancedSearch, transformResultsFromResponse, filters])
+  }, [advancedSearch, transformResultsFromResponse, filters, page, pageSize])
 
   const performHybridSearch = useCallback(async (q: string): Promise<SearchResult[]> => {
     const res = await advancedSearch({
       Q: q,
       Mode: 'hybrid',
-      K: 20,
+      K: pageSize,
+      Offset: (page - 1) * pageSize,
       Alpha: 0.6,
       SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
       FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
@@ -292,8 +305,9 @@ const AdvancedSearchPage: React.FC = () => {
       DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
       DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
     })
+    setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
     return transformResultsFromResponse(res)
-  }, [advancedSearch, transformResultsFromResponse, filters])
+  }, [advancedSearch, transformResultsFromResponse, filters, page, pageSize])
 
   const performAISearch = useCallback(async (q: string): Promise<SearchResult[]> => {
     try {
@@ -302,7 +316,8 @@ const AdvancedSearchPage: React.FC = () => {
       const res = await advancedSearch({
         Q: q,
         Mode: 'hybrid',
-        K: 20,
+        K: pageSize,
+        Offset: (page - 1) * pageSize,
         Alpha: 0.6,
         SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
         FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
@@ -311,12 +326,14 @@ const AdvancedSearchPage: React.FC = () => {
         DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
         DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
       })
+      setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
       return transformResultsFromResponse(res)
     } catch (error) {
       const res = await advancedSearch({
         Q: q,
         Mode: 'hybrid',
-        K: 20,
+        K: pageSize,
+        Offset: (page - 1) * pageSize,
         Alpha: 0.6,
         SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
         FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
@@ -325,16 +342,18 @@ const AdvancedSearchPage: React.FC = () => {
         DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
         DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
       })
+      setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
       return transformResultsFromResponse(res)
     }
-  }, [aiContext, ragQuery, advancedSearch, transformResultsFromResponse, filters])
+  }, [aiContext, ragQuery, advancedSearch, transformResultsFromResponse, filters, page, pageSize])
 
   const performExpertSearch = useCallback(async (q: string): Promise<SearchResult[]> => {
     const parsedQuery = parseExpertQuery(expertQuery || q)
     const res = await advancedSearch({
       Q: parsedQuery,
       Mode: 'hybrid',
-      K: 20,
+      K: pageSize,
+      Offset: (page - 1) * pageSize,
       Alpha: 0.6,
       SensitivityLevels: filters.sensitivityLevels.length ? filters.sensitivityLevels : undefined,
       FileTypes: filters.fileTypes.length ? filters.fileTypes : undefined,
@@ -343,8 +362,9 @@ const AdvancedSearchPage: React.FC = () => {
       DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
       DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
     })
+    setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
     return transformResultsFromResponse(res)
-  }, [expertQuery, advancedSearch, transformResultsFromResponse, filters])
+  }, [expertQuery, advancedSearch, transformResultsFromResponse, filters, page, pageSize])
 
   // Perform search based on mode
   const handleSearch = useCallback(async (searchQuery?: string) => {
@@ -380,12 +400,12 @@ const AdvancedSearchPage: React.FC = () => {
       const filteredResults = applyFilters(searchResults)
 
       setResults(filteredResults)
-      setSearchStats({
-        total: filteredResults.length,
+      setSearchStats(prev => ({
+        total: prev.total || filteredResults.length,
         executionTime,
         semantic: filteredResults.filter(r => r.score > 0.7).length,
         keyword: filteredResults.filter(r => r.score <= 0.7).length
-      })
+      }))
 
       if (!recentSearches.includes(queryToSearch)) {
         setRecentSearches(prev => [queryToSearch, ...prev.slice(0, 4)])
@@ -1095,6 +1115,31 @@ const AdvancedSearchPage: React.FC = () => {
 
   {/* Search Results (grouped by note) */}
         <div className="max-w-4xl mx-auto">
+          {results.length > 0 && (
+            <div className="flex items-center justify-between px-1 pb-2 text-sm text-gray-600 dark:text-gray-400">
+              <div>
+                Results: <span className="font-medium text-gray-900 dark:text-white">{results.length}</span>
+                {typeof (searchStats as any)?.total === 'number' && (
+                  <>
+                    {' '}of <span className="font-medium text-gray-900 dark:text-white">{searchStats.total}</span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page <= 1 || isSearching}
+                  className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 disabled:opacity-50"
+                >Prev</button>
+                <span className="text-xs">Page {page}</span>
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={isSearching || results.length < pageSize}
+                  className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 disabled:opacity-50"
+                >Next</button>
+              </div>
+            </div>
+          )}
           {isSearching ? (
             <div className="text-center py-16">
               <motion.div

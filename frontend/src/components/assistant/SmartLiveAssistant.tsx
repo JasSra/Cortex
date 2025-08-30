@@ -63,9 +63,11 @@ const SmartLiveAssistant: React.FC = () => {
   const [theme, setTheme] = useState<'system' | 'dark' | 'light'>('system')
   const [inputText, setInputText] = useState('')
   const [availableTools, setAvailableTools] = useState<string[]>([])
+  // UI: explicit tools panel open state
+  const [showToolsPanel, setShowToolsPanel] = useState<boolean>(true)
   const [partialText, setPartialText] = useState('')
   const [confirmQueue, setConfirmQueue] = useState<Array<{ tool: string; args?: any; title?: string }>>([])
-  const [autoExecuteTools, setAutoExecuteTools] = useState(true)
+  const [autoExecuteTools, setAutoExecuteTools] = useState(false)
   const [knownAchievementIds, setKnownAchievementIds] = useState<Set<string>>(new Set())
   const [achievementToasts, setAchievementToasts] = useState<Array<{ id: string; name: string; icon?: string }>>([])
   const [resumedHistory, setResumedHistory] = useState(false)
@@ -149,7 +151,7 @@ const SmartLiveAssistant: React.FC = () => {
           return
         } else {
           // Create empty default session
-          const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }
+          const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below to begin, or type a request.", timestamp: new Date() }
           const meta1 = [{ id, title: 'New chat', createdAt, updatedAt: createdAt }]
           localStorage.setItem('cortex:chat:sessions', JSON.stringify(meta1))
           localStorage.setItem('cortex:chat:currentSessionId', id)
@@ -178,7 +180,7 @@ const SmartLiveAssistant: React.FC = () => {
         }
       }
     } catch {}
-    const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }
+  const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below to begin, or type a request.", timestamp: new Date() }
     setMessages([hello])
     mascotSpeak("I'm ready when you are. Start speaking!")
   }, [mascotSpeak])
@@ -610,7 +612,7 @@ const SmartLiveAssistant: React.FC = () => {
 
   // Clear chat
   const newChat = useCallback(() => {
-    const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below or start typing.", timestamp: new Date() }
+  const hello: Message = { id: 'welcome', role: 'assistant', content: "I’m ready. Pick a tool below to begin, or type a request.", timestamp: new Date() }
     const id = Date.now().toString(36)
     const createdAt = new Date().toISOString()
     const meta: ChatSessionMeta = { id, title: 'New chat', createdAt, updatedAt: createdAt }
@@ -635,8 +637,8 @@ const SmartLiveAssistant: React.FC = () => {
   return (
     <div className={`${containerThemeClass} h-full w-full`}>
       <div className="h-full flex bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-        {/* Working Area (left) - hidden if nothing to show */}
-        {showWorkingPane && (
+  {/* Working Area (left) - hidden if nothing to show */}
+  {showWorkingPane && (
           <div className="w-[36%] min-w-[300px] max-w-[520px] border-r border-gray-200 dark:border-gray-800 p-4 space-y-3 overflow-y-auto bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
@@ -669,6 +671,14 @@ const SmartLiveAssistant: React.FC = () => {
                 <div className="text-xs text-gray-500">Constant, interruptible interaction</div>
               </div>
               <div className="flex items-center gap-2">
+                {/* Toggle tools panel */}
+                <button
+                  className={`px-3 py-1 text-sm rounded ${showToolsPanel ? 'bg-purple-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}`}
+                  onClick={() => setShowToolsPanel(v => !v)}
+                  title="Show tools"
+                >
+                  Tools
+                </button>
                 {/* Compact session selector */}
                 <select
                   className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
@@ -731,21 +741,22 @@ const SmartLiveAssistant: React.FC = () => {
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {/* Quick start tool prompts (initial state or when suggestions available and auto-exec is off) */}
-            {(messages.length <= 1 || quickToolPrompts.length > 0) && (
+            {(showToolsPanel || messages.length <= 1 || quickToolPrompts.length > 0) && (
               <div className="mb-2">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Quick actions</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Tools</div>
                 <div className="flex flex-wrap gap-2">
                   {(
                     quickToolPrompts.length > 0
                       ? quickToolPrompts
-                      : (availableTools || []).slice(0, 8).map(t => ({ tool: t, title: t }))
+                      : (availableTools || []).map(t => ({ tool: t, title: t }))
                   ).map((t, i) => (
                     <button
                       key={`${t.tool}_${i}`}
                       onClick={() => {
                         setInputText('')
                         if (quickActionsRunTools) {
-                          runToolNow(t)
+                          // Even when quick actions are set to run, require explicit confirm
+                          runToolNow(t, true)
                         } else {
                           const phrase = `Use tool ${t.title}`
                           handleTranscript(phrase)

@@ -93,6 +93,8 @@ const SettingsPage: React.FC = () => {
   const [savedRecently, setSavedRecently] = useState(false)
   const [notifDevices, setNotifDevices] = useState<any[] | null>(null)
   const [notifHistory, setNotifHistory] = useState<any[] | null>(null)
+  const [seeding, setSeeding] = useState(false)
+  const [seedSummary, setSeedSummary] = useState<string | null>(null)
 
   const { speak, suggest, celebrate, think, idle } = useMascot()
   const { isAuthenticated, logout, user, getAccessToken, recentAuthEvent } = useAuth()
@@ -626,14 +628,26 @@ const SettingsPage: React.FC = () => {
 
   const onSeedDemoData = useCallback(async () => {
     try {
+      setSeeding(true)
+      setSeedSummary(null)
       think()
-      await seedIfNeeded()
+      const res: any = await seedIfNeeded().catch((err: any) => { throw err })
+      const hadData = !!(res?.hadData ?? res?.HadData)
+      const total = res?.total ?? res?.Total ?? undefined
       celebrate()
-      speak('Demo data has been created. Check your notes and analytics!', 'responding')
+      if (hadData) {
+        speak(`You already had data. Total notes${typeof total === 'number' ? `: ${total}` : ''}.`, 'responding')
+        setSeedSummary(`No new data created. Total notes${typeof total === 'number' ? `: ${total}` : ''}.`)
+      } else {
+        speak(`Demo data created${typeof total === 'number' ? `; total notes: ${total}` : ''}.`, 'responding')
+        setSeedSummary(`Demo data created successfully${typeof total === 'number' ? ` — total notes: ${total}` : ''}.`)
+      }
     } catch (e) {
       console.error('Seed data failed', e)
       speak('Failed to create demo data. Please try again.', 'error')
+      setSeedSummary('Failed to create demo data.')
     } finally {
+      setSeeding(false)
       idle()
     }
   }, [celebrate, idle, seedIfNeeded, speak, think])
@@ -838,10 +852,25 @@ const SettingsPage: React.FC = () => {
                         <p className="text-sm text-indigo-800 dark:text-indigo-400 mb-3">Populate your workspace with sample content to explore features.</p>
                         <button
                           onClick={onSeedDemoData}
-                          className="w-full px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                          disabled={seeding}
+                          className={`w-full px-4 py-2 rounded-lg text-white transition-colors flex items-center justify-center gap-2 ${
+                            seeding ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                          }`}
+                          title={seeding ? 'Seeding demo data…' : 'Seed demo data'}
+                          aria-busy={seeding ? 'true' : undefined}
                         >
-                          Seed Data
+                          {seeding && (
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                              className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
+                            />
+                          )}
+                          {seeding ? 'Seeding…' : 'Seed Data'}
                         </button>
+                        {seedSummary && (
+                          <p className="mt-2 text-xs text-indigo-900 dark:text-indigo-300">{seedSummary}</p>
+                        )}
                       </div>
                       <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
                         <h4 className="font-medium text-gray-900 dark:text-white mb-2">Export Account Data</h4>

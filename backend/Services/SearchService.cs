@@ -99,7 +99,9 @@ public class SearchService : ISearchService
         var mode = (request.Mode ?? "hybrid").ToLowerInvariant();
         var alpha = Math.Clamp(request.Alpha, 0.0, 1.0);
         var k = Math.Clamp(request.K <= 0 ? 10 : request.K, 1, 100);
+        var offset = Math.Max(0, request.Offset);
         var q = request.Q ?? string.Empty;
+        var fetch = Math.Min(200, offset > 0 ? offset + (k * 2) : (k * 2));
 
         var semanticScores = new Dictionary<string, double>(); // chunkId -> score
         if (mode is "hybrid" or "semantic")
@@ -107,7 +109,7 @@ public class SearchService : ISearchService
             var vec = await _embeddingService.EmbedAsync(q);
             if (vec is not null)
             {
-                var knn = await _vectorService.KnnAsync(vec, k, userId);
+                var knn = await _vectorService.KnnAsync(vec, Math.Max(k, fetch), userId);
                 // Normalize cosine distance (if present) to [0..1] score; here assume scores are similarity already
                 double max = knn.Count > 0 ? knn.Max(x => x.score) : 1e-9;
                 foreach (var (chunkId, score) in knn)
@@ -144,7 +146,7 @@ public class SearchService : ISearchService
                 var labels = labelsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 baseQuery = baseQuery.Where(x => _context.Set<NoteTag>().Any(nt => nt.NoteId == x.note.Id && _context.Set<Tag>().Any(t => t.Id == nt.TagId && labels.Contains(t.Name))));
             }
-            var limited = await baseQuery.Take(k * 2).ToListAsync();
+            var limited = await baseQuery.Take(fetch).ToListAsync();
             foreach (var row in limited)
             {
                 var score = CalculateRelevanceScore(q, row.chunk.Content);
@@ -207,8 +209,10 @@ public class SearchService : ISearchService
             }
         }
 
-        var hits = merged.Values.OrderByDescending(h => h.Score).Take(k).ToList();
-        return new SearchResponse { Hits = hits };
+        var ordered = merged.Values.OrderByDescending(h => h.Score).ToList();
+        var total = ordered.Count;
+        var hits = ordered.Skip(offset).Take(k).ToList();
+        return new SearchResponse { Hits = hits, Total = total, Offset = offset, K = k };
     }
 
     public async Task<SearchResponse> SearchAdvancedAsync(AdvancedSearchRequest request, string userId)
@@ -216,7 +220,9 @@ public class SearchService : ISearchService
         var mode = (request.Mode ?? "hybrid").ToLowerInvariant();
         var alpha = Math.Clamp(request.Alpha, 0.0, 1.0);
         var k = Math.Clamp(request.K <= 0 ? 10 : request.K, 1, 100);
+        var offset = Math.Max(0, request.Offset);
         var q = request.Q ?? string.Empty;
+        var fetch = Math.Min(300, offset > 0 ? offset + (k * 2) : (k * 2));
 
         _logger.LogInformation("Advanced search: Query='{Query}', Mode={Mode}, K={K}, Alpha={Alpha}, UseReranking={UseReranking}", 
             q, mode, k, alpha, request.UseReranking);
@@ -228,7 +234,7 @@ public class SearchService : ISearchService
             var vec = await _embeddingService.EmbedAsync(q);
             if (vec is not null)
             {
-                var knn = await _vectorService.KnnAsync(vec, k * 2, userId); // Get more candidates for reranking
+                var knn = await _vectorService.KnnAsync(vec, Math.Max(k * 2, fetch), userId); // Get more candidates for reranking/paging
                 double max = knn.Count > 0 ? knn.Max(x => x.score) : 1e-9;
                 foreach (var (chunkId, score) in knn)
                 {
@@ -346,7 +352,7 @@ public class SearchService : ISearchService
             }
         }
 
-    var hits = merged.Values.OrderByDescending(h => h.Score).Take(k * 2).ToList();
+    var hits = merged.Values.OrderByDescending(h => h.Score).Take(fetch).ToList();
 
         // Apply cross-encoder reranking if enabled
         if (request.UseReranking && !string.IsNullOrWhiteSpace(q) && hits.Count > 1)
@@ -354,7 +360,9 @@ public class SearchService : ISearchService
             hits = await ApplyCrossEncoderReranking(q, hits);
         }
 
-        return new SearchResponse { Hits = hits.Take(k).ToList() };
+        var total = hits.Count;
+        var paged = hits.Skip(offset).Take(k).ToList();
+        return new SearchResponse { Hits = paged, Total = total, Offset = offset, K = k };
     }
 
     private double CalculateBM25Score(string query, string document, double avgDocLength)

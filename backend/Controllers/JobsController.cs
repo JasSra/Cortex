@@ -16,6 +16,36 @@ public class JobsController : ControllerBase
         _logger = logger;
     }
 
+    [HttpPost("graph-enrich")]
+    public async Task<IActionResult> EnqueueGraphEnrich([FromBody] CortexApi.Services.GraphEnrichJobPayload? payload)
+    {
+        try
+        {
+            await _jobs.EnqueueJobAsync("graph_enrich", payload ?? new CortexApi.Services.GraphEnrichJobPayload());
+            return Ok(new { enqueued = true, type = "graph_enrich", noteId = payload?.NoteId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enqueue graph enrichment job");
+            return StatusCode(500, new { error = "Failed to enqueue job" });
+        }
+    }
+
+    [HttpPost("graph-enrich/{noteId}")]
+    public async Task<IActionResult> EnqueueGraphEnrichForNote(string noteId)
+    {
+        try
+        {
+            await _jobs.EnqueueJobAsync("graph_enrich", new CortexApi.Services.GraphEnrichJobPayload { NoteId = noteId });
+            return Ok(new { enqueued = true, type = "graph_enrich", noteId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enqueue graph enrichment job for note {NoteId}", noteId);
+            return StatusCode(500, new { error = "Failed to enqueue job" });
+        }
+    }
+
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus()
     {

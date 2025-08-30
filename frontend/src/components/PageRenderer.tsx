@@ -12,6 +12,7 @@ import AdvancedSearchPage from './pages/AdvancedSearchPage'
 import ModernDashboard from './dashboard/ModernDashboard'
 import DocumentsPage from './pages/DocumentsPage'
 import KnowledgeGraphPage from './pages/KnowledgeGraphPage'
+import JobsPage from './pages/JobsPage'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface PageRendererProps {
@@ -47,6 +48,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({ activeView }) => {
       return <DocumentsPage />
     case 'graph':
       return <KnowledgeGraphPage />
+    case 'jobs':
+      return <JobsPage />
     default:
       return (
         <div className="p-6">

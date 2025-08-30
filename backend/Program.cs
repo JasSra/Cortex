@@ -17,6 +17,9 @@ using Microsoft.ML;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Enable legacy code page encodings for libraries like iTextSharp (e.g., MacRoman CP10000)
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
 // Build an absolute SQLite connection string so DB path is consistent regardless of CWD
 var originalCs = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=./data/cortex.db";
 var csb = new SqliteConnectionStringBuilder(originalCs);
