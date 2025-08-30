@@ -17,13 +17,28 @@ dotnet build --configuration Release
 echo "Generating OpenAPI specification..."
 # Ensure API output directory exists
 mkdir -p ../frontend/src/api
+
+# Try Swashbuckle CLI first (most reliable)
+if ! command -v dotnet-swagger >/dev/null 2>&1; then
+	echo "Installing Swashbuckle CLI (dotnet-swagger)..."
+	dotnet tool update -g Swashbuckle.AspNetCore.Cli >/dev/null 2>&1 || dotnet tool install -g Swashbuckle.AspNetCore.Cli >/dev/null 2>&1 || true
+	export PATH="$PATH:$HOME/.dotnet/tools"
+fi
+
 if ! dotnet swagger tofile --output ../frontend/src/api/cortex-api.json bin/Release/net8.0/CortexApi.dll v1; then
-	echo "dotnet swagger not found via dotnet tool, trying 'swagger' directly..."
+	echo "dotnet swagger not available or failed; trying 'swagger' directly..."
 	if ! command -v swagger >/dev/null 2>&1; then
-		echo "'swagger' CLI not found, falling back to running the backend and fetching /swagger/v1/swagger.json..."
+		echo "'swagger' CLI not found. Falling back to running the backend and fetching /swagger/v1/swagger.json on a free port..."
 		export ASPNETCORE_ENVIRONMENT=Development
-		export ASPNETCORE_URLS=${ASPNETCORE_URLS:-http://localhost:8081}
-		dotnet run --no-build &
+		# Pick a free port starting from 8085
+		for p in 8085 8086 8087 8090; do
+			if ! lsof -ti tcp:$p >/dev/null 2>&1; then
+				FREE_PORT=$p
+				break
+			fi
+		done
+		export ASPNETCORE_URLS="http://localhost:${FREE_PORT:-8085}"
+	dotnet run --no-build --configuration Release --no-launch-profile &
 		API_PID=$!
 		echo "Started backend (PID: $API_PID) at $ASPNETCORE_URLS"
 		# Wait for the server to be up
@@ -43,10 +58,16 @@ if ! dotnet swagger tofile --output ../frontend/src/api/cortex-api.json bin/Rele
 	else
 		# Try using the swagger CLI directly
 		if ! swagger tofile --output ../frontend/src/api/cortex-api.json bin/Release/net8.0/CortexApi.dll v1; then
-			echo "'swagger' CLI failed. Falling back to running backend to fetch swagger JSON..."
+			echo "'swagger' CLI failed. Falling back to running backend to fetch swagger JSON on a free port..."
 			export ASPNETCORE_ENVIRONMENT=Development
-			export ASPNETCORE_URLS=${ASPNETCORE_URLS:-http://localhost:8081}
-			dotnet run --no-build &
+			for p in 8085 8086 8087 8090; do
+				if ! lsof -ti tcp:$p >/dev/null 2>&1; then
+					FREE_PORT=$p
+					break
+				fi
+			done
+			export ASPNETCORE_URLS="http://localhost:${FREE_PORT:-8085}"
+			dotnet run --no-build --configuration Release --no-launch-profile &
 			API_PID=$!
 			echo "Started backend (PID: $API_PID) at $ASPNETCORE_URLS"
 			for i in {1..60}; do

@@ -1463,7 +1463,7 @@ export class CortexApiClient {
      * @param body (optional) 
      * @return Success
      */
-    stream(body: RagQueryRequest | undefined): Promise<void> {
+    streamPOST(body: RagQueryRequest | undefined): Promise<void> {
         let url_ = this.baseUrl + "/api/Rag/stream";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -1478,11 +1478,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processStream(_response);
+            return this.processStreamPOST(_response);
         });
     }
 
-    protected processStream(response: Response): Promise<void> {
+    protected processStreamPOST(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -1775,6 +1775,39 @@ export class CortexApiClient {
     }
 
     protected processAdvanced(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    seedData(): Promise<void> {
+        let url_ = this.baseUrl + "/api/seed-data";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processSeedData(_response);
+        });
+    }
+
+    protected processSeedData(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -2282,6 +2315,258 @@ export class CortexApiClient {
     /**
      * @return Success
      */
+    settingsGET(): Promise<UserSettingsDto> {
+        let url_ = this.baseUrl + "/api/User/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processSettingsGET(_response);
+        });
+    }
+
+    protected processSettingsGET(response: Response): Promise<UserSettingsDto> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = UserSettingsDto.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Unauthorized", status, _responseText, _headers, result401);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<UserSettingsDto>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    settingsPUT(body: UserSettingsDto | undefined): Promise<UserSettingsDto> {
+        let url_ = this.baseUrl + "/api/User/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processSettingsPUT(_response);
+        });
+    }
+
+    protected processSettingsPUT(response: Response): Promise<UserSettingsDto> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = UserSettingsDto.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Unauthorized", status, _responseText, _headers, result401);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<UserSettingsDto>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    export(): Promise<AccountExportResponse> {
+        let url_ = this.baseUrl + "/api/User/account/export";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processExport(_response);
+        });
+    }
+
+    protected processExport(response: Response): Promise<AccountExportResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AccountExportResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Unauthorized", status, _responseText, _headers, result401);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AccountExportResponse>(null as any);
+    }
+
+    /**
+     * @return No Content
+     */
+    data(): Promise<void> {
+        let url_ = this.baseUrl + "/api/User/account/data";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processData(_response);
+        });
+    }
+
+    protected processData(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 204) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Unauthorized", status, _responseText, _headers, result401);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return No Content
+     */
+    account(): Promise<void> {
+        let url_ = this.baseUrl + "/api/User/account";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processAccount(_response);
+        });
+    }
+
+    protected processAccount(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 204) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            let result401: any = null;
+            let resultData401 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result401 = ProblemDetails.fromJS(resultData401);
+            return throwException("Unauthorized", status, _responseText, _headers, result401);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
     stt(): Promise<void> {
         let url_ = this.baseUrl + "/api/Voice/stt";
         url_ = url_.replace(/[?&]$/, "");
@@ -2349,6 +2634,145 @@ export class CortexApiClient {
         }
         return Promise.resolve<void>(null as any);
     }
+
+    /**
+     * @param text (optional) 
+     * @param format (optional) 
+     * @return Success
+     */
+    streamGET(text: string | undefined, format: string | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Voice/tts/stream?";
+        if (text === null)
+            throw new Error("The parameter 'text' cannot be null.");
+        else if (text !== undefined)
+            url_ += "text=" + encodeURIComponent("" + text) + "&";
+        if (format === null)
+            throw new Error("The parameter 'format' cannot be null.");
+        else if (format !== undefined)
+            url_ += "format=" + encodeURIComponent("" + format) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processStreamGET(_response);
+        });
+    }
+
+    protected processStreamGET(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+}
+
+export class AccountExportResponse implements IAccountExportResponse {
+    profile?: UserProfile;
+    notes?: Note[] | undefined;
+    chunks?: NoteChunk[] | undefined;
+    classifications?: Classification[] | undefined;
+    noteTags?: NoteTag[] | undefined;
+    achievements?: UserAchievementExport[] | undefined;
+
+    constructor(data?: IAccountExportResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.profile = _data["profile"] ? UserProfile.fromJS(_data["profile"]) : <any>undefined;
+            if (Array.isArray(_data["notes"])) {
+                this.notes = [] as any;
+                for (let item of _data["notes"])
+                    this.notes!.push(Note.fromJS(item));
+            }
+            if (Array.isArray(_data["chunks"])) {
+                this.chunks = [] as any;
+                for (let item of _data["chunks"])
+                    this.chunks!.push(NoteChunk.fromJS(item));
+            }
+            if (Array.isArray(_data["classifications"])) {
+                this.classifications = [] as any;
+                for (let item of _data["classifications"])
+                    this.classifications!.push(Classification.fromJS(item));
+            }
+            if (Array.isArray(_data["noteTags"])) {
+                this.noteTags = [] as any;
+                for (let item of _data["noteTags"])
+                    this.noteTags!.push(NoteTag.fromJS(item));
+            }
+            if (Array.isArray(_data["achievements"])) {
+                this.achievements = [] as any;
+                for (let item of _data["achievements"])
+                    this.achievements!.push(UserAchievementExport.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): AccountExportResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new AccountExportResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["profile"] = this.profile ? this.profile.toJSON() : <any>undefined;
+        if (Array.isArray(this.notes)) {
+            data["notes"] = [];
+            for (let item of this.notes)
+                data["notes"].push(item.toJSON());
+        }
+        if (Array.isArray(this.chunks)) {
+            data["chunks"] = [];
+            for (let item of this.chunks)
+                data["chunks"].push(item.toJSON());
+        }
+        if (Array.isArray(this.classifications)) {
+            data["classifications"] = [];
+            for (let item of this.classifications)
+                data["classifications"].push(item.toJSON());
+        }
+        if (Array.isArray(this.noteTags)) {
+            data["noteTags"] = [];
+            for (let item of this.noteTags)
+                data["noteTags"].push(item.toJSON());
+        }
+        if (Array.isArray(this.achievements)) {
+            data["achievements"] = [];
+            for (let item of this.achievements)
+                data["achievements"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface IAccountExportResponse {
+    profile?: UserProfile;
+    notes?: Note[] | undefined;
+    chunks?: NoteChunk[] | undefined;
+    classifications?: Classification[] | undefined;
+    noteTags?: NoteTag[] | undefined;
+    achievements?: UserAchievementExport[] | undefined;
 }
 
 export class Achievement implements IAchievement {
@@ -4427,6 +4851,70 @@ export interface IProactiveSuggestion {
     estimatedTimeMinutes?: number;
 }
 
+export class ProblemDetails implements IProblemDetails {
+    type?: string | undefined;
+    title?: string | undefined;
+    status?: number | undefined;
+    detail?: string | undefined;
+    instance?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IProblemDetails) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.type = _data["type"];
+            this.title = _data["title"];
+            this.status = _data["status"];
+            this.detail = _data["detail"];
+            this.instance = _data["instance"];
+        }
+    }
+
+    static fromJS(data: any): ProblemDetails {
+        data = typeof data === 'object' ? data : {};
+        let result = new ProblemDetails();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["type"] = this.type;
+        data["title"] = this.title;
+        data["status"] = this.status;
+        data["detail"] = this.detail;
+        data["instance"] = this.instance;
+        return data;
+    }
+}
+
+export interface IProblemDetails {
+    type?: string | undefined;
+    title?: string | undefined;
+    status?: number | undefined;
+    detail?: string | undefined;
+    instance?: string | undefined;
+
+    [key: string]: any;
+}
+
 export class RagQueryRequest implements IRagQueryRequest {
     messages?: StringStringValueTuple[] | undefined;
     topK?: number;
@@ -5081,6 +5569,58 @@ export interface IUserAchievement {
     achievement?: Achievement;
 }
 
+export class UserAchievementExport implements IUserAchievementExport {
+    id?: string | undefined;
+    earnedAt?: Date;
+    progress?: number;
+    hasSeen?: boolean;
+    achievement?: Achievement;
+
+    constructor(data?: IUserAchievementExport) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.id = _data["id"];
+            this.earnedAt = _data["earnedAt"] ? new Date(_data["earnedAt"].toString()) : <any>undefined;
+            this.progress = _data["progress"];
+            this.hasSeen = _data["hasSeen"];
+            this.achievement = _data["achievement"] ? Achievement.fromJS(_data["achievement"]) : <any>undefined;
+        }
+    }
+
+    static fromJS(data: any): UserAchievementExport {
+        data = typeof data === 'object' ? data : {};
+        let result = new UserAchievementExport();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["id"] = this.id;
+        data["earnedAt"] = this.earnedAt ? this.earnedAt.toISOString() : <any>undefined;
+        data["progress"] = this.progress;
+        data["hasSeen"] = this.hasSeen;
+        data["achievement"] = this.achievement ? this.achievement.toJSON() : <any>undefined;
+        return data;
+    }
+}
+
+export interface IUserAchievementExport {
+    id?: string | undefined;
+    earnedAt?: Date;
+    progress?: number;
+    hasSeen?: boolean;
+    achievement?: Achievement;
+}
+
 export class UserProfile implements IUserProfile {
     id?: string | undefined;
     subjectId?: string | undefined;
@@ -5102,6 +5642,7 @@ export class UserProfile implements IUserProfile {
     experiencePoints?: number;
     level?: number;
     userAchievements?: UserAchievement[] | undefined;
+    voicePinHash?: string | undefined;
 
     constructor(data?: IUserProfile) {
         if (data) {
@@ -5138,6 +5679,7 @@ export class UserProfile implements IUserProfile {
                 for (let item of _data["userAchievements"])
                     this.userAchievements!.push(UserAchievement.fromJS(item));
             }
+            this.voicePinHash = _data["voicePinHash"];
         }
     }
 
@@ -5174,6 +5716,7 @@ export class UserProfile implements IUserProfile {
             for (let item of this.userAchievements)
                 data["userAchievements"].push(item.toJSON());
         }
+        data["voicePinHash"] = this.voicePinHash;
         return data;
     }
 }
@@ -5199,6 +5742,167 @@ export interface IUserProfile {
     experiencePoints?: number;
     level?: number;
     userAchievements?: UserAchievement[] | undefined;
+    voicePinHash?: string | undefined;
+}
+
+export class UserSettingsDto implements IUserSettingsDto {
+    timezone?: string | undefined;
+    language?: string | undefined;
+    profileVisibility?: string | undefined;
+    dataSharing?: boolean;
+    analyticsOptIn?: boolean;
+    searchHistory?: boolean;
+    voiceEnabled?: boolean;
+    wakeWord?: string | undefined;
+    voiceLanguage?: string | undefined;
+    voiceSpeed?: number;
+    voiceVolume?: number;
+    microphoneSensitivity?: number;
+    continuousListening?: boolean;
+    mascotEnabled?: boolean;
+    mascotPersonality?: string | undefined;
+    mascotAnimations?: boolean;
+    mascotVoice?: boolean;
+    mascotProactivity?: number;
+    theme?: string | undefined;
+    primaryColor?: string | undefined;
+    fontSize?: string | undefined;
+    reducedMotion?: boolean;
+    highContrast?: boolean;
+    emailNotifications?: boolean;
+    pushNotifications?: boolean;
+    achievementNotifications?: boolean;
+    weeklyDigest?: boolean;
+    maintenanceAlerts?: boolean;
+    twoFactorEnabled?: boolean;
+    loginAlerts?: boolean;
+    sessionTimeout?: number;
+    dataEncryption?: boolean;
+
+    constructor(data?: IUserSettingsDto) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.timezone = _data["timezone"];
+            this.language = _data["language"];
+            this.profileVisibility = _data["profileVisibility"];
+            this.dataSharing = _data["dataSharing"];
+            this.analyticsOptIn = _data["analyticsOptIn"];
+            this.searchHistory = _data["searchHistory"];
+            this.voiceEnabled = _data["voiceEnabled"];
+            this.wakeWord = _data["wakeWord"];
+            this.voiceLanguage = _data["voiceLanguage"];
+            this.voiceSpeed = _data["voiceSpeed"];
+            this.voiceVolume = _data["voiceVolume"];
+            this.microphoneSensitivity = _data["microphoneSensitivity"];
+            this.continuousListening = _data["continuousListening"];
+            this.mascotEnabled = _data["mascotEnabled"];
+            this.mascotPersonality = _data["mascotPersonality"];
+            this.mascotAnimations = _data["mascotAnimations"];
+            this.mascotVoice = _data["mascotVoice"];
+            this.mascotProactivity = _data["mascotProactivity"];
+            this.theme = _data["theme"];
+            this.primaryColor = _data["primaryColor"];
+            this.fontSize = _data["fontSize"];
+            this.reducedMotion = _data["reducedMotion"];
+            this.highContrast = _data["highContrast"];
+            this.emailNotifications = _data["emailNotifications"];
+            this.pushNotifications = _data["pushNotifications"];
+            this.achievementNotifications = _data["achievementNotifications"];
+            this.weeklyDigest = _data["weeklyDigest"];
+            this.maintenanceAlerts = _data["maintenanceAlerts"];
+            this.twoFactorEnabled = _data["twoFactorEnabled"];
+            this.loginAlerts = _data["loginAlerts"];
+            this.sessionTimeout = _data["sessionTimeout"];
+            this.dataEncryption = _data["dataEncryption"];
+        }
+    }
+
+    static fromJS(data: any): UserSettingsDto {
+        data = typeof data === 'object' ? data : {};
+        let result = new UserSettingsDto();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["timezone"] = this.timezone;
+        data["language"] = this.language;
+        data["profileVisibility"] = this.profileVisibility;
+        data["dataSharing"] = this.dataSharing;
+        data["analyticsOptIn"] = this.analyticsOptIn;
+        data["searchHistory"] = this.searchHistory;
+        data["voiceEnabled"] = this.voiceEnabled;
+        data["wakeWord"] = this.wakeWord;
+        data["voiceLanguage"] = this.voiceLanguage;
+        data["voiceSpeed"] = this.voiceSpeed;
+        data["voiceVolume"] = this.voiceVolume;
+        data["microphoneSensitivity"] = this.microphoneSensitivity;
+        data["continuousListening"] = this.continuousListening;
+        data["mascotEnabled"] = this.mascotEnabled;
+        data["mascotPersonality"] = this.mascotPersonality;
+        data["mascotAnimations"] = this.mascotAnimations;
+        data["mascotVoice"] = this.mascotVoice;
+        data["mascotProactivity"] = this.mascotProactivity;
+        data["theme"] = this.theme;
+        data["primaryColor"] = this.primaryColor;
+        data["fontSize"] = this.fontSize;
+        data["reducedMotion"] = this.reducedMotion;
+        data["highContrast"] = this.highContrast;
+        data["emailNotifications"] = this.emailNotifications;
+        data["pushNotifications"] = this.pushNotifications;
+        data["achievementNotifications"] = this.achievementNotifications;
+        data["weeklyDigest"] = this.weeklyDigest;
+        data["maintenanceAlerts"] = this.maintenanceAlerts;
+        data["twoFactorEnabled"] = this.twoFactorEnabled;
+        data["loginAlerts"] = this.loginAlerts;
+        data["sessionTimeout"] = this.sessionTimeout;
+        data["dataEncryption"] = this.dataEncryption;
+        return data;
+    }
+}
+
+export interface IUserSettingsDto {
+    timezone?: string | undefined;
+    language?: string | undefined;
+    profileVisibility?: string | undefined;
+    dataSharing?: boolean;
+    analyticsOptIn?: boolean;
+    searchHistory?: boolean;
+    voiceEnabled?: boolean;
+    wakeWord?: string | undefined;
+    voiceLanguage?: string | undefined;
+    voiceSpeed?: number;
+    voiceVolume?: number;
+    microphoneSensitivity?: number;
+    continuousListening?: boolean;
+    mascotEnabled?: boolean;
+    mascotPersonality?: string | undefined;
+    mascotAnimations?: boolean;
+    mascotVoice?: boolean;
+    mascotProactivity?: number;
+    theme?: string | undefined;
+    primaryColor?: string | undefined;
+    fontSize?: string | undefined;
+    reducedMotion?: boolean;
+    highContrast?: boolean;
+    emailNotifications?: boolean;
+    pushNotifications?: boolean;
+    achievementNotifications?: boolean;
+    weeklyDigest?: boolean;
+    maintenanceAlerts?: boolean;
+    twoFactorEnabled?: boolean;
+    loginAlerts?: boolean;
+    sessionTimeout?: number;
+    dataEncryption?: boolean;
 }
 
 export class VoicePinSetRequest implements IVoicePinSetRequest {

@@ -50,6 +50,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return res
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const initializeAuth = async () => {
       await msalInstance.initialize()
@@ -65,11 +66,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const created = await handleUserProfile(response.account, response.accessToken)
         setRecentAuthEvent(created ? 'signup' : 'login')
       } else {
-        // Check for existing accounts
+        // Check for existing accounts and validate token
         const accounts = msalInstance.getAllAccounts()
         if (accounts.length > 0) {
-          setUser(accounts[0])
-          setIsAuthenticated(true)
+          try {
+            const token = await msalInstance.acquireTokenSilent({ ...tokenRequest, account: accounts[0] })
+            if (token && token.accessToken) {
+              setUser(accounts[0])
+              setIsAuthenticated(true)
+            } else {
+              await msalInstance.logoutRedirect({ postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri })
+              return
+            }
+          } catch (e) {
+            console.warn('Existing session invalid, logging out', e)
+            await msalInstance.logoutRedirect({ postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri })
+            return
+          }
         }
       }
       

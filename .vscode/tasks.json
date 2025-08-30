@@ -66,6 +66,12 @@
 			"type": "shell",
 			"command": "dotnet build",
 			"group": "build"
+		},
+		{
+			"label": "frontend-build",
+			"type": "shell",
+			"command": "npm run --silent build",
+			"group": "build"
 		}
 	]
 }

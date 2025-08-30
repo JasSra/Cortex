@@ -86,6 +86,48 @@ public class VoiceController : ControllerBase
             return StatusCode(500, new { error = "Failed to generate speech", details = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Stream text-to-speech audio progressively. Accepts query params: text, optional format.
+    /// Also supports access_token on query for media element compatibility.
+    /// </summary>
+    [HttpGet("tts/stream")]
+    public async Task<IActionResult> StreamTextToSpeech([FromQuery] string text, [FromQuery] string? format = null)
+    {
+        if (!Rbac.RequireRole(_userContext, "Reader"))
+            return Forbid("Reader role required");
+
+        if (string.IsNullOrWhiteSpace(text))
+            return BadRequest("Text is required");
+
+        _logger.LogInformation("TTS stream request for user {UserId}, text length: {Length}", _userContext.UserId, text.Length);
+
+        try
+        {
+            // Generate full audio (service does not support real streaming yet)
+            var audioData = await _voiceService.GenerateTtsAsync(text);
+            var contentType = string.Equals(format, "mp3", StringComparison.OrdinalIgnoreCase) ? "audio/mpeg" : "audio/wav";
+
+            // Write in chunks to enable progressive playback
+            Response.StatusCode = 200;
+            Response.ContentType = contentType;
+            const int chunk = 16 * 1024;
+            int offset = 0;
+            while (offset < audioData.Length)
+            {
+                int len = Math.Min(chunk, audioData.Length - offset);
+                await Response.Body.WriteAsync(audioData, offset, len);
+                offset += len;
+                await Response.Body.FlushAsync();
+            }
+            return new EmptyResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Streaming TTS error for user {UserId}", _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to stream speech", details = ex.Message });
+        }
+    }
 }
 
 /// <summary>
