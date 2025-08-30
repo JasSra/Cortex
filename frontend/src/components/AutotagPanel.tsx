@@ -413,7 +413,7 @@ export default function AutotagPanel({
       {suggestions.length === 0 && !loading && (
         <div className="text-center py-8 text-gray-500">
           <FontAwesomeIcon icon={faRobot} className="text-4xl mb-2" />
-          <p>Click "Analyze" to get AI-powered tag suggestions</p>
+          <p>Click &quot;Analyze&quot; to get AI-powered tag suggestions</p>
           <p className="text-sm">AI will analyze content for topics, sensitivity, and more</p>
         </div>
       )}

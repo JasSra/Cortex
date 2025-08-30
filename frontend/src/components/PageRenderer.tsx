@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import ChatAssistantPage from './pages/ChatAssistantPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import SettingsPage from './pages/SettingsPage'
 import AchievementsPanel from './gamification/AchievementsPanel'
@@ -47,14 +48,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({ activeView }) => {
         </div>
       )
     case 'chat':
-      return (
-        <div className="p-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-4">Chat Assistant</h1>
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-700">
-            <p className="text-gray-600 dark:text-slate-400">Chat assistant will be implemented here</p>
-          </div>
-        </div>
-      )
+  return <ChatAssistantPage />
     case 'documents':
       return (
         <div className="p-6">
