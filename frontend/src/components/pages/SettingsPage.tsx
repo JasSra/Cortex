@@ -22,7 +22,7 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { useMascot } from '@/contexts/MascotContext'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth, getUserEmail } from '@/contexts/AuthContext'
 import { useSeedApi, useUserApi, useNotificationsApi, useVoiceApi, useMascotApi } from '@/services/apiClient'
 import type { MascotProfileDto } from '@/services/types/mascot'
 
@@ -91,13 +91,12 @@ const SettingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savedRecently, setSavedRecently] = useState(false)
-  const [showConfirmation, setShowConfirmation] = useState<string | null>(null)
   const [notifDevices, setNotifDevices] = useState<any[] | null>(null)
   const [notifHistory, setNotifHistory] = useState<any[] | null>(null)
 
   const { speak, suggest, celebrate, think, idle } = useMascot()
   const { isAuthenticated, logout, user, getAccessToken, recentAuthEvent } = useAuth()
-  const { exportAccountData, deleteAccountData, deleteAccount, getProfile, createOrUpdateProfile, getSettings, updateSettings } = useUserApi()
+  const { getProfile, createOrUpdateProfile, deleteProfile, getSettings, updateSettings } = useUserApi()
   const { seedIfNeeded } = useSeedApi()
   const notificationsApi = useNotificationsApi()
   const voiceApi = useVoiceApi()
@@ -191,7 +190,7 @@ const SettingsPage: React.FC = () => {
         // Provide defaults for missing settings
         const defaultSettings: UserSettings = {
           displayName: profile?.name || 'User',
-          email: profile?.email || '',
+          email: profile?.email || getUserEmail(user) || '',
           avatar: profile?.avatar,
           bio: profile?.bio || '',
           timezone: prefs?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -279,7 +278,7 @@ const SettingsPage: React.FC = () => {
     }
 
     loadSettings()
-  }, [isAuthenticated, speak, think, idle, getProfile, getSettings])
+  }, [isAuthenticated, user, speak, think, idle, getProfile, getSettings])
 
   // Load token claims only when viewing Security tab (avoids unnecessary work)
   useEffect(() => {
@@ -403,18 +402,24 @@ const SettingsPage: React.FC = () => {
     setSettings(prev => prev ? { ...prev, [key]: value } : null)
   }
 
-  // Handle dangerous actions
+  // Handle dangerous actions with modal confirmation
+  const [pendingAction, setPendingAction] = useState<{action: string, callback: () => void} | null>(null)
+  
   const handleDangerousAction = useCallback((action: string, callback: () => void) => {
-    setShowConfirmation(action)
-    // Simulate confirmation dialog
-    setTimeout(() => {
-      if (confirm(`Are you sure you want to ${action}?`)) {
-        callback()
-        speak(`${action} completed.`, 'responding')
-      }
-      setShowConfirmation(null)
-    }, 100)
-  }, [speak])
+    setPendingAction({ action, callback })
+  }, [])
+  
+  const confirmDangerousAction = useCallback(() => {
+    if (pendingAction) {
+      pendingAction.callback()
+      speak(`${pendingAction.action} completed.`, 'responding')
+      setPendingAction(null)
+    }
+  }, [pendingAction, speak])
+  
+  const cancelDangerousAction = useCallback(() => {
+    setPendingAction(null)
+  }, [])
 
   // Desktop notifications helper
   const enableDesktopNotifications = useCallback(async () => {
@@ -571,32 +576,20 @@ const SettingsPage: React.FC = () => {
   const onExportData = useCallback(async () => {
     try {
       think()
-      const data = await exportAccountData()
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `cortex-account-export-${new Date().toISOString().slice(0,10)}.json`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-      speak('Your data export is ready and downloading.', 'responding')
+      speak('Data export feature is not yet implemented.', 'responding')
     } catch (e) {
       console.error('Export failed', e)
       speak('Failed to export account data. Please try again.', 'error')
     } finally {
       idle()
     }
-  }, [exportAccountData, idle, speak, think])
+  }, [idle, speak, think])
 
   const onDeleteAccountData = useCallback(async () => {
     handleDangerousAction('delete your account data (keep account)', async () => {
       try {
         think()
-        await deleteAccountData()
-        celebrate()
-        speak('All your data has been deleted. Your account remains active.', 'responding')
+        speak('Account data deletion feature is not yet implemented.', 'responding')
       } catch (e) {
         console.error('Delete data failed', e)
         speak('Failed to delete your data. Please try again.', 'error')
@@ -604,17 +597,24 @@ const SettingsPage: React.FC = () => {
         idle()
       }
     })
-  }, [celebrate, deleteAccountData, handleDangerousAction, idle, speak, think])
+  }, [handleDangerousAction, idle, speak, think])
 
   const onDeleteAccount = useCallback(async () => {
     handleDangerousAction('delete your account permanently', async () => {
       try {
         think()
-        await deleteAccount()
-  celebrate()
-  speak('Your account has been deleted. We hope to see you again.', 'responding')
-  // Sign out and redirect instead of reload
-  setTimeout(() => { logout() }, 600)
+        speak('Deleting your account...', 'responding')
+        
+        // Call the actual delete API
+        await deleteProfile()
+        
+        // Redirect to sign out or home page after deletion
+        speak('Your account has been deleted successfully.', 'responding')
+        
+        // Force sign out after successful deletion
+        if (typeof window !== 'undefined') {
+          window.location.href = '/'
+        }
       } catch (e) {
         console.error('Delete account failed', e)
         speak('Failed to delete your account. Please try again.', 'error')
@@ -622,7 +622,7 @@ const SettingsPage: React.FC = () => {
         idle()
       }
     })
-  }, [celebrate, deleteAccount, handleDangerousAction, idle, logout, speak, think])
+  }, [deleteProfile, handleDangerousAction, idle, speak, think])
 
   const onSeedDemoData = useCallback(async () => {
     try {
@@ -1678,6 +1678,67 @@ const SettingsPage: React.FC = () => {
               <CheckIcon className="w-5 h-5" />
               <span>Settings saved successfully!</span>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {pendingAction && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            onClick={cancelDangerousAction}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-shrink-0">
+                  <ExclamationTriangleIcon className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Confirm Action
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-700 dark:text-gray-300">
+                  Are you sure you want to <strong>{pendingAction.action}</strong>?
+                  {pendingAction.action.includes('delete your account') && (
+                    <span className="block mt-2 text-sm text-red-600 dark:text-red-400">
+                      This will permanently delete all your data, notes, and settings.
+                    </span>
+                  )}
+                </p>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={cancelDangerousAction}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDangerousAction}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  {pendingAction.action.includes('delete') ? 'Delete' : 'Confirm'}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

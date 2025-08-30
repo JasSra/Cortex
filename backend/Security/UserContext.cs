@@ -71,12 +71,18 @@ public class UserContextMiddleware
             // Use subject ID as primary user identifier for data binding
             userId = subjectId ?? email ?? "default";
 
-            // Extract roles from claims (support Azure AD B2C extension, standard roles and custom claim 'roles')
-            var roleClaims = context.User.FindAll(ClaimTypes.Role)
-                               .Concat(context.User.FindAll("roles"))
-                               .Concat(context.User.FindAll("extension_Role"))
-                               .Select(c => c.Value)
-                               .ToList();
+            // Extract roles from claims (standard + app roles + B2C custom attributes)
+            var roleClaims = new List<string>();
+            roleClaims.AddRange(context.User.FindAll(ClaimTypes.Role).Select(c => c.Value));
+            roleClaims.AddRange(context.User.FindAll("roles").Select(c => c.Value));
+            roleClaims.AddRange(context.User.FindAll("role").Select(c => c.Value));
+            roleClaims.AddRange(context.User.FindAll("extension_Role").Select(c => c.Value));
+            // Dynamic B2C custom attribute (extension_<guid>_Role)
+            var extRoleClaims = context.User.Claims
+                .Where(c => c.Type.StartsWith("extension_", StringComparison.OrdinalIgnoreCase)
+                         && c.Type.EndsWith("_Role", StringComparison.OrdinalIgnoreCase))
+                .Select(c => c.Value);
+            roleClaims.AddRange(extRoleClaims);
 
             roles.AddRange(roleClaims);
 
@@ -86,6 +92,20 @@ public class UserContextMiddleware
             if (!string.IsNullOrWhiteSpace(scopeRaw))
             {
                 var scopes = scopeRaw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                // Generic mappings for common names (adjust to your API scopes)
+                if (scopes.Any(s => s.Contains("admin", StringComparison.OrdinalIgnoreCase)))
+                {
+                    roles.AddRange(new[] { "Admin", "Editor", "Reader" });
+                }
+                if (scopes.Any(s => s.Contains("editor", StringComparison.OrdinalIgnoreCase) || s.Contains("write", StringComparison.OrdinalIgnoreCase)))
+                {
+                    roles.AddRange(new[] { "Editor", "Reader" });
+                }
+                if (scopes.Any(s => s.Contains("read", StringComparison.OrdinalIgnoreCase) || s.Contains("user", StringComparison.OrdinalIgnoreCase)))
+                {
+                    roles.Add("Reader");
+                }
+                // Back-compat mapping
                 if (scopes.Contains("Consolidated.Administrator", StringComparer.OrdinalIgnoreCase))
                 {
                     roles.AddRange(new[] { "Admin", "Editor", "Reader" });
@@ -119,7 +139,20 @@ public class UserContextMiddleware
             }
         }
 
-        // Do not inject default roles in production. In Development, keep dev-friendly defaults.
+        // Merge DB-assigned roles
+        try
+        {
+            using var scope = context.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<CortexApi.Data.CortexDbContext>();
+            var assigned = db.UserRoleAssignments
+                .Where(r => r.SubjectId == (subjectId ?? userId))
+                .Select(r => r.Role)
+                .ToList();
+            roles.AddRange(assigned);
+        }
+        catch { }
+
+        // In Development, grant defaults if no roles are present (dev convenience)
         if (roles.Count == 0 && _env.IsDevelopment())
         {
             roles = new List<string> { "Admin", "Editor", "Reader" };

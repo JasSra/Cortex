@@ -94,7 +94,8 @@ nswag openapi2tsclient \
 	/input:../frontend/src/api/cortex-api.json \
 	/output:../frontend/src/api/cortex-api-client.ts \
 	/template:Fetch \
-	/className:CortexApiClient
+	/className:CortexApiClient \
+	/runtime:Net80
 
 echo "TypeScript API client generated successfully!"
 echo "Location: frontend/src/api/cortex-api-client.ts"

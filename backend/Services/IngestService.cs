@@ -20,6 +20,7 @@ public interface IIngestService
 {
     Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files);
     Task<List<IngestResult>> IngestFolderAsync(string folderPath);
+    Task<IngestResult?> IngestTextAsync(string title, string content);
     Task<Note?> GetNoteAsync(string noteId);
     Task<List<Note>> GetUserNotesAsync(string userId, int limit = 20, int offset = 0);
 }
@@ -106,6 +107,70 @@ public class IngestService : IIngestService
         }
 
         return results;
+    }
+
+    public async Task<IngestResult?> IngestTextAsync(string title, string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return null;
+        }
+
+        // Calculate SHA-256 hash from content
+        var hash = CalculateSha256FromText(content);
+
+        // Check if content already exists
+        var existingNote = await _context.Notes.FirstOrDefaultAsync(n => n.Sha256Hash == hash);
+        if (existingNote != null)
+        {
+            _logger.LogInformation("Text content already exists with ID {NoteId}", existingNote.Id);
+            return new IngestResult
+            {
+                NoteId = existingNote.Id,
+                Title = existingNote.Title,
+                CountChunks = existingNote.ChunkCount
+            };
+        }
+
+        var now = DateTime.UtcNow;
+        
+        // Create note and chunks directly from text
+        var note = new Note
+        {
+            UserId = _user.UserId ?? "dev-user",
+            Title = string.IsNullOrWhiteSpace(title) ? $"Note {now:yyyy-MM-dd HH:mm}" : title,
+            Content = content,
+            OriginalPath = "text-input",
+            FilePath = string.Empty,
+            FileType = ".txt",
+            Sha256Hash = hash,
+            FileSizeBytes = Encoding.UTF8.GetByteCount(content),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        var chunks = ChunkText(content, note.Id);
+        note.ChunkCount = chunks.Count;
+        note.Chunks = chunks;
+
+        // Perform auto-classification on the content
+        await PerformAutoClassificationAsync(note, content);
+
+        _context.Notes.Add(note);
+        await _context.SaveChangesAsync();
+
+        // Enqueue chunks for embedding
+        foreach (var ch in chunks)
+        {
+            await _vectorService.EnqueueEmbedAsync(note, ch);
+        }
+
+        return new IngestResult
+        {
+            NoteId = note.Id,
+            Title = note.Title,
+            CountChunks = note.ChunkCount
+        };
     }
 
     public async Task<Note?> GetNoteAsync(string noteId)
@@ -264,6 +329,14 @@ public class IngestService : IIngestService
     {
         using var sha256 = SHA256.Create();
         var hash = await Task.Run(() => sha256.ComputeHash(stream));
+        return Convert.ToHexString(hash).ToLower();
+    }
+
+    private string CalculateSha256FromText(string text)
+    {
+        using var sha256 = SHA256.Create();
+        var bytes = Encoding.UTF8.GetBytes(text);
+        var hash = sha256.ComputeHash(bytes);
         return Convert.ToHexString(hash).ToLower();
     }
 

@@ -48,6 +48,13 @@ public class Note
     public virtual ICollection<TextSpan> Spans { get; set; } = new List<TextSpan>();
 }
 
+public class CreateNoteRequest
+{
+    public string? Title { get; set; }
+    [Required]
+    public string Content { get; set; } = string.Empty;
+}
+
 public class UserProfile
 {
     [Key]
@@ -152,9 +159,18 @@ public class UserProfile
     public string? VoicePinHash { get; set; }
 }
 
-/// <summary>
-/// Achievement definitions
-/// </summary>
+// App-managed role assignment for users (merged with JWT roles)
+public class UserRoleAssignment
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    [Required]
+    public string SubjectId { get; set; } = string.Empty;
+    [Required]
+    public string Role { get; set; } = string.Empty; // Admin|Editor|Reader
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class Achievement
 {
     [Key]
@@ -211,9 +227,6 @@ public class Achievement
     public virtual ICollection<UserAchievement> UserAchievements { get; set; } = new List<UserAchievement>();
 }
 
-/// <summary>
-/// Bridge table for user achievements with earned timestamp
-/// </summary>
 public class UserAchievement
 {
     [Key]
@@ -248,7 +261,7 @@ public class UserAchievement
     /// Navigation to user profile
     /// </summary>
     public virtual UserProfile UserProfile { get; set; } = null!;
-    
+
     /// <summary>
     /// Navigation to achievement
     /// </summary>
@@ -464,7 +477,7 @@ public class RagCitation
 
 public class AgentActRequest
 {
-    public string Tool { get; set; } = string.Empty;
+    public string Tool { get; set; } = string.Empty; // search_hybrid, tag_apply, etc.
     public JsonElement Args { get; set; }
 }
 
@@ -538,7 +551,7 @@ public record FolderIngestRequest(string Path);
 // Stage 2 Models
 
 /// <summary>
-/// Entity detected in text (persons, organizations, locations, etc.)
+///
 /// </summary>
 public class Entity
 {
@@ -570,7 +583,7 @@ public class TextSpan
     public int Start { get; set; } // Character start position
     public int End { get; set; }   // Character end position  
     public string Label { get; set; } = string.Empty; // PII, SECRET, ENTITY_PERSON, etc.
-    public string EntityId { get; set; } = string.Empty; // Reference to Entity if applicable
+    public string? EntityId { get; set; } // Reference to Entity if applicable
     public double Confidence { get; set; } = 1.0; // Detection confidence 0-1
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     
@@ -957,4 +970,20 @@ public class NotificationHistory
     public DateTime? ReadAt { get; set; }
     
     public virtual UserProfile UserProfile { get; set; } = null!;
+}
+
+// Stored files (user uploads that are not ingested/searchable)
+public class StoredFile
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string UserId { get; set; } = string.Empty;
+    public string OriginalFileName { get; set; } = string.Empty;
+    public string StoredPath { get; set; } = string.Empty; // absolute path on disk
+    public string RelativePath { get; set; } = string.Empty; // path under storage root for URL construction
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long SizeBytes { get; set; }
+    public string Extension { get; set; } = string.Empty;
+    public string Tags { get; set; } = string.Empty; // comma-separated tags
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

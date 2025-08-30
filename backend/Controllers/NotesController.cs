@@ -16,17 +16,20 @@ public class NotesController : ControllerBase
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<NotesController> _logger;
     private readonly IGamificationService _gamificationService;
+    private readonly IConfiguration _configuration;
 
     public NotesController(
         IIngestService ingestService,
         IUserContextAccessor userContext,
         ILogger<NotesController> logger,
-        IGamificationService gamificationService)
+        IGamificationService gamificationService,
+        IConfiguration configuration)
     {
         _ingestService = ingestService;
         _userContext = userContext;
         _logger = logger;
         _gamificationService = gamificationService;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -72,6 +75,62 @@ public class NotesController : ControllerBase
 
         var notes = await _ingestService.GetUserNotesAsync(_userContext.UserId, limit, offset);
         return Ok(notes);
+    }
+
+    /// <summary>
+    /// Health check endpoint
+    /// </summary>
+    [HttpGet("health")]
+    public IActionResult Health()
+    {
+        return Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
+    }
+
+    /// <summary>
+    /// Create a note from text content (Editor role required)
+    /// </summary>
+    [HttpPost]
+    public async Task<IActionResult> CreateNote([FromBody] CreateNoteRequest request)
+    {
+        try 
+        {
+            // In development mode, allow requests without authentication
+            var isDevelopment = _configuration.GetValue<bool>("IsDevelopment", false) || 
+                               Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+                               
+            if (!isDevelopment && !Rbac.RequireRole(_userContext, "Editor"))
+                return StatusCode(403, "Editor role required");
+
+            if (string.IsNullOrWhiteSpace(request.Content))
+                return BadRequest("Content is required");
+
+            _logger.LogInformation("Creating note from text for user {UserId}", _userContext.UserId ?? "dev-user");
+
+            var result = await _ingestService.IngestTextAsync(request.Title ?? string.Empty, request.Content);
+            
+            if (result == null)
+            {
+                return BadRequest("Failed to create note");
+            }
+
+            // Track note creation for gamification (only if user context is available)
+            if (!string.IsNullOrEmpty(_userContext.UserId))
+            {
+                var userProfileId = _userContext.UserId;
+                await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_creation", 1);
+                await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_creation");
+            }
+            
+            _logger.LogInformation("Successfully created note {NoteId} for user {UserId}", 
+                result.NoteId, _userContext.UserId ?? "dev-user");
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating note for user {UserId}: {Message}", _userContext.UserId ?? "dev-user", ex.Message);
+            return StatusCode(500, new { error = "Failed to create note", details = ex.Message });
+        }
     }
 
     /// <summary>

@@ -11,6 +11,8 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -196,6 +198,17 @@ app.UseAuthorization();
 app.UseWebSockets();
 // Inject per-request user context before endpoints
 app.UseMiddleware<UserContextMiddleware>();
+
+// Serve uploaded files from configurable storage root under /storage
+var storageRoot = builder.Configuration["Storage:Root"] ?? Path.Combine(app.Environment.ContentRootPath, "storage");
+if (!Directory.Exists(storageRoot)) Directory.CreateDirectory(storageRoot);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(storageRoot),
+    RequestPath = "/storage",
+    ServeUnknownFileTypes = true,
+    ContentTypeProvider = new FileExtensionContentTypeProvider()
+});
 
 // Ensure database is up-to-date (use EF Core migrations)
 using (var scope = app.Services.CreateScope())

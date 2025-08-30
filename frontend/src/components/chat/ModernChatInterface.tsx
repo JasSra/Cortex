@@ -12,6 +12,7 @@ import {
   StopIcon
 } from '@heroicons/react/24/outline'
 import { useCortexStore } from '../../store/cortexStore'
+import { useChatApi } from '../../services/apiClient'
 
 interface Message {
   id: string
@@ -24,6 +25,13 @@ interface Message {
     type: string
     url: string
   }>
+  metadata?: {
+    citations?: Array<{
+      NoteId: string;
+      ChunkId: string;
+      Offsets: number[];
+    }>
+  }
 }
 
 interface ChatMessage {
@@ -88,6 +96,24 @@ const ChatMessage = ({ message, isTyping = false }: ChatMessage) => {
                 ))}
               </div>
             )}
+
+            {/* Citations */}
+            {message.metadata?.citations && message.metadata.citations.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-200/30">
+                <p className="text-xs font-medium mb-2 opacity-80">Sources:</p>
+                <div className="space-y-1">
+                  {message.metadata.citations.map((citation, index) => (
+                    <div
+                      key={`${citation.NoteId}-${citation.ChunkId}`}
+                      className="text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+                      title={`Note: ${citation.NoteId}, Chunk: ${citation.ChunkId}`}
+                    >
+                      <span className="font-mono">#{index + 1}</span> {citation.NoteId}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Timestamp */}
@@ -149,6 +175,7 @@ export default function ModernChatInterface() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const { chatMessages, addChatMessage, isLoading } = useCortexStore()
+  const chatApi = useChatApi()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -169,37 +196,45 @@ export default function ModernChatInterface() {
     }
 
     setMessages(prev => [...prev, userMessage])
+    const currentInput = input.trim()
     setInput('')
     setIsTyping(true)
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000))
+      // Convert messages to API format
+      const messageHistory = [...messages, userMessage].map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }))
+
+      // Use RAG query for knowledge-based chat
+      const response = await chatApi.ragQuery(messageHistory)
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: generateResponse(userMessage.content),
-        timestamp: new Date()
+        content: response.Answer || 'I apologize, but I couldn\'t find relevant information to answer your question.',
+        timestamp: new Date(),
+        // Store citations if available
+        metadata: response.Citations?.length > 0 ? { citations: response.Citations } : undefined
       }
 
       setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
       console.error('Error sending message:', error)
+      
+      // Add error message
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'I apologize, but I encountered an error while processing your request. Please try again.',
+        timestamp: new Date()
+      }
+      
+      setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsTyping(false)
     }
-  }
-
-  const generateResponse = (userInput: string): string => {
-    const responses = [
-      "I understand your question about " + userInput.toLowerCase() + ". Let me search through your knowledge base for relevant information.",
-      "Based on your documents, I found several relevant pieces of information that might help answer your question.",
-      "That's an interesting question! I've analyzed your data and here's what I discovered...",
-      "I can help you with that. Let me break down the information I found in your documents.",
-      "Great question! I've cross-referenced this with your knowledge graph and found some connections you might find useful."
-    ]
-    return responses[Math.floor(Math.random() * responses.length)]
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

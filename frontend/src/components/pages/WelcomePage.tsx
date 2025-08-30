@@ -11,7 +11,7 @@ interface WelcomePageProps {
 }
 
 const WelcomePage: React.FC<WelcomePageProps> = ({ onNavigate }) => {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, clearRecentAuthEvent } = useAuth()
   const { seedIfNeeded } = useSeedApi()
   const notesApi = useNotesApi()
   const [hasData, setHasData] = useState<boolean | null>(null)
@@ -41,11 +41,19 @@ const WelcomePage: React.FC<WelcomePageProps> = ({ onNavigate }) => {
       await seedIfNeeded()
       setMessage('Demo data created. You can start exploring your notes!')
       setHasData(true)
+      // Clear the auth event since user has taken action
+      clearRecentAuthEvent()
     } catch (e) {
       setMessage('Seeding failed. Please try again from Settings later.')
     } finally {
       setSeeding(false)
     }
+  }
+
+  const handleNavigate = (view: string) => {
+    // Clear the auth event when user navigates away
+    clearRecentAuthEvent()
+    onNavigate(view)
   }
 
   return (
@@ -67,7 +75,7 @@ const WelcomePage: React.FC<WelcomePageProps> = ({ onNavigate }) => {
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => onNavigate('ingest')}
+            onClick={() => handleNavigate('ingest')}
             className="flex items-center justify-center space-x-2 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 text-slate-800 dark:text-slate-100"
           >
             <InboxArrowDownIcon className="h-5 w-5" />
@@ -91,7 +99,7 @@ const WelcomePage: React.FC<WelcomePageProps> = ({ onNavigate }) => {
         </div>
         <div className="mt-3">
           <button
-            onClick={() => onNavigate('settings')}
+            onClick={() => handleNavigate('settings')}
             className="inline-flex items-center space-x-2 rounded-lg px-3 py-2 border border-gray-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700"
           >
             <Cog6ToothIcon className="h-4 w-4" />

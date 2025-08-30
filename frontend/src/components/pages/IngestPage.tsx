@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const IngestPage: React.FC = () => {
   const { isAuthenticated } = useAuth()
-  const { uploadFiles, ingestFolder } = useIngestApi()
+  const { uploadFiles, ingestFolder, createNote } = useIngestApi()
   const { getNotes } = useNotesApi()
 
   const [results, setResults] = useState<IngestResult[]>([])
@@ -47,11 +47,21 @@ const IngestPage: React.FC = () => {
   const onPaste = useCallback(async (ev: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const text = ev.clipboardData.getData('text')
     if (!text?.trim()) return
-    // Convert pasted text into a temporary txt file for upload
-    const file = new File([text], `pasted-${Date.now()}.txt`, { type: 'text/plain' })
-    const list: any = [file]
-    await onFilesSelected({ 0: file, length: 1, item: (i: number) => list[i] } as unknown as FileList)
-  }, [onFilesSelected])
+    
+    setError(null)
+    setIsUploading(true)
+    
+    try {
+      const result = await createNote(text.trim())
+      setResults(prev => [result, ...prev])
+      const latest = await getNotes()
+      setNotes(latest as any)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to create note from pasted text')
+    } finally {
+      setIsUploading(false)
+    }
+  }, [createNote, getNotes])
 
   const onFolderIngest = useCallback(async () => {
     if (!folderPath.trim()) return
