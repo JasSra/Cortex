@@ -2,21 +2,50 @@
 
 import { useAppAuth } from '@/hooks/useAppAuth'
 import { CortexApiClient } from '@/api/cortex-api-client'
+import { useCallback, useMemo } from 'react'
+import type {
+  NotificationPreferences as NotificationPreferencesModel,
+  NotificationHistoryResponse,
+  RegisteredDevice,
+  DeviceRegistrationRequest,
+  TestNotificationRequest,
+  TestNotificationResponse,
+} from './types/notifications'
+import type { VoiceConfigRequest, VoiceConfigValidationResult } from './types/voice'
+import type { MascotProfileDto, UpdateMascotProfileRequest } from './types/mascot'
 
 function createAuthedFetch(
   getAccessToken: () => Promise<string | null>,
   onUnauthorized?: () => void
 ) {
   let handling401 = false
+  let consecutive401s = 0
   return async (url: RequestInfo, init?: RequestInit) => {
     const token = await getAccessToken()
     const headers = new Headers(init?.headers || {})
-    if (!headers.has('Content-Type') && (!init || init?.body)) headers.set('Content-Type', 'application/json')
+  // Only set JSON content type when the body is a string
+  // Do NOT set for FormData or Blob so the browser can set correct boundaries
+  const body: any = init?.body as any
+  if (!headers.has('Content-Type') && typeof body === 'string') headers.set('Content-Type', 'application/json')
     if (token) headers.set('Authorization', `Bearer ${token}`)
     const res = await fetch(url, { ...(init || {}), headers })
-  if ((res.status === 401 || res.status === 403) && !handling401) {
-      handling401 = true
-      try { onUnauthorized && onUnauthorized() } finally { handling401 = false }
+    if ((res.status === 401 || res.status === 403)) {
+      consecutive401s++
+      if (!handling401) {
+        handling401 = true
+        try {
+          // Only trigger global logout after two consecutive unauthorized responses
+          if (consecutive401s >= 2) {
+            onUnauthorized && onUnauthorized()
+            consecutive401s = 0
+          }
+        } finally {
+          handling401 = false
+        }
+      }
+    } else {
+      // reset counter on success
+      consecutive401s = 0
     }
     return res
   }
@@ -26,67 +55,95 @@ function createAuthedFetch(
 export function useCortexApiClient(): CortexApiClient {
   const { getAccessToken, logout } = useAppAuth()
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
-  return new CortexApiClient(baseUrl, { fetch: createAuthedFetch(getAccessToken, logout) })
+  const fetcher = useMemo(() => createAuthedFetch(getAccessToken, logout), [getAccessToken, logout])
+  const client = useMemo(() => new CortexApiClient(baseUrl, { fetch: fetcher }), [baseUrl, fetcher])
+  return client
 }
 
 // For endpoints not fully typed in OpenAPI, use a minimal authed fetch wrapper
 function useAuthedFetch() {
   const { getAccessToken, logout } = useAppAuth()
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
-  const authedFetch = createAuthedFetch(getAccessToken, logout)
-  return {
-    get: async <T>(path: string): Promise<T> => {
-      const res = await authedFetch(`${baseUrl}${path}`)
-      if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
-      const text = await res.text()
-      return (text ? JSON.parse(text) : undefined) as T
-    },
-    post: async <T>(path: string, body?: any): Promise<T> => {
-      const res = await authedFetch(`${baseUrl}${path}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined })
-      if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
-      const text = await res.text()
-      return (text ? JSON.parse(text) : undefined) as T
-    },
-    del: async (path: string): Promise<void> => {
-      const res = await authedFetch(`${baseUrl}${path}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
-    }
-  }
+  const authedFetch = useMemo(() => createAuthedFetch(getAccessToken, logout), [getAccessToken, logout])
+
+  const get = useCallback(async <T>(path: string): Promise<T> => {
+    const res = await authedFetch(`${baseUrl}${path}`)
+    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
+    const text = await res.text()
+    return (text ? JSON.parse(text) : undefined) as T
+  }, [authedFetch, baseUrl])
+
+  const post = useCallback(async <T>(path: string, body?: any): Promise<T> => {
+    const res = await authedFetch(`${baseUrl}${path}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined })
+    if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
+    const text = await res.text()
+    return (text ? JSON.parse(text) : undefined) as T
+  }, [authedFetch, baseUrl])
+
+  const del = useCallback(async (path: string): Promise<void> => {
+    const res = await authedFetch(`${baseUrl}${path}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
+  }, [authedFetch, baseUrl])
+
+  const put = useCallback(async <T>(path: string, body?: any): Promise<T> => {
+    const res = await authedFetch(`${baseUrl}${path}`, { method: 'PUT', body: body ? JSON.stringify(body) : undefined })
+    if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`)
+    const text = await res.text()
+    return (text ? JSON.parse(text) : undefined) as T
+  }, [authedFetch, baseUrl])
+
+  return useMemo(() => ({ get, post, put, del }), [get, post, put, del])
 }
 
 // Gamification
 export function useGamificationApi() {
   // Use authed fetch because the generated client lacks response schemas (typed as void)
   const http = useAuthedFetch()
-  return {
-    getAllAchievements: () => http.get<any[]>('/api/Gamification/achievements'),
-    getMyAchievements: () => http.get<any[]>('/api/Gamification/my-achievements'),
-    getUserStats: async () => {
-      const s = await http.get<any>('/api/Gamification/stats')
-      // Normalize field names to camelCase expected by UI
-      return {
-        totalNotes: s?.TotalNotes ?? s?.totalNotes ?? 0,
-        totalSearches: s?.TotalSearches ?? s?.totalSearches ?? 0,
-        totalXp: s?.ExperiencePoints ?? s?.experiencePoints ?? s?.totalXp ?? 0,
-        level: s?.Level ?? s?.level ?? 1,
-        loginStreak: s?.LoginStreak ?? s?.loginStreak ?? 0,
-        lastLoginAt: s?.LastLoginAt ?? s?.lastLoginAt ?? null,
-      }
-    },
-    getUserProgress: async () => {
-      const p = await http.get<any>('/api/Gamification/progress')
-      return {
-        currentLevel: p?.currentLevel ?? p?.CurrentLevel ?? 1,
-        currentXp: p?.currentXP ?? p?.currentXp ?? p?.CurrentXP ?? 0,
-        progressToNext: p?.progressToNext ?? p?.ProgressToNext ?? 0,
-        totalProgressNeeded: p?.totalProgressNeeded ?? p?.TotalProgressNeeded ?? 0,
-        progressPercentage: p?.progressPercentage ?? p?.ProgressPercentage ?? 0,
-      }
-    },
-    checkAchievements: () => http.post<any>('/api/Gamification/check-achievements'),
-    seedAchievements: () => http.post<any>('/api/Gamification/seed'),
-    getAllAchievementsTest: () => http.get<any>('/api/Gamification/all-achievements'),
-  }
+
+  const getAllAchievements = useCallback(() => http.get<any[]>('/api/Gamification/achievements'), [http])
+  const getMyAchievements = useCallback(() => http.get<any[]>('/api/Gamification/my-achievements'), [http])
+  const getUserStats = useCallback(async () => {
+    const s = await http.get<any>('/api/Gamification/stats')
+    return {
+      totalNotes: s?.TotalNotes ?? s?.totalNotes ?? 0,
+      totalSearches: s?.TotalSearches ?? s?.totalSearches ?? 0,
+      totalXp: s?.ExperiencePoints ?? s?.experiencePoints ?? s?.totalXp ?? 0,
+      level: s?.Level ?? s?.level ?? 1,
+      loginStreak: s?.LoginStreak ?? s?.loginStreak ?? 0,
+      lastLoginAt: s?.LastLoginAt ?? s?.lastLoginAt ?? null,
+    }
+  }, [http])
+  const getUserProgress = useCallback(async () => {
+    const p = await http.get<any>('/api/Gamification/progress')
+    return {
+      currentLevel: p?.currentLevel ?? p?.CurrentLevel ?? 1,
+      currentXp: p?.currentXP ?? p?.currentXp ?? p?.CurrentXP ?? 0,
+      progressToNext: p?.progressToNext ?? p?.ProgressToNext ?? 0,
+      totalProgressNeeded: p?.totalProgressNeeded ?? p?.TotalProgressNeeded ?? 0,
+      progressPercentage: p?.progressPercentage ?? p?.ProgressPercentage ?? 0,
+    }
+  }, [http])
+  const checkAchievements = useCallback(() => http.post<any>('/api/Gamification/check-achievements'), [http])
+  const seedAchievements = useCallback(() => http.post<any>('/api/Gamification/seed'), [http])
+  const getAllAchievementsTest = useCallback(() => http.get<any>('/api/Gamification/all-achievements'), [http])
+
+  return useMemo(() => ({
+    getAllAchievements,
+    getMyAchievements,
+    getUserStats,
+    getUserProgress,
+    checkAchievements,
+    seedAchievements,
+    getAllAchievementsTest,
+  }), [
+    getAllAchievements,
+    getMyAchievements,
+    getUserStats,
+    getUserProgress,
+    checkAchievements,
+    seedAchievements,
+    getAllAchievementsTest,
+  ])
 }
 
 // Admin
@@ -107,6 +164,55 @@ export function useNotesApi() {
   getNotes: () => http.get<any[]>('/api/Notes'),
   getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
   }
+}
+
+// Ingest (multipart uploads and local folder ingest)
+export function useIngestApi() {
+  const { getAccessToken, logout } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+  const authedFetch = useMemo(() => createAuthedFetch(getAccessToken, logout), [getAccessToken, logout])
+
+  const uploadFiles = useCallback(async (files: File[] | FileList) => {
+    const token = await getAccessToken()
+    const form = new FormData()
+    const arr = Array.isArray(files) ? files : Array.from(files)
+    for (const f of arr) form.append('files', f, f.name)
+    const res = await fetch(`${baseUrl}/api/Ingest/files`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } as any : undefined,
+      body: form,
+    })
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+    const text = await res.text()
+    const raw = text ? JSON.parse(text) : []
+    // Normalize backend result shape to frontend IngestResult
+    return (raw as any[]).map(r => ({
+      noteId: r.noteId ?? r.NoteId,
+      title: r.title ?? r.Title,
+      status: r.status ?? 'ingested',
+      chunkCount: r.chunkCount ?? r.CountChunks ?? r.countChunks ?? 0,
+      error: r.error,
+    }))
+  }, [baseUrl, getAccessToken])
+
+  const ingestFolder = useCallback(async (path: string) => {
+    const res = await authedFetch(`${baseUrl}/api/Ingest/folder`, {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    })
+    if (!res.ok) throw new Error(`Folder ingest failed: ${res.status}`)
+    const text = await res.text()
+    const raw = text ? JSON.parse(text) : []
+    return (raw as any[]).map(r => ({
+      noteId: r.noteId ?? r.NoteId,
+      title: r.title ?? r.Title,
+      status: r.status ?? 'ingested',
+      chunkCount: r.chunkCount ?? r.CountChunks ?? r.countChunks ?? 0,
+      error: r.error,
+    }))
+  }, [authedFetch, baseUrl])
+
+  return useMemo(() => ({ uploadFiles, ingestFolder }), [uploadFiles, ingestFolder])
 }
 
 // Search
@@ -154,18 +260,34 @@ export function useChatToolsApi() {
 // User profile API via generated CortexApiClient (prefer generated client over ad-hoc fetch)
 export function useUserApi() {
   const client = useCortexApiClient()
-  return {
-    getProfile: () => client.profileGET() as any,
-  createOrUpdateProfile: (body: any) => client.profilePUT(body) as any,
-    deleteProfile: () => client.profileDELETE() as any,
-  // Typed settings persisted in UserProfile.Preferences
-  getSettings: () => client.settingsGET() as any,
-  updateSettings: (settings: any) => client.settingsPUT(settings) as any,
-  // Account lifecycle endpoints (now available in generated client)
-  exportAccountData: () => client.export() as unknown as Promise<any>,
-  deleteAccountData: () => client.data(),
-  deleteAccount: () => client.account(),
-  }
+  const getProfile = useCallback(() => client.profileGET() as any, [client])
+  const createOrUpdateProfile = useCallback((body: any) => client.profilePUT(body) as any, [client])
+  const deleteProfile = useCallback(() => client.profileDELETE() as any, [client])
+  const getSettings = useCallback(() => client.settingsGET() as any, [client])
+  const updateSettings = useCallback((settings: any) => client.settingsPUT(settings) as any, [client])
+  const exportAccountData = useCallback(() => client.export() as unknown as Promise<any>, [client])
+  const deleteAccountData = useCallback(() => client.data(), [client])
+  const deleteAccount = useCallback(() => client.account(), [client])
+
+  return useMemo(() => ({
+    getProfile,
+    createOrUpdateProfile,
+    deleteProfile,
+    getSettings,
+    updateSettings,
+    exportAccountData,
+    deleteAccountData,
+    deleteAccount,
+  }), [
+    getProfile,
+    createOrUpdateProfile,
+    deleteProfile,
+    getSettings,
+    updateSettings,
+    exportAccountData,
+    deleteAccountData,
+    deleteAccount,
+  ])
 }
 
 // Seed API (not in generated client)
@@ -200,6 +322,70 @@ export function useVoiceApi() {
       const params = new URLSearchParams({ text })
       if (token) params.set('access_token', token)
       return `${baseUrl}/api/Voice/tts/stream?${params.toString()}`
+    },
+  ttsTest: async (text?: string) => {
+      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+      const token = await getAccessToken()
+      const resp = await fetch(`${baseUrl}/api/Voice/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(text ? { text } : {}),
+      })
+      if (!resp.ok) throw new Error(`TTS test failed: ${resp.status}`)
+      return await resp.blob()
+    },
+    validateConfig: async (config: Partial<VoiceConfigRequest>) => {
+      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+      const token = await getAccessToken()
+      const resp = await fetch(`${baseUrl}/api/Voice/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(config || {}),
+      })
+      const text = await resp.text()
+      const data = text ? JSON.parse(text) : {}
+      if (!resp.ok) throw new Error(data?.error || 'Voice config validation failed')
+      return data as VoiceConfigValidationResult
     }
+  }
+}
+
+// Notifications API convenience (uses raw authed fetch wrappers)
+export function useNotificationsApi() {
+  const http = useAuthedFetch()
+
+  const getPreferences = () => http.get<NotificationPreferencesModel>('/api/Notifications/preferences')
+  const updatePreferences = (prefs: NotificationPreferencesModel) => http.put<NotificationPreferencesModel>('/api/Notifications/preferences', prefs)
+  const sendTest = (payload?: TestNotificationRequest) => http.post<TestNotificationResponse>('/api/Notifications/test', payload || {})
+  const triggerWeeklyDigest = () => http.post<any>('/api/Notifications/weekly-digest', {})
+  const getHistory = (limit = 20, offset = 0) => http.get<NotificationHistoryResponse>(`/api/Notifications/history?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`)
+  const listDevices = () => http.get<RegisteredDevice[]>('/api/Notifications/devices')
+  const registerDevice = (req: DeviceRegistrationRequest) => http.post<any>('/api/Notifications/register-device', req)
+  const unregisterDevice = (deviceId: string) => http.del(`/api/Notifications/register-device/${encodeURIComponent(deviceId)}`)
+
+  return {
+    getPreferences,
+    updatePreferences,
+    sendTest,
+    triggerWeeklyDigest,
+    getHistory,
+    listDevices,
+    registerDevice,
+    unregisterDevice,
+  }
+}
+
+// Mascot API convenience
+export function useMascotApi() {
+  const http = useAuthedFetch()
+  return {
+    getProfile: () => http.get<MascotProfileDto>('/api/User/mascot-profile'),
+    updateProfile: (req: UpdateMascotProfileRequest) => http.put<MascotProfileDto>('/api/User/mascot-profile', req),
   }
 }

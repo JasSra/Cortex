@@ -36,6 +36,7 @@ const navigation = [
   { name: 'Analytics', href: 'analytics', icon: ChartBarIcon, current: false },
   { name: 'Achievements', href: 'achievements', icon: TrophyIcon, current: false },
   { name: 'Settings', href: 'settings', icon: CogIcon, current: false },
+  { name: 'Ingest', href: 'ingest', icon: DocumentTextIcon, current: false },
   { name: 'Chat Assistant', href: 'chat', icon: ChatBubbleLeftRightIcon, current: false },
   { name: 'Search', href: 'search', icon: MagnifyingGlassIcon, current: false },
   { name: 'Documents', href: 'documents', icon: DocumentTextIcon, current: false },
@@ -127,8 +128,8 @@ export default function ModernLayout({
         </div>
       </motion.div>
 
-      {/* Main content */}
-      <div className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-80' : 'lg:ml-0'}`}>
+  {/* Main content */}
+  <div className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-80' : 'lg:ml-0'} flex flex-col h-screen`}>
         {/* Top bar */}
         <motion.header 
           initial={{ y: -20, opacity: 0 }}
@@ -195,19 +196,21 @@ export default function ModernLayout({
           </div>
         </motion.header>
 
-        {/* Page content */}
-        <main className="flex-1 p-6">
-          <motion.div
-            key={activeView}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-            className="h-full"
-          >
-            <PageRenderer activeView={activeView} />
-          </motion.div>
-        </main>
+        {/* Page content (scrollable) */}
+        <div className="flex-1 overflow-y-auto">
+          <main className="p-6">
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              {/* Make an escape hatch so WelcomePage can navigate */}
+              <PageRenderer activeView={activeView} />
+            </motion.div>
+          </main>
+        </div>
       </div>
     </div>
   )

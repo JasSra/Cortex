@@ -57,6 +57,10 @@ builder.Services.AddScoped<IRedactionService, RedactionService>();
 builder.Services.AddScoped<ISeedDataService, SeedDataService>();
 // Gamification service for achievements and stats
 builder.Services.AddScoped<IGamificationService, GamificationService>();
+// Audit service for security/audit endpoints
+builder.Services.AddScoped<IAuditService, AuditService>();
+// Notification service for push notifications and email
+builder.Services.AddScoped<INotificationService, NotificationService>();
 // User context / RBAC
 builder.Services.AddScoped<UserContextAccessor>();
 builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());
@@ -214,24 +218,37 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     try
     {
-        Console.WriteLine("[DB] Applying migrations...");
-        context.Database.Migrate();
-        Console.WriteLine("[DB] Migrations applied successfully");
+        if (app.Environment.IsDevelopment())
+        {
+            Console.WriteLine("[DB] Development mode: resetting database to current model...");
+            try
+            {
+                if (File.Exists(csb.DataSource))
+                {
+                    File.Delete(csb.DataSource);
+                    Console.WriteLine($"[DB] Deleted SQLite file: {csb.DataSource}");
+                }
+            }
+            catch (Exception delEx)
+            {
+                Console.WriteLine($"[DB] Could not delete DB file: {delEx.Message}");
+            }
+
+            // Recreate schema directly from the current model (no migrations needed in dev)
+            context.Database.EnsureDeleted();
+            context.Database.EnsureCreated();
+            Console.WriteLine("[DB] Database recreated from current model");
+        }
+        else
+        {
+            Console.WriteLine("[DB] Applying migrations...");
+            context.Database.Migrate();
+            Console.WriteLine("[DB] Migrations applied successfully");
+        }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[DB] Migration failed: {ex.Message}");
-        // As a last resort in local dev, create DB if it doesn't exist
-        try 
-        { 
-            Console.WriteLine("[DB] Attempting to create database schema...");
-            context.Database.EnsureCreated(); 
-            Console.WriteLine("[DB] Database schema created successfully");
-        } 
-        catch (Exception createEx) 
-        {
-            Console.WriteLine($"[DB] Failed to create database: {createEx.Message}");
-        }
+        Console.WriteLine($"[DB] Initialization failed: {ex.Message}");
     }
 
     // Ensure vector index exists

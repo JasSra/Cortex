@@ -41,7 +41,7 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> Reindex()
     {
         if (!Rbac.RequireRole(_userContext, "Admin"))
-            return Forbid("Admin role required");
+            return Forbid();
 
         if (!ConfirmDeleteRequired())
             return BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
@@ -79,7 +79,7 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> Reembed()
     {
         if (!Rbac.RequireRole(_userContext, "Admin"))
-            return Forbid("Admin role required");
+            return Forbid();
 
         if (!ConfirmDeleteRequired())
             return BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
@@ -88,19 +88,20 @@ public class AdminController : ControllerBase
 
         try
         {
-            var embeddings = _db.Set<Embedding>()
-                .Where(e => _db.NoteChunks.Any(c => 
-                    c.Id == e.ChunkId && 
-                    _db.Notes.Any(n => n.Id == c.NoteId && n.UserId == _userContext.UserId)));
+            var chunks = await _db.NoteChunks
+                .Where(c => c.Note.UserId == _userContext.UserId && !c.Note.IsDeleted)
+                .Select(c => c.Id)
+                .ToListAsync();
 
-            var count = await embeddings.CountAsync();
-            _db.RemoveRange(embeddings);
-            await _db.SaveChangesAsync();
+            foreach (var chunkId in chunks)
+            {
+                await _embeddingService.ReembedChunkAsync(chunkId);
+            }
 
-            _logger.LogInformation("Re-embed completed for user {UserId}, removed {Count} embeddings", 
-                _userContext.UserId, count);
+            _logger.LogInformation("Re-embed completed for user {UserId}, processed {Count} chunks", 
+                _userContext.UserId, chunks.Count);
 
-            return Ok(new { status = "ok", removed = count });
+            return Ok(new { status = "ok", processed = chunks.Count });
         }
         catch (Exception ex)
         {

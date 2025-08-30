@@ -71,13 +71,34 @@ public class UserContextMiddleware
             // Use subject ID as primary user identifier for data binding
             userId = subjectId ?? email ?? "default";
 
-            // Extract roles from claims
+            // Extract roles from claims (support Azure AD B2C extension, standard roles and custom claim 'roles')
             var roleClaims = context.User.FindAll(ClaimTypes.Role)
-                           .Concat(context.User.FindAll("roles"))
-                           .Select(c => c.Value)
-                           .ToList();
+                               .Concat(context.User.FindAll("roles"))
+                               .Concat(context.User.FindAll("extension_Role"))
+                               .Select(c => c.Value)
+                               .ToList();
 
             roles.AddRange(roleClaims);
+
+            // Map API scopes (scp) to app roles if roles are not present
+            var scopeRaw = context.User.FindFirst("scp")?.Value 
+                        ?? context.User.FindFirst("http://schemas.microsoft.com/identity/claims/scope")?.Value;
+            if (!string.IsNullOrWhiteSpace(scopeRaw))
+            {
+                var scopes = scopeRaw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (scopes.Contains("Consolidated.Administrator", StringComparer.OrdinalIgnoreCase))
+                {
+                    roles.AddRange(new[] { "Admin", "Editor", "Reader" });
+                }
+                if (scopes.Contains("Consolidated.Client", StringComparer.OrdinalIgnoreCase))
+                {
+                    roles.AddRange(new[] { "Editor", "Reader" });
+                }
+                if (scopes.Contains("Consolidated.User", StringComparer.OrdinalIgnoreCase))
+                {
+                    roles.Add("Reader");
+                }
+            }
         }
         else
         {
@@ -98,8 +119,8 @@ public class UserContextMiddleware
             }
         }
 
-        // Dev-friendly default: Admin if no roles
-        if (roles.Count == 0)
+        // Do not inject default roles in production. In Development, keep dev-friendly defaults.
+        if (roles.Count == 0 && _env.IsDevelopment())
         {
             roles = new List<string> { "Admin", "Editor", "Reader" };
         }

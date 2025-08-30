@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using CortexApi.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace CortexApi.Services;
 
@@ -7,6 +9,7 @@ public interface IEmbeddingService
 {
     Task<float[]?> EmbedAsync(string text, CancellationToken ct = default);
     int GetEmbeddingDim();
+    Task ReembedChunkAsync(string chunkId, CancellationToken ct = default);
 }
 
 public class EmbeddingService : IEmbeddingService
@@ -14,12 +17,14 @@ public class EmbeddingService : IEmbeddingService
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
     private readonly ILogger<EmbeddingService> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public EmbeddingService(HttpClient httpClient, IConfiguration configuration, ILogger<EmbeddingService> logger)
+    public EmbeddingService(HttpClient httpClient, IConfiguration configuration, ILogger<EmbeddingService> logger, IServiceScopeFactory scopeFactory)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     public int GetEmbeddingDim()
@@ -91,5 +96,65 @@ public class EmbeddingService : IEmbeddingService
             for (int i = 0; i < vec.Length; i++) vec[i] /= norm;
         }
         return vec;
+    }
+
+    public async Task ReembedChunkAsync(string chunkId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
+            var vectorService = scope.ServiceProvider.GetRequiredService<IVectorService>();
+
+            var chunk = await db.NoteChunks
+                .Include(c => c.Note)
+                .Include(c => c.Embeddings)
+                .FirstOrDefaultAsync(c => c.Id == chunkId, ct);
+
+            if (chunk == null)
+            {
+                _logger.LogWarning("Chunk {ChunkId} not found for re-embedding", chunkId);
+                return;
+            }
+
+            // Remove existing embeddings
+            if (chunk.Embeddings.Any())
+            {
+                db.Embeddings.RemoveRange(chunk.Embeddings);
+            }
+
+            // Generate new embedding
+            var embedding = await EmbedAsync(chunk.Content, ct);
+            if (embedding != null && embedding.Length > 0)
+            {
+                // Store in vector service
+                await vectorService.UpsertChunkAsync(chunk.Note, chunk, embedding, ct);
+
+                // Create new embedding record
+                var embeddingRecord = new Models.Embedding
+                {
+                    ChunkId = chunk.Id,
+                    Provider = _configuration["Embedding:Provider"] ?? "openai",
+                    Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
+                    Dim = embedding.Length,
+                    VectorRef = $"chunk:{chunk.Id}",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                db.Embeddings.Add(embeddingRecord);
+                await db.SaveChangesAsync(ct);
+
+                _logger.LogDebug("Successfully re-embedded chunk {ChunkId}", chunkId);
+            }
+            else
+            {
+                _logger.LogError("Failed to generate embedding for chunk {ChunkId}", chunkId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error re-embedding chunk {ChunkId}", chunkId);
+            throw;
+        }
     }
 }

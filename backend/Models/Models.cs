@@ -588,6 +588,7 @@ public class ClassificationResult
     public List<PiiDetection> PiiFlags { get; set; } = new();
     public List<SecretDetection> SecretFlags { get; set; } = new();
     public string Summary { get; set; } = string.Empty;
+    public double Confidence { get; set; } = 0.5; // Overall classification confidence
 }
 
 public class TagPrediction
@@ -913,4 +914,47 @@ public class UserActivity
 {
     public string UserId { get; set; } = string.Empty;
     public int ActionCount { get; set; }
+}
+
+// Add these models to the existing Models.cs file before the final closing brace
+
+// Notification Models
+/// <summary>
+/// Registered devices for push notifications
+/// </summary>
+public class NotificationDevice
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string UserProfileId { get; set; } = string.Empty;
+    public string Endpoint { get; set; } = string.Empty;
+    public string P256dh { get; set; } = string.Empty;
+    public string Auth { get; set; } = string.Empty;
+    public string DeviceType { get; set; } = string.Empty; // web, mobile, desktop
+    public string? DeviceName { get; set; }
+    public string? UserAgent { get; set; }
+    public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
+    public DateTime? LastUsed { get; set; }
+    public bool IsActive { get; set; } = true;
+    
+    public virtual UserProfile UserProfile { get; set; } = null!;
+}
+
+/// <summary>
+/// Notification history log
+/// </summary>
+public class NotificationHistory
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string UserProfileId { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty; // achievement, weekly_digest, maintenance, test, etc.
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty; // sent, delivered, failed, read
+    public string DeliveryMethods { get; set; } = "[]"; // JSON array of delivery methods used
+    public DateTime SentAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ReadAt { get; set; }
+    
+    public virtual UserProfile UserProfile { get; set; } = null!;
 }

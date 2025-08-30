@@ -4,6 +4,7 @@ using CortexApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using CortexApi.Data;
 
 namespace CortexApi.Controllers;
 
@@ -15,15 +16,18 @@ public class GamificationController : ControllerBase
     private readonly IGamificationService _gamificationService;
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<GamificationController> _logger;
+    private readonly CortexDbContext _db;
 
     public GamificationController(
         IGamificationService gamificationService,
         IUserContextAccessor userContext,
-        ILogger<GamificationController> logger)
+        ILogger<GamificationController> logger,
+        CortexDbContext db)
     {
         _gamificationService = gamificationService;
         _userContext = userContext;
         _logger = logger;
+        _db = db;
     }
 
     /// <summary>
@@ -82,9 +86,7 @@ public class GamificationController : ControllerBase
                 return BadRequest("User profile not found");
             }
 
-            // Get the user profile directly from the database
-            using var dbContext = HttpContext.RequestServices.GetRequiredService<CortexApi.Data.CortexDbContext>();
-            var userProfile = await dbContext.UserProfiles
+            var userProfile = await _db.UserProfiles
                 .FirstOrDefaultAsync(up => up.Id == userProfileId);
             
             if (userProfile == null)
@@ -123,9 +125,7 @@ public class GamificationController : ControllerBase
                 return BadRequest("User profile not found");
             }
 
-            // Get the user profile directly from the database
-            using var dbContext = HttpContext.RequestServices.GetRequiredService<CortexApi.Data.CortexDbContext>();
-            var userProfile = await dbContext.UserProfiles
+            var userProfile = await _db.UserProfiles
                 .FirstOrDefaultAsync(up => up.Id == userProfileId);
             
             if (userProfile == null)
@@ -209,8 +209,7 @@ public class GamificationController : ControllerBase
     {
         try
         {
-            using var dbContext = HttpContext.RequestServices.GetRequiredService<CortexApi.Data.CortexDbContext>();
-            var achievements = await dbContext.Achievements.ToListAsync();
+            var achievements = await _db.Achievements.ToListAsync();
             return Ok(new { 
                 count = achievements.Count,
                 achievements = achievements.Take(10).Select(a => new {
@@ -232,9 +231,9 @@ public class GamificationController : ControllerBase
 
     private async Task<string> GetUserProfileIdAsync()
     {
-        using var dbContext = HttpContext.RequestServices.GetRequiredService<CortexApi.Data.CortexDbContext>();
-        var userProfile = await dbContext.UserProfiles
-            .FirstOrDefaultAsync(up => up.SubjectId == _userContext.UserId);
+        var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+        var userProfile = await _db.UserProfiles
+            .FirstOrDefaultAsync(up => up.SubjectId == subjectId);
         return userProfile?.Id ?? string.Empty;
     }
 

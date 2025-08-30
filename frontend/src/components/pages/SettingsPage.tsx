@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   UserIcon,
@@ -23,7 +23,8 @@ import {
 } from '@heroicons/react/24/outline'
 import { useMascot } from '@/contexts/MascotContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { useUserApi } from '@/services/apiClient'
+import { useSeedApi, useUserApi, useNotificationsApi, useVoiceApi, useMascotApi } from '@/services/apiClient'
+import type { MascotProfileDto } from '@/services/types/mascot'
 
 interface UserSettings {
   // Account settings
@@ -91,10 +92,38 @@ const SettingsPage: React.FC = () => {
   const [saving, setSaving] = useState(false)
   const [savedRecently, setSavedRecently] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState<string | null>(null)
+  const [notifDevices, setNotifDevices] = useState<any[] | null>(null)
+  const [notifHistory, setNotifHistory] = useState<any[] | null>(null)
 
   const { speak, suggest, celebrate, think, idle } = useMascot()
-  const { isAuthenticated, logout } = useAuth()
+  const { isAuthenticated, logout, user, getAccessToken, recentAuthEvent } = useAuth()
   const { exportAccountData, deleteAccountData, deleteAccount, getProfile, createOrUpdateProfile, getSettings, updateSettings } = useUserApi()
+  const { seedIfNeeded } = useSeedApi()
+  const notificationsApi = useNotificationsApi()
+  const voiceApi = useVoiceApi()
+  const mascotApi = useMascotApi()
+
+  // B2C token claims for display in Security section
+  const [tokenClaims, setTokenClaims] = useState<Record<string, any> | null>(null)
+  const [mascotProfile, setMascotProfile] = useState<MascotProfileDto | null>(null)
+
+  const decodeJwt = useCallback((token: string) => {
+    try {
+      const parts = token.split('.')
+      if (parts.length < 2) return null
+      const payload = parts[1]
+      const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+      const json = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      )
+      return JSON.parse(json)
+    } catch {
+      return null
+    }
+  }, [])
 
   const sections: SettingsSection[] = [
     {
@@ -252,6 +281,35 @@ const SettingsPage: React.FC = () => {
     loadSettings()
   }, [isAuthenticated, speak, think, idle, getProfile, getSettings])
 
+  // Load token claims only when viewing Security tab (avoids unnecessary work)
+  useEffect(() => {
+    if (!isAuthenticated || activeSection !== 'security' || tokenClaims) return
+    let cancelled = false
+    ;(async () => {
+      const tok = await getAccessToken()
+      if (!tok || cancelled) return
+      const claims = decodeJwt(tok)
+      if (!cancelled) setTokenClaims(claims)
+    })()
+    return () => { cancelled = true }
+  }, [activeSection, decodeJwt, getAccessToken, isAuthenticated, tokenClaims])
+
+  // Lazy-load mascot extras (quirks/history) when Mascot tab first shown
+  useEffect(() => {
+    if (!isAuthenticated || activeSection !== 'mascot') return
+    if (mascotProfile) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const p = await mascotApi.getProfile()
+        if (!cancelled) setMascotProfile(p)
+      } catch (e) {
+        console.warn('Failed to load mascot profile', e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeSection, isAuthenticated, mascotApi, mascotProfile])
+
   // Save settings (profile subset via generated client)
   const saveSettings = async () => {
     if (!settings) return
@@ -316,6 +374,28 @@ const SettingsPage: React.FC = () => {
     }
   }
 
+  // Save mascot-specific profile via dedicated endpoint (validates ranges/personality)
+  const saveMascotProfile = useCallback(async () => {
+    if (!settings) return
+    think()
+    try {
+      const updated = await mascotApi.updateProfile({
+        enabled: settings.mascotEnabled,
+        personality: settings.mascotPersonality,
+        animations: settings.mascotAnimations,
+        voice: settings.mascotVoice,
+        proactivity: settings.mascotProactivity,
+      })
+      setMascotProfile(updated)
+  speak('Mascot saved and validated.', 'responding')
+    } catch (e: any) {
+      console.error('Failed to save mascot profile', e)
+      speak(typeof e?.message === 'string' ? e.message : 'Failed to save mascot profile', 'error')
+    } finally {
+      idle()
+    }
+  }, [idle, mascotApi, settings, speak, think])
+
   // Update a specific setting
   const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
     if (!settings) return
@@ -324,7 +404,7 @@ const SettingsPage: React.FC = () => {
   }
 
   // Handle dangerous actions
-  const handleDangerousAction = (action: string, callback: () => void) => {
+  const handleDangerousAction = useCallback((action: string, callback: () => void) => {
     setShowConfirmation(action)
     // Simulate confirmation dialog
     setTimeout(() => {
@@ -334,10 +414,161 @@ const SettingsPage: React.FC = () => {
       }
       setShowConfirmation(null)
     }, 100)
-  }
+  }, [speak])
+
+  // Desktop notifications helper
+  const enableDesktopNotifications = useCallback(async () => {
+    think()
+    try {
+      if (typeof window === 'undefined' || typeof Notification === 'undefined') {
+        speak('Desktop notifications are not supported in this environment.', 'error')
+        return false
+      }
+      if (Notification.permission === 'granted') {
+        speak('Desktop notifications are enabled.', 'responding')
+        return true
+      }
+      if (Notification.permission === 'denied') {
+        speak('Notifications are blocked in your browser settings.', 'error')
+        return false
+      }
+      const result = await Notification.requestPermission()
+      if (result === 'granted') {
+        speak('Notifications enabled. We\'ll alert you here.', 'responding')
+        return true
+      } else {
+        speak('Notifications permission was not granted.', 'error')
+        return false
+      }
+    } finally {
+      idle()
+    }
+  }, [idle, speak, think])
+
+  const testDesktopNotification = useCallback(() => {
+    try {
+      if (typeof window === 'undefined' || typeof Notification === 'undefined') return
+      if (Notification.permission === 'granted') {
+        new Notification('Cortex', { body: 'Notifications are working.' })
+      } else {
+        speak('Please enable notifications first.', 'error')
+      }
+    } catch {
+      // ignore
+    }
+  }, [speak])
+
+  // Server-side notification helpers
+  const sendServerTestNotification = useCallback(async () => {
+    think()
+    try {
+      await notificationsApi.sendTest({ title: 'Cortex Test', message: 'Server test notification delivered.', type: 'test' })
+      speak('Test notification request sent.', 'responding')
+    } catch (e) {
+      console.error('Server test notification failed', e)
+      speak('Failed to send test notification.', 'error')
+    } finally {
+      idle()
+    }
+  }, [idle, notificationsApi, speak, think])
+
+  const triggerWeeklyDigest = useCallback(async () => {
+    think()
+    try {
+      await notificationsApi.triggerWeeklyDigest()
+      speak('Weekly digest triggered.', 'responding')
+    } catch (e) {
+      console.error('Weekly digest trigger failed', e)
+      speak('Failed to trigger weekly digest.', 'error')
+    } finally {
+      idle()
+    }
+  }, [idle, notificationsApi, speak, think])
+
+  // Voice helpers
+  const validateVoiceConfig = useCallback(async () => {
+    if (!settings) return
+    think()
+    try {
+      const res = await voiceApi.validateConfig({
+        voiceLanguage: settings.voiceLanguage,
+        voiceSpeed: settings.voiceSpeed,
+        voiceVolume: settings.voiceVolume,
+        microphoneSensitivity: settings.microphoneSensitivity,
+        continuousListening: settings.continuousListening,
+        wakeWord: settings.wakeWord,
+      })
+      if (res.isValid) speak('Voice settings look good.', 'responding')
+      else speak('Voice settings need attention. Check warnings.', 'error')
+    } catch (e) {
+      console.error('Voice validation failed', e)
+      speak('Failed to validate voice settings.', 'error')
+    } finally {
+      idle()
+    }
+  }, [idle, settings, speak, think, voiceApi])
+
+  const playVoiceTest = useCallback(async () => {
+    think()
+    try {
+      const blob = await voiceApi.ttsTest()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audio.play().catch(() => {/* ignore */})
+      speak('Playing test speech.', 'responding')
+    } catch (e) {
+      console.error('TTS test failed', e)
+      speak('Failed to play test speech.', 'error')
+    } finally {
+      idle()
+    }
+  }, [idle, speak, think, voiceApi])
+
+  // Lazy-load notifications devices/history when notifications tab first shown
+  useEffect(() => {
+    let cancelled = false
+    if (activeSection !== 'notifications' || !isAuthenticated) return
+    if (notifDevices && notifHistory) return
+    ;(async () => {
+      try {
+        const [devices, history] = await Promise.all([
+          notificationsApi.listDevices().catch(() => []),
+          notificationsApi.getHistory(10, 0).then(h => h?.notifications ?? []).catch(() => []),
+        ])
+        if (!cancelled) {
+          setNotifDevices(devices || [])
+          setNotifHistory(history || [])
+        }
+      } catch {
+        // ignore
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeSection, isAuthenticated, notifDevices, notifHistory, notificationsApi])
+
+  // System helpers
+  const clearLocalCaches = useCallback(async () => {
+    think()
+    try {
+      localStorage.clear()
+      sessionStorage.clear()
+      // Try to clear CacheStorage if available
+      const cs = (globalThis as Window & typeof globalThis).caches
+      if (cs && 'keys' in cs) {
+        const keys = await cs.keys()
+        await Promise.all(keys.map((k) => cs.delete(k)))
+      }
+      speak('Local cache cleared.', 'responding')
+    } catch (e) {
+      console.error('Failed to clear caches', e)
+      speak('Failed to clear cache.', 'error')
+    } finally {
+      idle()
+    }
+  }, [idle, speak, think])
 
   // Account actions
-  const onExportData = async () => {
+  const onExportData = useCallback(async () => {
     try {
       think()
       const data = await exportAccountData()
@@ -357,9 +588,9 @@ const SettingsPage: React.FC = () => {
     } finally {
       idle()
     }
-  }
+  }, [exportAccountData, idle, speak, think])
 
-  const onDeleteAccountData = async () => {
+  const onDeleteAccountData = useCallback(async () => {
     handleDangerousAction('delete your account data (keep account)', async () => {
       try {
         think()
@@ -373,9 +604,9 @@ const SettingsPage: React.FC = () => {
         idle()
       }
     })
-  }
+  }, [celebrate, deleteAccountData, handleDangerousAction, idle, speak, think])
 
-  const onDeleteAccount = async () => {
+  const onDeleteAccount = useCallback(async () => {
     handleDangerousAction('delete your account permanently', async () => {
       try {
         think()
@@ -391,7 +622,21 @@ const SettingsPage: React.FC = () => {
         idle()
       }
     })
-  }
+  }, [celebrate, deleteAccount, handleDangerousAction, idle, logout, speak, think])
+
+  const onSeedDemoData = useCallback(async () => {
+    try {
+      think()
+      await seedIfNeeded()
+      celebrate()
+      speak('Demo data has been created. Check your notes and analytics!', 'responding')
+    } catch (e) {
+      console.error('Seed data failed', e)
+      speak('Failed to create demo data. Please try again.', 'error')
+    } finally {
+      idle()
+    }
+  }, [celebrate, idle, seedIfNeeded, speak, think])
 
   if (!isAuthenticated) {
     return (
@@ -587,7 +832,17 @@ const SettingsPage: React.FC = () => {
                   {/* Danger Zone */}
                   <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Danger Zone</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="p-4 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/60 dark:bg-indigo-900/20">
+                        <h4 className="font-medium text-indigo-900 dark:text-indigo-300 mb-2">Seed Demo Data</h4>
+                        <p className="text-sm text-indigo-800 dark:text-indigo-400 mb-3">Populate your workspace with sample content to explore features.</p>
+                        <button
+                          onClick={onSeedDemoData}
+                          className="w-full px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                        >
+                          Seed Data
+                        </button>
+                      </div>
                       <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
                         <h4 className="font-medium text-gray-900 dark:text-white mb-2">Export Account Data</h4>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Download your profile, notes, classifications, and achievements as JSON.</p>
@@ -769,6 +1024,10 @@ const SettingsPage: React.FC = () => {
                         </div>
                       </motion.div>
                     )}
+                    <div className="flex items-center gap-3 mt-4">
+                      <button onClick={validateVoiceConfig} className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100">Validate settings</button>
+                      <button onClick={playVoiceTest} className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100">Play test voice</button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1003,24 +1262,400 @@ const SettingsPage: React.FC = () => {
               )}
 
               {/* Other sections placeholder */}
-              {!['account', 'voice', 'mascot', 'appearance'].includes(activeSection) && (
+              {/* Privacy */}
+              {activeSection === 'privacy' && (
                 <div className="space-y-6">
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                      {sections.find(s => s.id === activeSection)?.title}
-                    </h2>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      {sections.find(s => s.id === activeSection)?.description}
-                    </p>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Privacy</h2>
+                    <p className="text-gray-600 dark:text-gray-400">Control how your data is used and who can see your profile</p>
                   </div>
 
-                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-                    <div className="text-center py-12">
-                      <CogIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Coming Soon</h3>
-                      <p className="text-gray-600 dark:text-gray-400">
-                        This settings section is under development. Check back soon!
-                      </p>
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Profile Visibility</label>
+                      <div className="flex gap-3">
+                        {(['public', 'friends', 'private'] as const).map(v => (
+                          <button
+                            key={v}
+                            onClick={() => updateSetting('profileVisibility', v)}
+                            className={`px-4 py-2 rounded-lg border-2 capitalize transition-colors ${
+                              settings.profileVisibility === v
+                                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                                : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500'
+                            }`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Data Sharing</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Allow anonymized usage data to improve features</p>
+                      </div>
+                      <button
+                        onClick={() => updateSetting('dataSharing', !settings.dataSharing)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.dataSharing ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle data sharing ${settings.dataSharing ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.dataSharing ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Analytics</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Opt in to product analytics</p>
+                      </div>
+                      <button
+                        onClick={() => updateSetting('analyticsOptIn', !settings.analyticsOptIn)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.analyticsOptIn ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle analytics ${settings.analyticsOptIn ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.analyticsOptIn ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Search History</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Save searches to improve suggestions</p>
+                      </div>
+                      <button
+                        onClick={() => updateSetting('searchHistory', !settings.searchHistory)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.searchHistory ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle search history ${settings.searchHistory ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.searchHistory ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notifications */}
+              {activeSection === 'notifications' && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Notifications</h2>
+                    <p className="text-gray-600 dark:text-gray-400">Choose how you want to be notified. Desktop notifications only for now.</p>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Email Notifications</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Receive important updates via email</p>
+                      </div>
+                      <button
+                        onClick={() => updateSetting('emailNotifications', !settings.emailNotifications)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.emailNotifications ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle email notifications ${settings.emailNotifications ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.emailNotifications ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Desktop Notifications</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Show alerts on your device</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!settings.pushNotifications) {
+                            const ok = await enableDesktopNotifications()
+                            if (ok) updateSetting('pushNotifications', true)
+                          } else {
+                            updateSetting('pushNotifications', false)
+                          }
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.pushNotifications ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle desktop notifications ${settings.pushNotifications ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.pushNotifications ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-900 dark:text-white">Achievements</h4>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Alerts for new achievements</p>
+                        </div>
+                        <button
+                          onClick={() => updateSetting('achievementNotifications', !settings.achievementNotifications)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            settings.achievementNotifications ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                          aria-label={`Toggle achievement notifications ${settings.achievementNotifications ? 'off' : 'on'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.achievementNotifications ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-900 dark:text-white">Weekly Digest</h4>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Summary email every week</p>
+                        </div>
+                        <button
+                          onClick={() => updateSetting('weeklyDigest', !settings.weeklyDigest)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            settings.weeklyDigest ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                          aria-label={`Toggle weekly digest ${settings.weeklyDigest ? 'off' : 'on'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.weeklyDigest ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-900 dark:text-white">Maintenance Alerts</h4>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">Downtime and update notices</p>
+                        </div>
+                        <button
+                          onClick={() => updateSetting('maintenanceAlerts', !settings.maintenanceAlerts)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            settings.maintenanceAlerts ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                          aria-label={`Toggle maintenance alerts ${settings.maintenanceAlerts ? 'off' : 'on'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.maintenanceAlerts ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3 pt-2">
+                      <button
+                        onClick={testDesktopNotification}
+                        className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100"
+                      >
+                        Browser test notification
+                      </button>
+                      <button
+                        onClick={sendServerTestNotification}
+                        className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100"
+                      >
+                        Server test notification
+                      </button>
+                      <button
+                        onClick={triggerWeeklyDigest}
+                        className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100"
+                      >
+                        Trigger weekly digest
+                      </button>
+                    </div>
+
+                    {(notifDevices?.length || notifHistory?.length) ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                          <h4 className="text-sm font-medium mb-2 text-gray-900 dark:text-white">Registered devices</h4>
+                          <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1 max-h-40 overflow-auto">
+                            {(notifDevices || []).map((d, i) => (
+                              <li key={d.deviceId || i} className="flex justify-between gap-3">
+                                <span className="truncate">{d.deviceName || d.deviceType || 'device'}</span>
+                                <span className="opacity-70">{d.isActive ? 'active' : 'inactive'}</span>
+                              </li>
+                            ))}
+                            {(!notifDevices || notifDevices.length === 0) && <li className="opacity-70">No devices</li>}
+                          </ul>
+                        </div>
+                        <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                          <h4 className="text-sm font-medium mb-2 text-gray-900 dark:text-white">Recent notifications</h4>
+                          <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1 max-h-40 overflow-auto">
+                            {(notifHistory || []).map((n: any, i) => (
+                              <li key={n.id || i} className="flex justify-between gap-3">
+                                <span className="truncate">{n.title || n.Title || n.type || 'notification'}</span>
+                                <span className="opacity-70">{n.status || n.Status || ''}</span>
+                              </li>
+                            ))}
+                            {(!notifHistory || notifHistory.length === 0) && <li className="opacity-70">No recent notifications</li>}
+                          </ul>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {/* Security */}
+              {activeSection === 'security' && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Security</h2>
+                    <p className="text-gray-600 dark:text-gray-400">Protect your account and data</p>
+                  </div>
+
+                  {/* Azure AD B2C details */}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Azure AD B2C Session</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">User</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{user?.name || 'N/A'}</div>
+                        <div className="font-mono text-gray-600 dark:text-gray-300 break-all">{user?.username || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Home Account Id</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{user?.homeAccountId || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Issuer (iss)</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{tokenClaims?.iss || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Tenant (tid)</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{tokenClaims?.tid || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Object Id (oid) / Sub</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{tokenClaims?.oid || tokenClaims?.sub || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Policy (tfp/acr)</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{tokenClaims?.tfp || tokenClaims?.acr || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Audience (aud)</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{tokenClaims?.aud || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Expires (exp)</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{tokenClaims?.exp ? new Date(tokenClaims.exp * 1000).toLocaleString() : 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">Recent Auth Event</div>
+                        <div className="font-mono text-gray-900 dark:text-gray-100 break-all">{recentAuthEvent || 'N/A'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Two-Factor Authentication</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Add an extra layer of security</p>
+                      </div>
+                      <button
+                        onClick={() => updateSetting('twoFactorEnabled', !settings.twoFactorEnabled)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.twoFactorEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle two factor ${settings.twoFactorEnabled ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.twoFactorEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Login Alerts</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Email you when a new device logs in</p>
+                      </div>
+                      <button
+                        onClick={() => updateSetting('loginAlerts', !settings.loginAlerts)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.loginAlerts ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle login alerts ${settings.loginAlerts ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.loginAlerts ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+
+                    <div>
+                      <label htmlFor="session-timeout" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Session Timeout (minutes)</label>
+                      <input
+                        id="session-timeout"
+                        type="number"
+                        min={5}
+                        max={240}
+                        value={settings.sessionTimeout}
+                        onChange={(e) => updateSetting('sessionTimeout', Math.max(5, Math.min(240, parseInt(e.target.value || '0', 10))))}
+                        className="w-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        title="Minutes before your session automatically signs out"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Data Encryption</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Encrypt data at rest in your browser</p>
+                      </div>
+                      <button
+                        onClick={() => updateSetting('dataEncryption', !settings.dataEncryption)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          settings.dataEncryption ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        aria-label={`Toggle data encryption ${settings.dataEncryption ? 'off' : 'on'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.dataEncryption ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* System */}
+              {activeSection === 'system' && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">System</h2>
+                    <p className="text-gray-600 dark:text-gray-400">Tools and maintenance</p>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+                    <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Clear Local Cache</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Remove cached data and preferences</p>
+                      </div>
+                      <button
+                        onClick={clearLocalCaches}
+                        className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100"
+                      >
+                        Clear cache
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Check for Updates</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Make sure you have the latest features</p>
+                      </div>
+                      <button
+                        onClick={() => speak('You\'re up to date.', 'responding')}
+                        className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100"
+                      >
+                        Check
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Reload Application</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Apply pending changes immediately</p>
+                      </div>
+                      <button
+                        onClick={() => typeof window !== 'undefined' && window.location.reload()}
+                        className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100"
+                      >
+                        Reload
+                      </button>
                     </div>
                   </div>
                 </div>

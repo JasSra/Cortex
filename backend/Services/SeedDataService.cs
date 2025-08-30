@@ -1,6 +1,8 @@
 using CortexApi.Data;
 using CortexApi.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace CortexApi.Services;
 
@@ -47,6 +49,15 @@ public class SeedDataService : ISeedDataService
         _logger.LogInformation("Successfully seeded {Count} notes for user {UserId}", allNotes.Count, userId);
     }
 
+    private static string ComputeSha256(string input)
+    {
+        using var sha = SHA256.Create();
+        var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(input));
+        var sb = new StringBuilder(bytes.Length * 2);
+        foreach (var b in bytes) sb.AppendFormat("{0:x2}", b);
+        return sb.ToString();
+    }
+
     private List<Note> CreateShakespeareNotes(string userId)
     {
         var shakespeareData = new[]
@@ -73,18 +84,26 @@ public class SeedDataService : ISeedDataService
             ("All's Well That Ends Well", "All's well that ends well; still the fine's the crown. Helena's pursuit of Bertram in this problem play examines themes of unrequited love, class differences, and determination.", new[] { "shakespeare", "alls-well", "love", "determination" })
         };
 
-        return shakespeareData.Select((data, index) => new Note
+        return shakespeareData.Select((data, index) =>
         {
-            Id = Guid.NewGuid().ToString(),
-            UserId = userId,
-            Title = data.Item1,
-            Content = data.Item2,
-            FileType = "text",
-            FilePath = $"shakespeare_{index + 1}.txt",
-            CreatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
-            UpdatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
-            IsDeleted = false,
-            Tags = string.Join(",", data.Item3) // Store tags as JSON string for now
+            var filePath = $"shakespeare_{index + 1}.txt";
+            var content = data.Item2;
+            var sha = ComputeSha256($"{data.Item1}|{filePath}|{content}");
+            return new Note
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = userId,
+                Title = data.Item1,
+                Content = content,
+                FileType = "text",
+                FilePath = filePath,
+                OriginalPath = filePath,
+                Sha256Hash = sha,
+                CreatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
+                UpdatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
+                IsDeleted = false,
+                Tags = string.Join(",", data.Item3)
+            };
         }).ToList();
     }
 
@@ -114,18 +133,26 @@ public class SeedDataService : ISeedDataService
             ("Photosynthesis Process", "Photosynthesis converts sunlight, carbon dioxide, and water into glucose and oxygen. This process, carried out by plants and some bacteria, forms the foundation of most food chains on Earth.", new[] { "biology", "photosynthesis", "plants", "science" })
         };
 
-        return scienceData.Select((data, index) => new Note
+        return scienceData.Select((data, index) =>
         {
-            Id = Guid.NewGuid().ToString(),
-            UserId = userId,
-            Title = data.Item1,
-            Content = data.Item2,
-            FileType = "text",
-            FilePath = $"science_{index + 1}.txt",
-            CreatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
-            UpdatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
-            IsDeleted = false,
-            Tags = string.Join(",", data.Item3) // Store tags as JSON string for now
+            var filePath = $"science_{index + 1}.txt";
+            var content = data.Item2;
+            var sha = ComputeSha256($"{data.Item1}|{filePath}|{content}");
+            return new Note
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = userId,
+                Title = data.Item1,
+                Content = content,
+                FileType = "text",
+                FilePath = filePath,
+                OriginalPath = filePath,
+                Sha256Hash = sha,
+                CreatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
+                UpdatedAt = DateTime.UtcNow.AddDays(-Random.Shared.Next(1, 30)),
+                IsDeleted = false,
+                Tags = string.Join(",", data.Item3)
+            };
         }).ToList();
     }
 }

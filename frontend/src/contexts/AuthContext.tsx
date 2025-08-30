@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, ReactNode, useEffect, useState } from 'react'
+import { createContext, useContext, ReactNode, useEffect, useState, useCallback } from 'react'
 import { 
   PublicClientApplication, 
   AccountInfo, 
@@ -50,7 +50,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return res
   }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const initializeAuth = async () => {
       await msalInstance.initialize()
@@ -62,8 +61,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(response.account)
         setIsAuthenticated(true)
         
-        // Create or get user profile and trigger seed data creation
-        const created = await handleUserProfile(response.account, response.accessToken)
+  // Create or get user profile (no automatic seeding)
+  const created = await handleUserProfile(response.account, response.accessToken)
         setRecentAuthEvent(created ? 'signup' : 'login')
       } else {
         // Check for existing accounts and validate token
@@ -75,13 +74,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
               setUser(accounts[0])
               setIsAuthenticated(true)
             } else {
-              await msalInstance.logoutRedirect({ postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri })
-              return
+              // Do not force logout immediately; keep user unauthenticated and allow retry
+              console.warn('No access token available yet; staying unauthenticated temporarily')
             }
           } catch (e) {
-            console.warn('Existing session invalid, logging out', e)
-            await msalInstance.logoutRedirect({ postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri })
-            return
+            console.warn('Silent token acquisition failed; staying on page', e)
+            // Avoid redirect loop; user can click login again
           }
         }
       }
@@ -90,9 +88,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     initializeAuth()
+    // We purposely run this once on mount to bootstrap auth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const login = async () => {
+  const login = useCallback(async () => {
     try {
       setLoading(true)
       
@@ -111,9 +111,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('Login failed:', error)
       setLoading(false)
     }
-  }
+  }, [])
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       setLoading(true)
       await msalInstance.logoutRedirect({
@@ -123,9 +123,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('Logout failed:', error)
       setLoading(false)
     }
-  }
+  }, [])
 
-  const getAccessToken = async (): Promise<string | null> => {
+  const getAccessToken = useCallback(async (): Promise<string | null> => {
     const accounts = msalInstance.getAllAccounts()
     if (accounts.length === 0) {
       return null
@@ -154,22 +154,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return null
       }
     }
-  }
+  }, [])
 
-  const createSeedDataIfNeeded = async (accessToken: string | null) => {
-    try {
-      // Check notes count
-      const notesRes = await authedFetch('/api/Notes', undefined, accessToken)
-      if (!notesRes.ok) throw new Error(`Notes fetch failed: ${notesRes.status}`)
-      const notes = await notesRes.json()
-      if (!Array.isArray(notes) || notes.length === 0) {
-        const seedRes = await authedFetch('/api/seed-data', { method: 'POST' }, accessToken)
-        if (!seedRes.ok) throw new Error(`Seed failed: ${seedRes.status}`)
-      }
-    } catch (error) {
-      console.error('Failed to create seed data:', error)
-    }
-  }
+  // Seeding is now user-initiated from the Welcome or Settings pages.
 
   const handleUserProfile = async (account: AccountInfo, accessToken: string) => {
     try {
@@ -194,22 +181,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
           }, accessToken)
           if (!res.ok) throw new Error(`Create profile failed: ${res.status}`)
           console.log('User profile created successfully')
-          // Create seed data for new user
-          await createSeedDataIfNeeded(accessToken)
           return true // created new profile
         } catch {
           console.error('Failed to create user profile')
         }
       } else {
-        // User profile exists, check for seed data
-        console.log('User profile found, checking for existing data...')
-        await createSeedDataIfNeeded(accessToken)
+        // User profile exists
+        console.log('User profile found.')
         return false // existing profile
       }
     } catch (error) {
       console.error('Error handling user profile:', error)
-      // Still try to create seed data even if profile handling fails
-      await createSeedDataIfNeeded(accessToken)
     }
     return false
   }

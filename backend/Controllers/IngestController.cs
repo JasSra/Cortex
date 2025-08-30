@@ -29,14 +29,26 @@ public class IngestController : ControllerBase
         _gamificationService = gamificationService;
     }
 
+    private bool EnsureEditor()
+    {
+        if (_userContext.IsInRole("Editor") || _userContext.IsInRole("Admin")) return true;
+        // In development, grant minimal roles on first activity to enable self-management
+        if (HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>().IsDevelopment())
+        {
+            // UserContextAccessor has dev fallback to Admin/Editor/Reader when no roles
+            return _userContext.IsInRole("Editor") || _userContext.IsInRole("Admin");
+        }
+        return false;
+    }
+
     /// <summary>
     /// Upload and ingest multiple files (Editor role required)
     /// </summary>
     [HttpPost("files")]
     public async Task<IActionResult> IngestFiles(IFormFileCollection files)
     {
-        if (!Rbac.RequireRole(_userContext, "Editor"))
-            return Forbid("Editor role required");
+        if (!EnsureEditor())
+            return Forbid();
 
         if (files == null || files.Count == 0)
             return BadRequest("No files provided");
@@ -71,8 +83,8 @@ public class IngestController : ControllerBase
     [HttpPost("folder")]
     public async Task<IActionResult> IngestFolder([FromBody] FolderIngestRequest request)
     {
-        if (!Rbac.RequireRole(_userContext, "Editor"))
-            return Forbid("Editor role required");
+        if (!EnsureEditor())
+            return Forbid();
 
         if (string.IsNullOrWhiteSpace(request.Path))
             return BadRequest("Folder path is required");
@@ -102,7 +114,7 @@ public class IngestController : ControllerBase
         {
             _logger.LogWarning("Unauthorized access to folder '{FolderPath}' for user {UserId}", 
                 request.Path, _userContext.UserId);
-            return Forbid("Access denied to specified folder");
+            return StatusCode(403, new { error = "Access denied to specified folder" });
         }
         catch (DirectoryNotFoundException)
         {

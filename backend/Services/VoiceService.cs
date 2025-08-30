@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Net.Http.Headers;
+using CortexApi.Controllers;
 
 namespace CortexApi.Services;
 
@@ -9,6 +10,7 @@ public interface IVoiceService
 {
     Task HandleSttWebSocketAsync(WebSocket webSocket);
     Task<byte[]> GenerateTtsAsync(string text);
+    Task<VoiceConfigValidationResult> ValidateVoiceConfigAsync(VoiceConfigRequest request);
 }
 
 public class VoiceService : IVoiceService
@@ -17,11 +19,118 @@ public class VoiceService : IVoiceService
     private readonly IConfiguration _configuration;
     private readonly ILogger<VoiceService> _logger;
 
+    // Supported voice languages
+    private readonly HashSet<string> _supportedLanguages = new()
+    {
+        "en-US", "en-GB", "en-AU", "en-CA", "en-IN",
+        "es-ES", "es-MX", "fr-FR", "fr-CA", "de-DE",
+        "it-IT", "pt-BR", "pt-PT", "ja-JP", "ko-KR",
+        "zh-CN", "zh-TW", "ru-RU", "ar-SA", "hi-IN"
+    };
+
+    // Supported wake words
+    private readonly HashSet<string> _supportedWakeWords = new()
+    {
+        "Hey Cortex", "Cortex", "Computer", "Assistant",
+        "Hello Cortex", "Voice Assistant"
+    };
+
     public VoiceService(HttpClient httpClient, IConfiguration configuration, ILogger<VoiceService> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _logger = logger;
+    }
+
+    public async Task<VoiceConfigValidationResult> ValidateVoiceConfigAsync(VoiceConfigRequest request)
+    {
+        var result = new VoiceConfigValidationResult();
+        var errors = new List<string>();
+        var warnings = new List<string>();
+
+        // Validate voice language
+        if (!string.IsNullOrEmpty(request.VoiceLanguage))
+        {
+            if (!_supportedLanguages.Contains(request.VoiceLanguage))
+            {
+                errors.Add($"Voice language '{request.VoiceLanguage}' is not supported. Supported languages: {string.Join(", ", _supportedLanguages)}");
+            }
+        }
+
+        // Validate voice speed
+        if (request.VoiceSpeed.HasValue)
+        {
+            if (request.VoiceSpeed < 0.25 || request.VoiceSpeed > 4.0)
+            {
+                errors.Add("Voice speed must be between 0.25 and 4.0");
+            }
+            else if (request.VoiceSpeed < 0.5 || request.VoiceSpeed > 2.0)
+            {
+                warnings.Add("Voice speed outside recommended range (0.5 - 2.0) may affect quality");
+            }
+        }
+
+        // Validate voice volume
+        if (request.VoiceVolume.HasValue)
+        {
+            if (request.VoiceVolume < 0.0 || request.VoiceVolume > 1.0)
+            {
+                errors.Add("Voice volume must be between 0.0 and 1.0");
+            }
+        }
+
+        // Validate microphone sensitivity
+        if (request.MicrophoneSensitivity.HasValue)
+        {
+            if (request.MicrophoneSensitivity < 0.0 || request.MicrophoneSensitivity > 1.0)
+            {
+                errors.Add("Microphone sensitivity must be between 0.0 and 1.0");
+            }
+        }
+
+        // Validate wake word
+        if (!string.IsNullOrEmpty(request.WakeWord))
+        {
+            if (!_supportedWakeWords.Contains(request.WakeWord))
+            {
+                warnings.Add($"Wake word '{request.WakeWord}' may not be optimally recognized. Recommended wake words: {string.Join(", ", _supportedWakeWords)}");
+            }
+            
+            if (request.WakeWord.Length < 3)
+            {
+                errors.Add("Wake word must be at least 3 characters long");
+            }
+            
+            if (request.WakeWord.Length > 50)
+            {
+                errors.Add("Wake word must not exceed 50 characters");
+            }
+        }
+
+        // Test TTS availability if applicable
+        if (!string.IsNullOrEmpty(request.VoiceLanguage))
+        {
+            try
+            {
+                var testText = "Test";
+                var audioData = await GenerateTtsAsync(testText);
+                if (audioData.Length == 0)
+                {
+                    warnings.Add("TTS service may not be available or configured properly");
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"TTS test failed: {ex.Message}");
+            }
+        }
+
+        result.IsValid = errors.Count == 0;
+        result.Errors = errors;
+        result.Warnings = warnings;
+        result.ValidatedConfig = request;
+
+        return result;
     }
 
     public async Task HandleSttWebSocketAsync(WebSocket webSocket)

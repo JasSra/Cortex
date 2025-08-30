@@ -252,9 +252,18 @@ const AnalyticsPage: React.FC = () => {
     }
   }, [isAuthenticated, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, getStatistics, speak, celebrate, think, idle, getAccessToken])
 
+  // Run once on mount
   useEffect(() => {
     loadAnalytics()
-  }, [loadAnalytics])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Re-run when date range changes (and user is authenticated)
+  useEffect(() => {
+    if (!isAuthenticated) return
+    loadAnalytics()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange.start, dateRange.end, isAuthenticated])
 
   // Trigger insights based on data
   useEffect(() => {
