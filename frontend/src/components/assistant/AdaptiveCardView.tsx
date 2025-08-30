@@ -6,7 +6,8 @@ import React, { useEffect, useRef, useState } from 'react'
 // optional dependency is installed. If it's not available, falls back to a
 // formatted JSON preview so the UI still works.
 
-type AdaptiveCardsModule = typeof import('adaptivecards')
+// Use 'any' to avoid requiring type definitions when package isn't installed yet
+type AdaptiveCardsModule = any
 
 export interface AdaptiveCardViewProps {
   card: any
@@ -65,4 +66,3 @@ const AdaptiveCardView: React.FC<AdaptiveCardViewProps> = ({ card, className }) 
 }
 
 export default AdaptiveCardView
-
