@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MagnifyingGlassIcon,
@@ -20,6 +20,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { DocumentTextIcon as DocumentTextSolid } from '@heroicons/react/24/solid'
 import { useMascot } from '@/contexts/MascotContext'
+import appBus from '@/lib/appBus'
 import { useNotesApi, useSearchApi } from '@/services/apiClient'
 
 interface Note {
@@ -54,10 +55,130 @@ interface FilterOptions {
 
 type ViewMode = 'list' | 'grid' | 'compact'
 
+// Lightweight, memoized Note Card to avoid unnecessary re-renders
+interface NoteCardProps {
+  note: Note
+  viewMode: ViewMode
+  highlighted: boolean
+  onClick: () => void
+}
+
+const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, onClick }) => {
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  const getExcerpt = (content: string, maxLength = 150) => {
+    if (content.length <= maxLength) return content
+    return content.substring(0, maxLength) + '...'
+  }
+
+  return (
+    <motion.div
+      // Turn off layout animations to avoid any perceived flicker
+      layout={false}
+      initial={false}
+      animate={{ boxShadow: highlighted ? '0 0 20px rgba(139, 92, 246, 0.5)' : '0 1px 3px rgba(0, 0, 0, 0.1)' }}
+      transition={{ type: 'tween', duration: 0.18 }}
+      className={`bg-white dark:bg-gray-800 rounded-xl border transition-colors duration-200 cursor-pointer overflow-hidden ${
+        highlighted 
+          ? 'border-purple-500 dark:border-purple-400 shadow-lg shadow-purple-500/25' 
+          : 'border-gray-200 dark:border-gray-700 hover:shadow-md'
+      }`}
+      onClick={onClick}
+      whileHover={{ y: -2 }}
+      id={`note-${note.id}`}
+    >
+      {viewMode === 'grid' ? (
+        <div className="p-6">
+          <div className="flex items-start justify-between mb-3">
+            <h3 className="font-semibold text-gray-900 dark:text-white text-lg line-clamp-2">
+              {note.title}
+            </h3>
+            <DocumentTextSolid className="w-5 h-5 text-purple-500 flex-shrink-0 ml-2" />
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-3 mb-4">
+            {getExcerpt(note.content)}
+          </p>
+          <div className="flex flex-wrap gap-1 mb-3">
+            {note.tags?.slice(0, 3).map(tag => (
+              <span
+                key={tag}
+                className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded-full"
+              >
+                {tag}
+              </span>
+            ))}
+            {(note.tags?.length || 0) > 3 && (
+              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-500 text-xs rounded-full">
+                +{(note.tags?.length || 0) - 3}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>{formatDate(note.updatedAt)}</span>
+            <span>{note.metadata?.wordCount || 0} words</span>
+          </div>
+        </div>
+      ) : (
+        <div className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium text-gray-900 dark:text-white truncate">
+                {note.title}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 line-clamp-2">
+                {getExcerpt(note.content, viewMode === 'compact' ? 80 : 120)}
+              </p>
+              {viewMode === 'list' && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {note.tags?.slice(0, 4).map(tag => (
+                    <span
+                      key={tag}
+                      className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center space-x-3 ml-4">
+              <div className="text-right">
+                <div className="text-xs text-gray-500">
+                  {formatDate(note.updatedAt)}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {note.metadata?.wordCount || 0} words
+                </div>
+              </div>
+              <EyeIcon className="w-5 h-5 text-gray-400" />
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+const NoteCard = React.memo(
+  NoteCardBase,
+  (prev, next) => prev.note === next.note && prev.viewMode === next.viewMode && prev.highlighted === next.highlighted
+)
+
+NoteCard.displayName = 'NoteCard'
+
 const NotesBrowserPage: React.FC = () => {
   const [notes, setNotes] = useState<Note[]>([])
   const [filteredNotes, setFilteredNotes] = useState<Note[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedNote, setSelectedNote] = useState<Note | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
@@ -94,30 +215,64 @@ const NotesBrowserPage: React.FC = () => {
   ]
 
   // Load notes with pagination
-  const loadNotes = useCallback(async (page = 1) => {
-    setIsLoading(true)
+  const firstLoadDone = useRef(false)
+
+  const loadNotes = useCallback(async (page = 1, background = false) => {
+    // Show initial spinner only on first load; later loads use a small overlay
+    if (!firstLoadDone.current && !background) {
+      setIsLoading(true)
+    } else {
+      setRefreshing(true)
+    }
     think()
 
     try {
       const notesData = await getNotes()
       
       // Transform the data to match our interface
-      const transformedNotes: Note[] = notesData.map((note: any) => ({
-        id: note.id || note.Id || note.noteId,
-        title: note.title || note.Title || `Note ${note.id}`,
-        content: note.content || note.Content || '',
-        createdAt: note.createdAt || note.CreatedAt || new Date().toISOString(),
-        updatedAt: note.updatedAt || note.UpdatedAt || note.createdAt || note.CreatedAt || new Date().toISOString(),
-        tags: note.tags || note.Tags || [],
-        metadata: {
-          source: note.source || note.Source,
-          fileType: note.fileType || note.FileType,
-          chunkCount: note.chunkCount || note.ChunkCount || 0,
-          wordCount: note.content?.split(/\s+/).length || 0
+      const toTagArray = (raw: any): string[] => {
+        if (!raw) return []
+        if (Array.isArray(raw)) return raw.filter(Boolean).map(String)
+        if (typeof raw === 'string') {
+          const s = raw.trim()
+          // Try JSON array first
+          if (s.startsWith('[') && s.endsWith(']')) {
+            try {
+              const parsed = JSON.parse(s)
+              if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String)
+            } catch { /* fall through */ }
+          }
+          // Fallback: CSV or semicolon separated
+          return s.split(/[;,]/).map(t => t.trim()).filter(Boolean)
         }
-      }))
+        return []
+      }
 
-      setNotes(transformedNotes)
+      const transformedNotes: Note[] = notesData.map((note: any) => {
+        const content = note.content || note.Content || ''
+        const rawTags = note.tags ?? note.Tags
+        const tags = toTagArray(rawTags)
+        return {
+          id: note.id || note.Id || note.noteId,
+          title: note.title || note.Title || `Note ${note.id ?? ''}`,
+          content,
+          createdAt: note.createdAt || note.CreatedAt || new Date().toISOString(),
+          updatedAt: note.updatedAt || note.UpdatedAt || note.createdAt || note.CreatedAt || new Date().toISOString(),
+          tags,
+          metadata: {
+            source: note.source || note.Source,
+            fileType: note.fileType || note.FileType,
+            chunkCount: note.chunkCount || note.ChunkCount || 0,
+            wordCount: typeof content === 'string' ? (content.trim() ? content.trim().split(/\s+/).length : 0) : 0,
+          },
+        }
+      })
+
+      // Minimize flicker: keep stable object refs for unchanged notes
+      setNotes(prev => {
+        const prevById = new Map(prev.map(n => [n.id, n]))
+        return transformedNotes.map(n => prevById.get(n.id) ?? n)
+      })
       setPagination(prev => ({
         ...prev,
         currentPage: page,
@@ -125,7 +280,7 @@ const NotesBrowserPage: React.FC = () => {
       }))
 
       // Extract available tags and sources
-      const tags = Array.from(new Set(transformedNotes.flatMap(note => note.tags || [])))
+      const tags = Array.from(new Set(transformedNotes.flatMap(note => Array.isArray(note.tags) ? note.tags : [])))
       const sources = Array.from(new Set(transformedNotes.map(note => note.metadata?.source).filter(Boolean)))
       setAvailableTags(tags)
       setAvailableSources(sources as string[])
@@ -135,7 +290,12 @@ const NotesBrowserPage: React.FC = () => {
       console.error('Failed to load notes:', error)
       speak('Sorry, I had trouble loading your notes. Please try again.', 'error')
     } finally {
-      setIsLoading(false)
+      if (!firstLoadDone.current) {
+        setIsLoading(false)
+        firstLoadDone.current = true
+      }
+      // Small debounce so quick fetches don't flash the overlay
+      setTimeout(() => setRefreshing(false), 120)
       idle()
     }
   }, [getNotes, speak, think, idle])
@@ -143,6 +303,14 @@ const NotesBrowserPage: React.FC = () => {
   // Initial load
   useEffect(() => {
     loadNotes()
+  }, [loadNotes])
+
+  // Listen for app-wide notes updates and reload
+  useEffect(() => {
+    const off = appBus.on('notes:updated', () => {
+      loadNotes(1, true)
+    })
+    return off
   }, [loadNotes])
 
   // Check for highlighted note from global search
@@ -273,100 +441,7 @@ const NotesBrowserPage: React.FC = () => {
     return content.substring(0, maxLength) + '...'
   }
 
-  // Note Card Component
-  const NoteCard = ({ note, onClick }: { note: Note; onClick: () => void }) => {
-    const isHighlighted = highlightedNoteId === note.id
-
-    return (
-      <motion.div
-        layout
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ 
-          opacity: 1, 
-          scale: 1,
-          boxShadow: isHighlighted ? '0 0 20px rgba(139, 92, 246, 0.5)' : '0 1px 3px rgba(0, 0, 0, 0.1)'
-        }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className={`bg-white dark:bg-gray-800 rounded-xl border transition-all duration-500 cursor-pointer overflow-hidden ${
-          isHighlighted 
-            ? 'border-purple-500 dark:border-purple-400 shadow-lg shadow-purple-500/25' 
-            : 'border-gray-200 dark:border-gray-700 hover:shadow-md'
-        }`}
-        onClick={onClick}
-        whileHover={{ y: -2 }}
-        id={`note-${note.id}`}
-      >
-      {viewMode === 'grid' ? (
-        <div className="p-6">
-          <div className="flex items-start justify-between mb-3">
-            <h3 className="font-semibold text-gray-900 dark:text-white text-lg line-clamp-2">
-              {note.title}
-            </h3>
-            <DocumentTextSolid className="w-5 h-5 text-purple-500 flex-shrink-0 ml-2" />
-          </div>
-          <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-3 mb-4">
-            {getExcerpt(note.content)}
-          </p>
-          <div className="flex flex-wrap gap-1 mb-3">
-            {note.tags?.slice(0, 3).map(tag => (
-              <span
-                key={tag}
-                className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded-full"
-              >
-                {tag}
-              </span>
-            ))}
-            {(note.tags?.length || 0) > 3 && (
-              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-500 text-xs rounded-full">
-                +{(note.tags?.length || 0) - 3}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>{formatDate(note.updatedAt)}</span>
-            <span>{note.metadata?.wordCount || 0} words</span>
-          </div>
-        </div>
-      ) : (
-        <div className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex-1 min-w-0">
-              <h3 className="font-medium text-gray-900 dark:text-white truncate">
-                {note.title}
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 line-clamp-2">
-                {getExcerpt(note.content, viewMode === 'compact' ? 80 : 120)}
-              </p>
-              {viewMode === 'list' && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {note.tags?.slice(0, 4).map(tag => (
-                    <span
-                      key={tag}
-                      className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center space-x-3 ml-4">
-              <div className="text-right">
-                <div className="text-xs text-gray-500">
-                  {formatDate(note.updatedAt)}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {note.metadata?.wordCount || 0} words
-                </div>
-              </div>
-              <EyeIcon className="w-5 h-5 text-gray-400" />
-            </div>
-          </div>
-        </div>
-      )}
-    </motion.div>
-  )
-  }
+  // Note Card was extracted and memoized above
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -628,7 +703,25 @@ const NotesBrowserPage: React.FC = () => {
         </motion.div>
 
         {/* Notes Grid/List */}
-        {isLoading ? (
+        {filteredNotes.length > 0 ? (
+          <div
+            className={
+              viewMode === 'grid' 
+                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+                : 'space-y-4'
+            }
+          >
+            {filteredNotes.map(note => (
+              <NoteCard
+                key={note.id}
+                note={note}
+                viewMode={viewMode}
+                highlighted={highlightedNoteId === note.id}
+                onClick={() => setSelectedNote(note)}
+              />
+            ))}
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-12">
             <motion.div
               animate={{ rotate: 360 }}
@@ -636,27 +729,6 @@ const NotesBrowserPage: React.FC = () => {
               className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full"
             />
           </div>
-        ) : filteredNotes.length > 0 ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className={
-              viewMode === 'grid' 
-                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
-                : 'space-y-4'
-            }
-          >
-            <AnimatePresence>
-              {filteredNotes.map(note => (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  onClick={() => setSelectedNote(note)}
-                />
-              ))}
-            </AnimatePresence>
-          </motion.div>
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -677,6 +749,20 @@ const NotesBrowserPage: React.FC = () => {
               }
             </p>
           </motion.div>
+        )}
+
+        {/* Loading overlay to avoid flicker during background refresh */}
+  {refreshing && filteredNotes.length > 0 && (
+          <div className="fixed inset-x-0 bottom-12 flex justify-center pointer-events-none">
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 dark:bg-gray-800/70 shadow border border-gray-200 dark:border-gray-700">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full"
+              />
+              <span className="text-xs text-gray-600 dark:text-gray-300">Refreshing…</span>
+            </div>
+          </div>
         )}
 
         {/* Note Viewer Modal */}

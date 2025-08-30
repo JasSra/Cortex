@@ -25,6 +25,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useSearchApi } from '../../services/apiClient'
 import GamificationWidget from '../gamification/GamificationWidget'
 import UserProfileDropdown from '../UserProfileDropdown'
+import JobStatusWidget from '../JobStatusWidget'
 import PageRenderer from '../PageRenderer'
 
 interface ModernLayoutProps {
@@ -61,9 +62,12 @@ export default function ModernLayout({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  // Control visibility based on focus/click-outside to reduce flicker
   const [showSearchResults, setShowSearchResults] = useState(false)
+  const [hasFocus, setHasFocus] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchResultsRef = useRef<HTMLDivElement>(null)
+  const searchRequestIdRef = useRef<number>(0)
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -86,6 +90,7 @@ export default function ModernLayout({
       if (e.key === 'Escape') {
         if (searchInputRef.current === document.activeElement) {
           searchInputRef.current?.blur()
+          setHasFocus(false)
           setShowSearchResults(false)
           setSearchQuery('')
           setSearchResults([])
@@ -116,6 +121,7 @@ export default function ModernLayout({
         !searchResultsRef.current.contains(event.target as Node) &&
         !searchInputRef.current?.contains(event.target as Node)
       ) {
+        setHasFocus(false)
         setShowSearchResults(false)
       }
     }
@@ -124,26 +130,43 @@ export default function ModernLayout({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Debounced search function
+  // Debounced search function with race protection and fallback modes
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim() || !isAuthenticated) {
       setSearchResults([])
-      setShowSearchResults(false)
       return
     }
 
     setIsSearching(true)
     setShowSearchResults(true)
 
+  // Track the latest request to avoid out-of-order updates
+  const reqId = ++searchRequestIdRef.current
+
+    const tryMode = async (mode: string) => {
+      try {
+        const res = await searchApi.searchGet(query, 5, mode, 0.6)
+        // normalized: res.hits | res.Hits
+        const results = (res?.Hits || res?.hits || []) as any[]
+        return results
+      } catch {
+        return [] as any[]
+      }
+    }
+
     try {
-      // Use the search API with a quick search
-      const results = await searchApi.searchGet(query, 5, 'hybrid', 0.6)
-      setSearchResults(results?.Results || results || [])
+      let results = await tryMode('hybrid')
+      if (results.length === 0) results = await tryMode('semantic')
+      if (results.length === 0) results = await tryMode('keyword')
+
+      // Only update if this is the latest request
+  if (searchRequestIdRef.current === reqId) {
+        setSearchResults(results)
+      }
     } catch (error) {
       console.error('Global search failed:', error)
-      setSearchResults([])
     } finally {
-      setIsSearching(false)
+  if (searchRequestIdRef.current === reqId) setIsSearching(false)
     }
   }, [searchApi, isAuthenticated])
 
@@ -154,7 +177,6 @@ export default function ModernLayout({
         performSearch(searchQuery)
       } else {
         setSearchResults([])
-        setShowSearchResults(false)
       }
     }, 300)
 
@@ -162,7 +184,7 @@ export default function ModernLayout({
   }, [searchQuery, performSearch])
 
   const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value)
+  setSearchQuery(e.target.value)
   }
 
   const handleSearchResultClick = (result: any) => {
@@ -279,6 +301,9 @@ export default function ModernLayout({
           </div>
 
           <div className="flex items-center space-x-4">
+            {/* Background job status */}
+            <JobStatusWidget />
+
             {/* Enhanced Global Search bar */}
             <div className="hidden md:block relative">
               <div className="relative">
@@ -291,8 +316,11 @@ export default function ModernLayout({
                   placeholder="Search everything... (Ctrl+K)"
                   className="w-64 pl-10 pr-4 py-2 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-slate-900 dark:text-slate-100"
                   onFocus={() => {
+                    setHasFocus(true)
+                    setShowSearchResults(true)
                     if (searchQuery.length >= 2) {
-                      setShowSearchResults(true)
+                      // Keep previous results visible during new search
+                      performSearch(searchQuery)
                     }
                   }}
                 />
@@ -303,71 +331,66 @@ export default function ModernLayout({
                 )}
               </div>
 
-              {/* Search Results Dropdown */}
-              <AnimatePresence>
-                {showSearchResults && (
-                  <motion.div
-                    ref={searchResultsRef}
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 shadow-lg z-50 max-h-96 overflow-y-auto"
-                  >
-                    {searchResults.length > 0 ? (
-                      <div className="p-2">
-                        <div className="text-xs text-gray-500 dark:text-slate-400 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
-                          Search Results ({searchResults.length})
+              {/* Search Results Dropdown (always mounted to avoid flicker) */}
+              <div
+                ref={searchResultsRef}
+                className={`absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 shadow-lg z-50 max-h-96 overflow-y-auto transition-all duration-150 ${
+                  showSearchResults && hasFocus ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
+                }`}
+              >
+                {searchResults.length > 0 ? (
+                  <div className="p-2">
+                    <div className="text-xs text-gray-500 dark:text-slate-400 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+                      Search Results ({searchResults.length})
+                    </div>
+                    {searchResults.slice(0, 5).map((result, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSearchResultClick(result)}
+                        className="w-full text-left p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        <div className="font-medium text-gray-900 dark:text-slate-100 text-sm truncate">
+                          {result.Title || result.title || 'Untitled'}
                         </div>
-                        {searchResults.slice(0, 5).map((result, index) => (
-                          <motion.button
-                            key={index}
-                            onClick={() => handleSearchResultClick(result)}
-                            whileHover={{ backgroundColor: 'rgba(0, 0, 0, 0.05)' }}
-                            className="w-full text-left p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-                          >
-                            <div className="font-medium text-gray-900 dark:text-slate-100 text-sm truncate">
-                              {result.Title || result.title || 'Untitled'}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-slate-400 mt-1 line-clamp-2">
-                              {result.Content || result.content || result.Snippet || 'No preview available'}
-                            </div>
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="text-xs text-blue-500 dark:text-blue-400">
-                                Score: {((result.Score || result.score || 0) * 100).toFixed(0)}%
-                              </span>
-                              <span className="text-xs text-gray-400 dark:text-slate-500">
-                                {result.NoteId || result.noteId || 'Unknown'}
-                              </span>
-                            </div>
-                          </motion.button>
-                        ))}
-                        <div className="border-t border-gray-100 dark:border-slate-700 mt-2 pt-2">
-                          <button
-                            onClick={() => {
-                              onViewChange('search')
-                              setShowSearchResults(false)
-                              if (typeof window !== 'undefined') {
-                                window.localStorage.setItem('globalSearchQuery', searchQuery)
-                              }
-                            }}
-                            className="w-full text-center py-2 text-sm text-blue-500 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                          >
-                            View all results for &ldquo;{searchQuery}&rdquo; →
-                          </button>
+                        <div className="text-xs text-gray-500 dark:text-slate-400 mt-1 line-clamp-2">
+                          {result.Content || result.content || result.Snippet || 'No preview available'}
                         </div>
-                      </div>
-                    ) : searchQuery.length >= 2 && !isSearching ? (
-                      <div className="p-4 text-center text-gray-500 dark:text-slate-400 text-sm">
-                        No results found for &ldquo;{searchQuery}&rdquo;
-                      </div>
-                    ) : searchQuery.length < 2 ? (
-                      <div className="p-4 text-center text-gray-500 dark:text-slate-400 text-sm">
-                        Type at least 2 characters to search
-                      </div>
-                    ) : null}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-blue-500 dark:text-blue-400">
+                            Score: {(((result.Score ?? result.score) || 0) * 100).toFixed(0)}%
+                          </span>
+                          <span className="text-xs text-gray-400 dark:text-slate-500">
+                            {result.NoteId || result.noteId || 'Unknown'}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                    <div className="border-t border-gray-100 dark:border-slate-700 mt-2 pt-2">
+                      <button
+                        onClick={() => {
+                          onViewChange('search')
+                          setHasFocus(false)
+                          setShowSearchResults(false)
+                          if (typeof window !== 'undefined') {
+                            window.localStorage.setItem('globalSearchQuery', searchQuery)
+                          }
+                        }}
+                        className="w-full text-center py-2 text-sm text-blue-500 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                      >
+                        View all results for &ldquo;{searchQuery}&rdquo; →
+                      </button>
+                    </div>
+                  </div>
+                ) : searchQuery.length >= 2 && !isSearching ? (
+                  <div className="p-4 text-center text-gray-500 dark:text-slate-400 text-sm">
+                    No results found for &ldquo;{searchQuery}&rdquo;
+                  </div>
+                ) : searchQuery.length < 2 ? (
+                  <div className="p-4 text-center text-gray-500 dark:text-slate-400 text-sm">
+                    Type at least 2 characters to search
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             {/* Dark Mode Toggle */}

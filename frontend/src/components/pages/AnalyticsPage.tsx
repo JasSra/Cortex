@@ -18,7 +18,7 @@ import {
   UserGroupIcon,
   GlobeAltIcon
 } from '@heroicons/react/24/outline'
-import { useGamificationApi, useGraphApi } from '@/services/apiClient'
+import { useGamificationApi, useGraphApi, useNotesApi } from '@/services/apiClient'
 import { useAppAuth } from '@/hooks/useAppAuth'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMascot } from '@/contexts/MascotContext'
@@ -70,7 +70,8 @@ const AnalyticsPage: React.FC = () => {
   const [showCelebration, setShowCelebration] = useState(false)
 
   const { getUserStats, getUserProgress, getAllAchievements, getMyAchievements } = useGamificationApi()
-  const { getStatistics } = useGraphApi()
+  const { getNotes } = useNotesApi()
+  const { getStatistics, getGraph, insights } = useGraphApi() as any
   const { isAuthenticated } = useAuth()
   const { speak, celebrate, suggest, idle, think } = useMascot()
   const { getAccessToken } = useAppAuth()
@@ -110,70 +111,64 @@ const AnalyticsPage: React.FC = () => {
       setLoading(true)
       think()
 
-      const [userStats, userProgress, allAchievements, userAchievements] = await Promise.all([
-        getUserStats().catch(() => ({ totalNotes: 0, totalXp: 0, level: 1, loginStreak: 0 })),
+      const [userStats, userProgress, allAchievements, userAchievements, notes] = await Promise.all([
+        getUserStats().catch(() => ({ totalNotes: 0, totalXp: 0, level: 1, loginStreak: 0, totalSearches: 0 })),
         getUserProgress().catch(() => ({ currentLevel: 1, currentXp: 0, progressToNext: 0 })),
         getAllAchievements().catch(() => [] as any[]),
-        getMyAchievements().catch(() => [] as any[])
+        getMyAchievements().catch(() => [] as any[]),
+        getNotes().catch(() => [] as any[]),
       ])
 
       // Load additional analytics data
   const token = await getAccessToken().catch(() => null)
       // Use existing typed endpoints; the specific analytics endpoints don't exist server-side yet
-      const [graphStatistics] = await Promise.all([
-        getStatistics().catch(() => ({}))
+      const [graphStatistics, graphInsights] = await Promise.all([
+        getStatistics().catch(() => ({})),
+        (insights ? insights() : Promise.resolve(null)).catch(() => null)
       ])
 
-  const searchData = {} as any
+  const searchData = { totalSearches: userStats.totalSearches ?? 0 } as any
   const graphData = graphStatistics as any
   const activityInfo = {} as any
 
       const unlockedCount = userAchievements.filter((ua: any) => ua.isUnlocked).length
 
-      // Generate activity heatmap (7 days × 24 hours)
-      const heatmapData = Array(7).fill(null).map(() => 
-        Array(24).fill(0).map(() => Math.floor(Math.random() * 10))
-      )
+  // Heatmap placeholder (no backend yet) - keep stable zeros
+  const heatmapData = Array(7).fill(null).map(() => Array(24).fill(0))
 
-      // Generate time distribution
-      const timeDistribution = Array(24).fill(null).map((_, hour) => ({
-        hour,
-        activity: Math.floor(Math.random() * 100)
-      }))
+  // Time distribution placeholder
+  const timeDistribution = Array(24).fill(null).map((_, hour) => ({ hour, activity: 0 }))
 
-      // Enhanced weekly activity
+      // Weekly activity approximation from totals (until detailed endpoint exists)
+      const avgPerDay = (val: number) => Math.max(0, Math.round((val || 0) / 7))
       const weeklyActivity = [
-        { day: 'Mon', notes: 5, searches: 12, xp: 67 },
-        { day: 'Tue', notes: 8, searches: 18, xp: 94 },
-        { day: 'Wed', notes: 3, searches: 8, xp: 43 },
-        { day: 'Thu', notes: 12, searches: 25, xp: 156 },
-        { day: 'Fri', notes: 7, searches: 15, xp: 89 },
-        { day: 'Sat', notes: 4, searches: 6, xp: 32 },
-        { day: 'Sun', notes: 2, searches: 4, xp: 18 }
+        { day: 'Mon', notes: avgPerDay(userStats.totalNotes), searches: avgPerDay(userStats.totalSearches), xp: avgPerDay(userStats.totalXp) },
+        { day: 'Tue', notes: avgPerDay(userStats.totalNotes), searches: avgPerDay(userStats.totalSearches), xp: avgPerDay(userStats.totalXp) },
+        { day: 'Wed', notes: avgPerDay(userStats.totalNotes), searches: avgPerDay(userStats.totalSearches), xp: avgPerDay(userStats.totalXp) },
+        { day: 'Thu', notes: avgPerDay(userStats.totalNotes), searches: avgPerDay(userStats.totalSearches), xp: avgPerDay(userStats.totalXp) },
+        { day: 'Fri', notes: avgPerDay(userStats.totalNotes), searches: avgPerDay(userStats.totalSearches), xp: avgPerDay(userStats.totalXp) },
+        { day: 'Sat', notes: avgPerDay(userStats.totalNotes), searches: avgPerDay(userStats.totalSearches), xp: avgPerDay(userStats.totalXp) },
+        { day: 'Sun', notes: avgPerDay(userStats.totalNotes), searches: avgPerDay(userStats.totalSearches), xp: avgPerDay(userStats.totalXp) }
       ]
 
+      // Monthly progress placeholder (zeros) until history API is added
       const monthlyProgress = [
-        { month: 'Jan', notes: 45, xp: 567 },
-        { month: 'Feb', notes: 52, xp: 634 },
-        { month: 'Mar', notes: 38, xp: 456 },
-        { month: 'Apr', notes: 67, xp: 789 },
-        { month: 'May', notes: 71, xp: 856 },
-        { month: 'Jun', notes: 39, xp: 499 }
+        { month: 'Jan', notes: 0, xp: 0 },
+        { month: 'Feb', notes: 0, xp: 0 },
+        { month: 'Mar', notes: 0, xp: 0 },
+        { month: 'Apr', notes: 0, xp: 0 },
+        { month: 'May', notes: 0, xp: 0 },
+        { month: 'Jun', notes: 0, xp: 0 }
       ]
 
       // Enhanced recent activity with types
-      const recentActivity = [
-        { action: 'Created new note about AI', date: '2 hours ago', xp: 10, type: 'note' as const },
-        { action: 'Achieved "Knowledge Seeker"', date: '1 day ago', xp: 50, type: 'achievement' as const },
-        { action: 'Voice command: "Search documents"', date: '2 days ago', xp: 5, type: 'voice' as const },
-        { action: 'Complex search query executed', date: '3 days ago', xp: 15, type: 'search' as const },
-        { action: 'Updated entity classifications', date: '4 days ago', xp: 8, type: 'note' as const },
-        { action: 'Voice session: 15 minutes', date: '5 days ago', xp: 12, type: 'voice' as const }
-      ]
+  const recentActivity: Array<{ action: string; date: string; xp: number; type: 'note' | 'search' | 'achievement' | 'voice' }> = []
 
-  setAnalytics({
-        totalNotes: userStats.totalNotes || 0,
-  totalXp: userStats.totalXp || 0,
+      const totalNotes = Array.isArray(notes) ? notes.length : (userStats.totalNotes || 0)
+
+      setAnalytics({
+        totalNotes,
+        totalXp: userStats.totalXp || 0,
         level: userStats.level || 1,
         loginStreak: userStats.loginStreak || 0,
         achievementsUnlocked: unlockedCount,
@@ -182,23 +177,19 @@ const AnalyticsPage: React.FC = () => {
         recentActivity,
         monthlyProgress,
         searchStats: {
-          totalSearches: searchData?.totalSearches || 247,
-          avgResponseTime: searchData?.avgResponseTime || 0.34,
-          favoriteSearchTypes: searchData?.favoriteTypes || [
-            { type: 'semantic', count: 156 },
-            { type: 'vector', count: 89 },
-            { type: 'hybrid', count: 67 }
-          ]
+          totalSearches: searchData?.totalSearches || 0,
+          avgResponseTime: 0,
+          favoriteSearchTypes: []
         },
         voiceStats: {
-          totalVoiceCommands: activityInfo?.voiceCommands || 89,
-          avgSessionLength: activityInfo?.avgSessionLength || 4.2,
+          totalVoiceCommands: activityInfo?.voiceCommands || 0,
+          avgSessionLength: activityInfo?.avgSessionLength || 0,
           preferredLanguage: 'English'
         },
         knowledgeGraph: {
-          totalEntities: (Object.values(graphData || {}) as any[]).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0) || 0,
-          totalRelations: 0,
-          mostConnectedEntity: 'N/A'
+          totalEntities: (Object.values(graphData || {}) as any[]).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0) || (graphInsights?.totalEntities ?? 0),
+          totalRelations: graphInsights?.totalRelationships ?? 0,
+          mostConnectedEntity: graphInsights?.topHubs?.[0]?.entityLabel || 'N/A'
         },
         timeDistribution,
         activityHeatmap: heatmapData
@@ -215,7 +206,7 @@ const AnalyticsPage: React.FC = () => {
         speak(`Congratulations! You've unlocked ${newAchievements.length} new achievement${newAchievements.length > 1 ? 's' : ''}!`)
         setTimeout(() => setShowCelebration(false), 3000)
       } else {
-  speak(`Welcome back! Your analytics look great. You're level ${userStats.level || 1} with ${userStats.totalXp || 0} XP!`)
+        speak(`Welcome back! You're level ${userStats.level || 1} with ${userStats.totalXp || 0} XP, and ${userStats.totalNotes || 0} notes.`)
       }
 
     } catch (error) {
@@ -250,7 +241,7 @@ const AnalyticsPage: React.FC = () => {
       setLoading(false)
       idle()
     }
-  }, [isAuthenticated, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, getStatistics, speak, celebrate, think, idle, getAccessToken])
+  }, [isAuthenticated, getUserStats, getUserProgress, getAllAchievements, getMyAchievements, getStatistics, insights, speak, celebrate, think, idle, getAccessToken, getNotes])
 
   // Run once on mount
   useEffect(() => {

@@ -6,6 +6,7 @@ import { IngestResult } from '@/types/api'
 import { ArrowUpTrayIcon, FolderOpenIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/contexts/AuthContext'
+import appBus from '@/lib/appBus'
 
 const IngestPage: React.FC = () => {
   const { isAuthenticated } = useAuth()
@@ -15,17 +16,19 @@ const IngestPage: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [folderPath, setFolderPath] = useState('')
+  const [pasteText, setPasteText] = useState('')
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const pasteRef = useRef<HTMLTextAreaElement>(null)
 
   const onFilesSelected = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return
     setError(null)
     setIsUploading(true)
     try {
-      const res = await uploadFiles(files)
+  const res = await uploadFiles(files)
       setResults(prev => [...res, ...prev])
-      // Remove automatic notes refresh - let the Notes page handle its own data
+  appBus.emit('notes:updated', { source: 'ingest:files', count: res.length })
     } catch (e: any) {
       setError(e?.message || 'Upload failed')
     } finally {
@@ -44,14 +47,18 @@ const IngestPage: React.FC = () => {
   const onPaste = useCallback(async (ev: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const text = ev.clipboardData.getData('text')
     if (!text?.trim()) return
+    setPasteText(prev => prev + (prev ? '\n' : '') + text)
     
     setError(null)
     setIsUploading(true)
     
     try {
-      const result = await createNote(text.trim())
+  const result = await createNote(text.trim())
       setResults(prev => [result, ...prev])
-      // Remove automatic notes refresh - let the Notes page handle its own data
+  appBus.emit('notes:updated', { source: 'ingest:paste', noteId: result.noteId })
+      // Clear the textarea after successful note creation
+      setPasteText('')
+      if (pasteRef.current) pasteRef.current.value = ''
     } catch (e: any) {
       setError(e?.message || 'Failed to create note from pasted text')
     } finally {
@@ -64,9 +71,9 @@ const IngestPage: React.FC = () => {
     setError(null)
     setIsUploading(true)
     try {
-      const res = await ingestFolder(folderPath.trim())
+  const res = await ingestFolder(folderPath.trim())
       setResults(prev => [...res, ...prev])
-      // Remove automatic notes refresh - let the Notes page handle its own data
+  appBus.emit('notes:updated', { source: 'ingest:folder', count: res.length })
     } catch (e: any) {
       setError(e?.message || 'Folder ingest failed')
     } finally {
@@ -130,6 +137,9 @@ const IngestPage: React.FC = () => {
       <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700">
         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Paste text to create a note</label>
         <textarea
+          ref={pasteRef}
+          value={pasteText}
+          onChange={e => setPasteText(e.target.value)}
           className="w-full h-28 p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-slate-100"
           placeholder="Paste any text here..."
           onPaste={onPaste}

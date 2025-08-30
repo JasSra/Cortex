@@ -50,7 +50,7 @@ public class IngestService : IIngestService
         _context = context;
         _configuration = configuration;
         _logger = logger;
-        _dataDir = _configuration["DATA_DIR"] ?? "/app/data";
+        _dataDir = _configuration["DATA_DIR"] ?? "./data";
         _vectorService = vectorService;
         _user = user;
         _piiDetectionService = piiDetectionService;
@@ -228,6 +228,7 @@ public class IngestService : IIngestService
         {
             UserId = _user.UserId,
             Title = PathIO.GetFileNameWithoutExtension(file.FileName),
+            Content = content, // store plain text for previews/word counts
             OriginalPath = file.FileName,
             FilePath = filePath,
             FileType = PathIO.GetExtension(file.FileName).ToLower(),
@@ -288,11 +289,12 @@ public class IngestService : IIngestService
             return null;
         }
 
-        // Create note and chunks
+    // Create note and chunks
     var note = new Note
         {
             UserId = _user.UserId,
             Title = PathIO.GetFileNameWithoutExtension(fileInfo.Name),
+        Content = content, // store plain text for previews/word counts
             OriginalPath = filePath,
             FilePath = filePath,
             FileType = fileInfo.Extension.ToLower(),

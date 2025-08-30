@@ -1309,6 +1309,39 @@ export class CortexApiClient {
     /**
      * @return Success
      */
+    status(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Jobs/status";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processStatus(_response);
+        });
+    }
+
+    protected processStatus(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
     notesGET(id: string): Promise<void> {
         let url_ = this.baseUrl + "/api/Notes/{id}";
         if (id === undefined || id === null)
@@ -1407,6 +1440,77 @@ export class CortexApiClient {
     }
 
     protected processNotesGET2(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    notesPOST(body: CreateNoteRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Notes";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processNotesPOST(_response);
+        });
+    }
+
+    protected processNotesPOST(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    health3(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Notes/health";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processHealth3(_response);
+        });
+    }
+
+    protected processHealth3(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -2361,7 +2465,7 @@ export class CortexApiClient {
     /**
      * @return Success
      */
-    health3(): Promise<void> {
+    health4(): Promise<void> {
         let url_ = this.baseUrl + "/api/Security/health";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -2372,11 +2476,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processHealth3(_response);
+            return this.processHealth4(_response);
         });
     }
 
-    protected processHealth3(response: Response): Promise<void> {
+    protected processHealth4(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -2443,6 +2547,90 @@ export class CortexApiClient {
     }
 
     protected processSeedData(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param files (optional) 
+     * @return Success
+     */
+    upload(files: FileParameter[] | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Storage/upload";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = new FormData();
+        if (files === null || files === undefined)
+            throw new Error("The parameter 'files' cannot be null.");
+        else
+            files.forEach(item_ => content_.append("files", item_.data, item_.fileName ? item_.fileName : "files") );
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processUpload(_response);
+        });
+    }
+
+    protected processUpload(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param limit (optional) 
+     * @param offset (optional) 
+     * @return Success
+     */
+    storage(limit: number | undefined, offset: number | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Storage?";
+        if (limit === null)
+            throw new Error("The parameter 'limit' cannot be null.");
+        else if (limit !== undefined)
+            url_ += "limit=" + encodeURIComponent("" + limit) + "&";
+        if (offset === null)
+            throw new Error("The parameter 'offset' cannot be null.");
+        else if (offset !== undefined)
+            url_ += "offset=" + encodeURIComponent("" + offset) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processStorage(_response);
+        });
+    }
+
+    protected processStorage(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -4122,6 +4310,46 @@ export interface IClassification {
     model?: string | undefined;
     createdAt?: Date;
     note?: Note;
+}
+
+export class CreateNoteRequest implements ICreateNoteRequest {
+    title?: string | undefined;
+    content!: string;
+
+    constructor(data?: ICreateNoteRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.title = _data["title"];
+            this.content = _data["content"];
+        }
+    }
+
+    static fromJS(data: any): CreateNoteRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new CreateNoteRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["title"] = this.title;
+        data["content"] = this.content;
+        return data;
+    }
+}
+
+export interface ICreateNoteRequest {
+    title?: string | undefined;
+    content: string;
 }
 
 export class CreateUserProfileRequest implements ICreateUserProfileRequest {

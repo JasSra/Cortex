@@ -179,7 +179,13 @@ namespace CortexApi.Controllers
             try
             {
                 var userSubjectId = _userContext.UserSubjectId;
-                
+                var userId = _userContext.UserId;
+
+                if (string.IsNullOrWhiteSpace(userSubjectId) && string.IsNullOrWhiteSpace(userId))
+                {
+                    return Unauthorized(new { message = "Unauthorized" });
+                }
+
                 var profile = await _context.UserProfiles
                     .FirstOrDefaultAsync(p => p.SubjectId == userSubjectId);
 
@@ -188,11 +194,46 @@ namespace CortexApi.Controllers
                     return NotFound(new { message = "User profile not found" });
                 }
 
-                // This will cascade delete all user's data due to foreign key constraints
-                _context.UserProfiles.Remove(profile);
-                await _context.SaveChangesAsync();
+                // Perform a comprehensive purge in a single transaction to ensure consistency
+                using var tx = await _context.Database.BeginTransactionAsync();
 
-                _logger.LogInformation("Deleted user profile for subject ID: {SubjectId}", userSubjectId);
+                // 1) Delete user Notes (and cascade to Chunks, Embeddings, Classifications, NoteTags, TextSpans)
+                var notes = await _context.Notes
+                    .IgnoreQueryFilters() // bypass per-user/soft-delete filters
+                    .Where(n => n.UserId == userId)
+                    .ToListAsync();
+                if (notes.Count > 0)
+                {
+                    _context.Notes.RemoveRange(notes);
+                }
+
+                // 2) Delete StoredFiles owned by the user
+                var files = await _context.StoredFiles
+                    .Where(f => f.UserId == userId)
+                    .ToListAsync();
+                if (files.Count > 0)
+                {
+                    _context.StoredFiles.RemoveRange(files);
+                }
+
+                // 3) Delete app-managed role assignments for this subject
+                var roles = await _context.UserRoleAssignments
+                    .Where(r => r.SubjectId == (userSubjectId ?? userId))
+                    .ToListAsync();
+                if (roles.Count > 0)
+                {
+                    _context.UserRoleAssignments.RemoveRange(roles);
+                }
+
+                // 4) Finally, delete the UserProfile itself (will cascade to UserAchievements,
+                //    NotificationDevice, NotificationHistory via FK constraints)
+                _context.UserProfiles.Remove(profile);
+
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                _logger.LogInformation("Deleted user account and all associated data. SubjectId: {SubjectId}, UserId: {UserId}. NotesDeleted: {NotesCount}, FilesDeleted: {FilesCount}, RolesDeleted: {RolesCount}",
+                    userSubjectId, userId, notes.Count, files.Count, roles.Count);
                 return NoContent();
             }
             catch (Exception ex)

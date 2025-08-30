@@ -13,7 +13,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useAuth, getUserDisplayName, getUserInitials } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
-import { useGamificationApi } from '@/services/apiClient'
+import { useGamificationApi, useNotesApi } from '@/services/apiClient'
 import { useMascot } from '@/contexts/MascotContext'
 import MascotPicker from '@/components/mascot/MascotPicker'
 
@@ -28,10 +28,12 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
   const { user, isAuthenticated, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { getUserStats, getMyAchievements } = useGamificationApi()
+  const { getNotes } = useNotesApi()
   const [userStats, setUserStats] = useState<any>(null)
   const [topAchievement, setTopAchievement] = useState<string>('Administrator')
   const { selectedMascotId, setSelectedMascotId } = useMascot()
   const [isPickerOpen, setPickerOpen] = useState(false)
+  const [notesCount, setNotesCount] = useState<number | null>(null)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -47,7 +49,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
   }, [])
 
   useEffect(() => {
-    if (isAuthenticated && isOpen) {
+  if (isAuthenticated && isOpen) {
       Promise.all([
         getUserStats().then(setUserStats),
         getMyAchievements().then((achievements: any[]) => {
@@ -57,10 +59,11 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
             const topAchievement = unlockedAchievements.sort((a, b) => (b.achievement?.xpReward || 0) - (a.achievement?.xpReward || 0))[0]
             setTopAchievement(topAchievement.achievement?.name || 'Administrator')
           }
-        })
+    }),
+    getNotes().then((list) => setNotesCount(Array.isArray(list) ? list.length : 0)).catch(() => setNotesCount(null)),
       ]).catch(console.error)
     }
-  }, [isAuthenticated, isOpen, getUserStats, getMyAchievements])
+  }, [isAuthenticated, isOpen, getUserStats, getMyAchievements, getNotes])
 
   const handleNavigate = (page: string) => {
     setIsOpen(false)
@@ -155,9 +158,9 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
                     </div>
                     <div className="text-xs text-gray-500 dark:text-slate-400">XP</div>
                   </div>
-                  <div className="text-center p-3 bg-gray-50 dark:bg-slate-700 rounded-xl">
+          <div className="text-center p-3 bg-gray-50 dark:bg-slate-700 rounded-xl">
                     <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                      {userStats.totalNotes || 0}
+            {(notesCount ?? userStats.totalNotes) || 0}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-slate-400">Notes</div>
                   </div>
