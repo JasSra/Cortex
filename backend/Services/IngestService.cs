@@ -24,7 +24,7 @@ public interface IIngestService
     Task<IngestResult?> IngestTextAsync(string title, string content);
     Task<Note?> GetNoteAsync(string noteId);
     Task<List<Note>> GetUserNotesAsync(string userId, int limit = 20, int offset = 0);
-    Task<IngestResult?> UpdateNoteAsync(string noteId, string title, string content);
+    Task<IngestResult?> UpdateNoteAsync(string noteId, string title, string content, bool skipProcessing = false);
     Task<UrlIngestResult?> IngestSingleUrlAsync(string url, string title, string content, string? finalUrl = null, string? siteName = null, string? byline = null, string? publishedTime = null);
 }
 
@@ -194,7 +194,7 @@ public class IngestService : IIngestService
             .FirstOrDefaultAsync(n => n.Id == noteId);
     }
 
-    public async Task<IngestResult?> UpdateNoteAsync(string noteId, string title, string content)
+    public async Task<IngestResult?> UpdateNoteAsync(string noteId, string title, string content, bool skipProcessing = false)
     {
         // Note query is already scoped by user via query filter
         var note = await _context.Notes
@@ -221,6 +221,13 @@ public class IngestService : IIngestService
         note.FileType = ".txt";
         note.FileSizeBytes = Encoding.UTF8.GetByteCount(content);
         note.Sha256Hash = CalculateSha256FromText(NormalizeForHash(content));
+
+        if (skipProcessing)
+        {
+            await _context.SaveChangesAsync();
+            _logger.LogDebug("Lightweight update applied to note {NoteId} (skipProcessing)", note.Id);
+            return new IngestResult { NoteId = note.Id, Title = note.Title, CountChunks = note.ChunkCount };
+        }
 
         // Remove existing derived data to avoid duplication
         var existingChunks = await _context.NoteChunks.Where(c => c.NoteId == note.Id).ToListAsync();

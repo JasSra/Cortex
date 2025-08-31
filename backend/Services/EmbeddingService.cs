@@ -39,44 +39,86 @@ public class EmbeddingService : IEmbeddingService
     {
         var provider = _configuration["Embedding:Provider"] ?? "openai";
         var model = _configuration["Embedding:Model"] ?? "text-embedding-3-small";
+        var fallbackToLocal = string.Equals(_configuration["Embedding:FallbackToLocal"], "true", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(_configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
 
         if (provider.Equals("openai", StringComparison.OrdinalIgnoreCase))
         {
             var apiKey = _configuration["OpenAI:ApiKey"] ?? _configuration["OPENAI_API_KEY"];
             if (string.IsNullOrWhiteSpace(apiKey))
             {
-                _logger.LogWarning("OpenAI API key not configured; cannot embed");
+                _logger.LogWarning("OpenAI API key not configured; cannot embed using OpenAI");
+                if (fallbackToLocal)
+                {
+                    _logger.LogWarning("Falling back to local hashing-based embeddings (dev mode)");
+                    return LocalEmbed(text);
+                }
                 return null;
             }
 
-            var payload = new
+            try
             {
-                model,
-                input = text
-            };
-            var json = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                var payload = new
+                {
+                    model,
+                    input = text
+                };
+                var json = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-            using var resp = await _httpClient.PostAsync("https://api.openai.com/v1/embeddings", json, ct);
-            if (!resp.IsSuccessStatusCode)
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(20));
+                using var resp = await _httpClient.PostAsync("https://api.openai.com/v1/embeddings", json, cts.Token);
+                var respText = await resp.Content.ReadAsStringAsync(ct);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    _logger.LogError("OpenAI embeddings failed: {Status} {Body}", (int)resp.StatusCode, Truncate(respText, 400));
+                    if (fallbackToLocal)
+                    {
+                        _logger.LogWarning("Falling back to local hashing-based embeddings after OpenAI failure");
+                        return LocalEmbed(text);
+                    }
+                    return null;
+                }
+
+                using var doc = JsonDocument.Parse(respText);
+                var data = doc.RootElement.GetProperty("data")[0].GetProperty("embedding");
+                var arr = new float[data.GetArrayLength()];
+                var i = 0;
+                foreach (var v in data.EnumerateArray())
+                {
+                    arr[i++] = v.GetSingle();
+                }
+                return arr;
+            }
+            catch (OperationCanceledException oce)
             {
-                var body = await resp.Content.ReadAsStringAsync(ct);
-                _logger.LogError("OpenAI embeddings failed: {Status} {Body}", (int)resp.StatusCode, body);
+                _logger.LogError(oce, "OpenAI embedding request timed out");
+                if (fallbackToLocal)
+                {
+                    _logger.LogWarning("Falling back to local hashing-based embeddings after timeout");
+                    return LocalEmbed(text);
+                }
                 return null;
             }
-
-            var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            var data = doc.RootElement.GetProperty("data")[0].GetProperty("embedding");
-            var arr = new float[data.GetArrayLength()];
-            var i = 0;
-            foreach (var v in data.EnumerateArray())
+            catch (Exception ex)
             {
-                arr[i++] = v.GetSingle();
+                _logger.LogError(ex, "OpenAI embedding call failed");
+                if (fallbackToLocal)
+                {
+                    _logger.LogWarning("Falling back to local hashing-based embeddings after exception");
+                    return LocalEmbed(text);
+                }
+                return null;
             }
-            return arr;
         }
 
         // Local provider placeholder: simple hashing-based embedding to allow dev without network
+        return LocalEmbed(text);
+    }
+
+    private float[] LocalEmbed(string text)
+    {
         var dimLocal = GetEmbeddingDim();
         var vec = new float[dimLocal];
         unchecked
@@ -97,6 +139,9 @@ public class EmbeddingService : IEmbeddingService
         }
         return vec;
     }
+
+    private static string Truncate(string s, int max)
+        => string.IsNullOrEmpty(s) || s.Length <= max ? s : s.Substring(0, max) + "…";
 
     public async Task ReembedChunkAsync(string chunkId, CancellationToken ct = default)
     {

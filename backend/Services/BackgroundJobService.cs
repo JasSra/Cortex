@@ -6,10 +6,21 @@ using StackExchange.Redis;
 
 namespace CortexApi.Services;
 
+public class JobDetailsItem
+{
+	public string? Id { get; set; }
+	public string? Type { get; set; }
+	public string? Stream { get; set; }
+	public DateTime? EnqueuedAt { get; set; }
+	public Dictionary<string, object>? Payload { get; set; }
+}
+
 public interface IBackgroundJobService
 {
     Task EnqueueJobAsync(string jobType, object payload, CancellationToken ct = default);
     Task<JobStats> GetStatsAsync(CancellationToken ct = default);
+	Task<IReadOnlyList<JobDetailsItem>> GetPendingJobsAsync(int maxItems = 100, CancellationToken ct = default);
+	Task<int> RequeueEmbeddingBacklogAsync(int maxItems = 500, CancellationToken ct = default);
 }
 
 public class JobStats
@@ -76,6 +87,124 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		_scopeFactory = scopeFactory;
 		_logger = logger;
 		_configuration = configuration;
+	}
+
+	public async Task<IReadOnlyList<JobDetailsItem>> GetPendingJobsAsync(int maxItems = 100, CancellationToken ct = default)
+	{
+		var results = new List<JobDetailsItem>();
+
+		// Helper local function to add an item
+		void AddItem(string id, string type, string stream, DateTime? enqueuedAt, Dictionary<string, object> payload)
+		{
+			results.Add(new JobDetailsItem
+			{
+				Id = id,
+				Type = type,
+				Stream = stream,
+				EnqueuedAt = enqueuedAt,
+				Payload = payload
+			});
+		}
+
+		int remaining = Math.Max(1, maxItems);
+
+		// 1) If Redis is connected, attempt to surface recent entries from each stream (best-effort preview)
+		if (_db != null && (_redis?.IsConnected ?? false))
+		{
+			async Task ReadRecentAsync(string streamName, string type)
+			{
+				if (remaining <= 0) return;
+				try
+				{
+					// Read the most recent entries without claiming/acknowledging any (descending, then reverse to chronological)
+					var count = Math.Min(remaining, 50);
+					var entries = await _db.StreamRangeAsync(streamName, minId: "-", maxId: "+", count: count, messageOrder: Order.Descending);
+					foreach (var entry in entries.Reverse())
+					{
+						var vals = entry.Values.ToDictionary(v => v.Name, v => v.Value.ToString() as object);
+						// Extract enqueued time if present
+						DateTime? enq = null;
+						if (vals.TryGetValue("enqueued_at", out var ev) && ev is string s && long.TryParse(s, out var unix))
+						{
+							try { enq = DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime; } catch { }
+						}
+
+						// Build payload envelope including the original payload JSON and a human reason
+						var payload = new Dictionary<string, object>();
+						if (vals.TryGetValue("payload", out var pjson) && pjson is string pstr)
+						{
+							payload["payload"] = pstr; // original JSON string
+							try
+							{
+								var doc = JsonDocument.Parse(pstr);
+								foreach (var prop in doc.RootElement.EnumerateObject())
+								{
+									payload[prop.Name] = prop.Value.ValueKind == JsonValueKind.String ? (object)(prop.Value.GetString() ?? string.Empty) : prop.Value.ToString();
+								}
+							}
+							catch { /* ignore payload parse issues */ }
+						}
+						payload["PendingReason"] = "Queued in Redis stream; awaiting worker";
+
+						AddItem(entry.Id.ToString(), type, streamName, enq, payload);
+
+						remaining--;
+						if (remaining <= 0) break;
+					}
+				}
+				catch (Exception ex)
+				{
+					_logger.LogDebug(ex, "Failed to enumerate stream {Stream}", streamName);
+				}
+			}
+
+			await ReadRecentAsync(EMBEDDING_STREAM, "embedding");
+			await ReadRecentAsync(CLASSIFICATION_STREAM, "classification");
+			await ReadRecentAsync(PII_DETECTION_STREAM, "pii_detection");
+			await ReadRecentAsync(WEEKLY_DIGEST_STREAM, "weekly_digest");
+			await ReadRecentAsync(GRAPH_ENRICH_STREAM, "graph_enrich");
+		}
+
+		// 2) If capacity remains, include EF backlog items (embedding jobs that haven't been embedded yet)
+		if (remaining > 0)
+		{
+			try
+			{
+				using var scope = _scopeFactory.CreateScope();
+				var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
+
+				var backlog = await (
+					from ch in db.NoteChunks.AsNoTracking()
+					join em in db.Embeddings.AsNoTracking() on ch.Id equals em.ChunkId into gj
+					from em in gj.DefaultIfEmpty()
+					where em == null
+					orderby ch.CreatedAt
+					select new { ch.Id, ch.NoteId, ch.CreatedAt }
+				)
+				.Take(Math.Min(remaining, 200))
+				.ToListAsync(ct);
+
+				foreach (var item in backlog)
+				{
+					var payload = new Dictionary<string, object>
+					{
+						{ "payload", JsonSerializer.Serialize(new EmbeddingJobPayload { ChunkId = item.Id }) },
+						{ "ChunkId", item.Id },
+						{ "NoteId", item.NoteId },
+						{ "PendingReason", "Embedding missing; waiting for polling processor" }
+					};
+					AddItem($"backlog:{item.Id}", "embedding", "backlog", item.CreatedAt, payload);
+					remaining--;
+					if (remaining <= 0) break;
+				}
+			}
+			catch (Exception ex)
+			{
+				_logger.LogDebug(ex, "Failed to enumerate EF backlog items");
+			}
+		}
+
+		return results;
 	}
 	
 	private async Task<bool> InitializeRedisAsync()
@@ -542,6 +671,36 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 
         return (created, false);
     }
+
+	public async Task<int> RequeueEmbeddingBacklogAsync(int maxItems = 500, CancellationToken ct = default)
+	{
+		int enqueued = 0;
+		try
+		{
+			using var scope = _scopeFactory.CreateScope();
+			var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
+
+			var backlog = await (
+				from ch in db.NoteChunks.AsNoTracking()
+				join em in db.Embeddings.AsNoTracking() on ch.Id equals em.ChunkId into gj
+				from em in gj.DefaultIfEmpty()
+				where em == null
+				orderby ch.CreatedAt
+				select ch.Id
+			).Take(Math.Max(1, maxItems)).ToListAsync(ct);
+
+			foreach (var chunkId in backlog)
+			{
+				await EnqueueJobAsync("embedding", new EmbeddingJobPayload { ChunkId = chunkId }, ct);
+				enqueued++;
+			}
+		}
+		catch (Exception ex)
+		{
+			_logger.LogWarning(ex, "Failed to requeue embedding backlog");
+		}
+		return enqueued;
+	}
 
     private async Task ProcessEmbeddingJob(IServiceScope scope, string payloadJson, CancellationToken stoppingToken)
     {

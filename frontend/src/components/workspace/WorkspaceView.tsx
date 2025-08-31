@@ -8,7 +8,7 @@ import {
 } from '@heroicons/react/24/outline'
 import WorkspaceSidebar from './WorkspaceSidebar'
 import WorkspaceEditor from './WorkspaceEditor'
-import { useWorkspaceApi } from '../../services/apiClient'
+import { useWorkspaceApi, useIngestApi } from '../../services/apiClient'
 
 interface WorkspaceViewProps {
   activeView: string
@@ -20,8 +20,10 @@ export default function WorkspaceView({ activeView, onViewChange }: WorkspaceVie
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
 
   const { getWorkspace } = useWorkspaceApi()
+  const { createNote } = useIngestApi()
 
   // Load workspace state on mount
   const loadWorkspace = useCallback(async () => {
@@ -67,6 +69,25 @@ export default function WorkspaceView({ activeView, onViewChange }: WorkspaceVie
     setSidebarOpen(prev => !prev)
   }, [])
 
+  const handleCreatePlainNote = useCallback(async () => {
+    if (creating) return
+    try {
+      setCreating(true)
+  const created = await createNote('', 'Untitled Note')
+  const newId = created?.noteId
+      if (newId) {
+        setSelectedNoteId(String(newId))
+        // Ensure editor area is visible on mobile
+        if (window.innerWidth < 1024) setSidebarOpen(false)
+      }
+    } catch (e) {
+      console.error('Failed to create note:', e)
+      setError((e as any)?.message || 'Failed to create note')
+    } finally {
+      setCreating(false)
+    }
+  }, [createNote, creating])
+
   if (activeView !== 'workspace') {
     return null
   }
@@ -79,6 +100,7 @@ export default function WorkspaceView({ activeView, onViewChange }: WorkspaceVie
         onClose={() => setSidebarOpen(false)}
         onNoteSelect={handleNoteSelect}
         selectedNoteId={selectedNoteId || undefined}
+  onCreateNote={handleCreatePlainNote}
       />
 
       {/* Main Content Area */}
@@ -112,6 +134,13 @@ export default function WorkspaceView({ activeView, onViewChange }: WorkspaceVie
                 Show Sidebar
               </button>
             )}
+            <button
+              onClick={handleCreatePlainNote}
+              disabled={creating}
+              className="hidden lg:inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50"
+            >
+              New Note
+            </button>
           </div>
         </div>
 

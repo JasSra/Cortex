@@ -261,7 +261,7 @@ public class NotesController : ControllerBase
 
         try
         {
-            var result = await _ingestService.UpdateNoteAsync(id, request.Title ?? string.Empty, request.Content);
+            var result = await _ingestService.UpdateNoteAsync(id, request.Title ?? string.Empty, request.Content, request.SkipProcessing);
             if (result is null) return NotFound(new { error = "Note not found" });
             return Ok(new { noteId = result.NoteId, title = result.Title, countChunks = result.CountChunks });
         }
@@ -277,4 +277,9 @@ public class UpdateNoteRequest
 {
     public string? Title { get; set; }
     public string Content { get; set; } = string.Empty;
+    /// <summary>
+    /// When true, performs a lightweight update (skip re-chunking, embeddings, classification).
+    /// Use for autosave to avoid heavy processing on every keystroke.
+    /// </summary>
+    public bool SkipProcessing { get; set; } = false;
 }

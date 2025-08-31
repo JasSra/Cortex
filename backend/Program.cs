@@ -529,9 +529,127 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     try
     {
+        // Baseline fix: if the database already has the initial schema but the migration history is empty,
+        // mark the initial migration as applied so later migrations can proceed.
+        try
+        {
+            using var conn = new SqliteConnection(absoluteSqliteConnectionString);
+            await conn.OpenAsync();
+
+            // Ensure __EFMigrationsHistory exists
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"__EFMigrationsHistory\" (\n  \"MigrationId\" TEXT NOT NULL CONSTRAINT \"PK___EFMigrationsHistory\" PRIMARY KEY,\n  \"ProductVersion\" TEXT NOT NULL\n);";
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // If the Notes table exists but the initial migration isn't recorded, insert a baseline row
+            var initialMigrationId = "20250828061536_AddStage2Fields";
+            bool notesExists;
+            bool initialRecorded;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Notes' LIMIT 1;";
+                notesExists = (await cmd.ExecuteScalarAsync()) != null;
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT 1 FROM \"__EFMigrationsHistory\" WHERE \"MigrationId\" = @mid LIMIT 1;";
+                cmd.Parameters.AddWithValue("@mid", initialMigrationId);
+                initialRecorded = (await cmd.ExecuteScalarAsync()) != null;
+            }
+            if (notesExists && !initialRecorded)
+            {
+                using var ins = conn.CreateCommand();
+                ins.CommandText = "INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES (@mid, @pv);";
+                ins.Parameters.AddWithValue("@mid", initialMigrationId);
+                // Use the current EF Core version if available, otherwise a sensible default
+                var efVersion = typeof(DbContext).Assembly.GetName().Version?.ToString() ?? "8.0.0";
+                ins.Parameters.AddWithValue("@pv", efVersion);
+                await ins.ExecuteNonQueryAsync();
+                Console.WriteLine($"[DB] Baseline migration recorded: {initialMigrationId}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DB] Baseline check failed (non-fatal): {ex.Message}");
+        }
+
         Console.WriteLine("[DB] Applying migrations...");
         context.Database.Migrate();
         Console.WriteLine("[DB] Migrations applied successfully");
+
+        // Post-migration sanity check & self-heal for known drift cases (SQLite only)
+        try
+        {
+            using var conn2 = new SqliteConnection(absoluteSqliteConnectionString);
+            await conn2.OpenAsync();
+
+            static async Task<bool> TableExistsAsync(SqliteConnection c, string name)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=@n LIMIT 1;";
+                cmd.Parameters.AddWithValue("@n", name);
+                return (await cmd.ExecuteScalarAsync()) != null;
+            }
+
+            // Ensure UserWorkspaces table exists
+            if (!await TableExistsAsync(conn2, "UserWorkspaces"))
+            {
+                Console.WriteLine("[DB] Self-heal: creating missing table UserWorkspaces…");
+                using (var cmd = conn2.CreateCommand())
+                {
+                    cmd.CommandText = @"
+CREATE TABLE IF NOT EXISTS ""UserWorkspaces"" (
+    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_UserWorkspaces"" PRIMARY KEY,
+    ""UserId"" TEXT NOT NULL,
+    ""ActiveNoteId"" TEXT NULL,
+    ""RecentNoteIds"" TEXT NOT NULL,
+    ""EditorState"" TEXT NOT NULL,
+    ""PinnedTags"" TEXT NOT NULL,
+    ""LayoutPreferences"" TEXT NOT NULL,
+    ""CreatedAt"" TEXT NOT NULL,
+    ""UpdatedAt"" TEXT NOT NULL,
+    CONSTRAINT ""FK_UserWorkspaces_Notes_ActiveNoteId"" FOREIGN KEY (""ActiveNoteId"") REFERENCES ""Notes"" (""Id"") ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ""IX_UserWorkspaces_ActiveNoteId"" ON ""UserWorkspaces"" (""ActiveNoteId"");
+CREATE INDEX IF NOT EXISTS ""IX_UserWorkspaces_UpdatedAt"" ON ""UserWorkspaces"" (""UpdatedAt"");
+CREATE UNIQUE INDEX IF NOT EXISTS ""IX_UserWorkspaces_UserId"" ON ""UserWorkspaces"" (""UserId"");
+";
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+
+            // Ensure UserNoteAccess table exists
+            if (!await TableExistsAsync(conn2, "UserNoteAccess"))
+            {
+                Console.WriteLine("[DB] Self-heal: creating missing table UserNoteAccess…");
+                using (var cmd = conn2.CreateCommand())
+                {
+                    cmd.CommandText = @"
+CREATE TABLE IF NOT EXISTS ""UserNoteAccess"" (
+    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_UserNoteAccess"" PRIMARY KEY,
+    ""UserId"" TEXT NOT NULL,
+    ""NoteId"" TEXT NOT NULL,
+    ""AccessType"" TEXT NOT NULL,
+    ""DurationSeconds"" INTEGER NOT NULL,
+    ""EditorStateSnapshot"" TEXT NULL,
+    ""AccessedAt"" TEXT NOT NULL,
+    CONSTRAINT ""FK_UserNoteAccess_Notes_NoteId"" FOREIGN KEY (""NoteId"") REFERENCES ""Notes"" (""Id"") ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_AccessedAt"" ON ""UserNoteAccess"" (""AccessedAt"");
+CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_NoteId"" ON ""UserNoteAccess"" (""NoteId"");
+CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_UserId_AccessedAt"" ON ""UserNoteAccess"" (""UserId"", ""AccessedAt"");
+CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_UserId_NoteId"" ON ""UserNoteAccess"" (""UserId"", ""NoteId"");
+";
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DB] Post-migration self-heal skipped/failed: {ex.Message}");
+        }
     }
     catch (Exception ex)
     {
