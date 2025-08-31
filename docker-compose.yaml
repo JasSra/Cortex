@@ -6,6 +6,10 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_MSAL_CLIENT_ID: ${MSAL_CLIENT_ID}
+      NEXT_PUBLIC_MSAL_AUTHORITY: ${MSAL_AUTHORITY}
+      NEXT_PUBLIC_MSAL_KNOWN_AUTHORITIES: ${MSAL_KNOWN_AUTHORITIES:-jsraauth.b2clogin.com}
+      NEXT_PUBLIC_TENANT_DOMAIN: ${TENANT_DOMAIN:-jsraauth.onmicrosoft.com}
     depends_on:
       - backend
     volumes:
@@ -17,18 +21,23 @@ services:
     ports:
       - "8080:8080"
     environment:
-      ASPNETCORE_URLS: http://+:8080
-      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      STT_URL: ${STT_URL:-http://host.docker.internal:8001}
-      TTS_URL: ${TTS_URL:-http://host.docker.internal:8002}
-      DATA_DIR: /app/data
+      ASPNETCORE_URLS: "http://+:8080"
+      OLLAMA_URL: "${OLLAMA_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2:3b}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o-mini}"
+      STT_URL: "${STT_URL:-http://host.docker.internal:8001}"
+      TTS_URL: "${TTS_URL:-http://host.docker.internal:8002}"
+      DATA_DIR: "/app/data"
       ALLOW_LOCAL_SCAN: "true"
-      ConnectionStrings__DefaultConnection: Data Source=/app/data/cortex.db
-      Redis__ConnectionString: redis:6379
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      ConnectionStrings__DefaultConnection: "Data Source=/app/data/cortex.db"
+      # Use the keys the code actually reads: prefer REDIS_CONNECTION; also support Redis:Connection
+      REDIS_CONNECTION: "redis:6379"
+      Redis__Connection: "redis:6379"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}"
+      # Azure AD B2C
+      Authentication__Authority: ${MSAL_AUTHORITY}
+      Authentication__ClientId: ${MSAL_CLIENT_ID}
     volumes:
       - ./data:/app/data
       - ./backend:/app/src

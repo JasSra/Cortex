@@ -65,12 +65,18 @@ export default function WorkspaceSidebar({
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [autoTaggingEnabled, setAutoTaggingEnabled] = useState(true)
   const [tagGenerationProgress, setTagGenerationProgress] = useState<{ [noteId: string]: boolean }>({})
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkTagInput, setBulkTagInput] = useState('')
 
   const { getRecentNotes, trackNoteAccess } = useWorkspaceApi()
   const { getNotes } = useNotesApi()
   const { getAllTags } = useTagsApi()
+  const tagsApi = useTagsApi()
   const { classifyNote } = useClassificationApi()
   const { getEntitySuggestions } = useGraphApi()
+  // Local TTL guard to suppress repeated classifications
+  const lastClassifiedRef = React.useRef<{ [id: string]: number }>({})
 
   // Filter notes based on search query
   const filteredNotes = useMemo(() => {
@@ -88,6 +94,32 @@ export default function WorkspaceSidebar({
     )
   }, [allNotes, recentNotes, searchQuery, activeTab])
 
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+    setBulkTagInput('')
+  }, [])
+
+  const applyBulkTag = useCallback(async (mode: 'add' | 'remove') => {
+    const ids = Array.from(selectedIds)
+    const t = bulkTagInput.trim()
+    if (ids.length === 0 || !t) return
+    try {
+      if (mode === 'add') await (tagsApi as any).addToNotes(ids, [t])
+      else await (tagsApi as any).removeFromNotes(ids, [t])
+      // Clear selection after apply
+      clearSelection()
+    } catch {}
+  }, [selectedIds, bulkTagInput, tagsApi, clearSelection])
+
   // Extract unique tags from all notes
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
@@ -103,8 +135,15 @@ export default function WorkspaceSidebar({
       try {
         setTagGenerationProgress(prev => ({ ...prev, [note.id]: true }))
         
-        // Use classification service to generate tags
-        const result = await classifyNote(note.id)
+        // Use classification service to generate tags with TTL guard
+        const now = Date.now()
+        const last = lastClassifiedRef.current[note.id] || 0
+        if (now - last < 60_000) {
+          // Recently classified, skip to avoid storms
+          continue
+        }
+        lastClassifiedRef.current[note.id] = now
+  const result: any = await classifyNote(note.id)
         
         if (result && result.tags) {
           // Update note with new tags (fix Set iteration issue)
@@ -220,7 +259,13 @@ export default function WorkspaceSidebar({
     try {
       setTagGenerationProgress(prev => ({ ...prev, [noteId]: true }))
       
-      const result = await classifyNote(note.id)
+      const now = Date.now()
+      const last = lastClassifiedRef.current[noteId] || 0
+      if (now - last < 60_000) {
+        return
+      }
+      lastClassifiedRef.current[noteId] = now
+  const result: any = await classifyNote(note.id)
       
       if (result && result.tags && result.tags.length > 0) {
         // Show tag suggestions to user
@@ -633,6 +678,31 @@ export default function WorkspaceSidebar({
                   ) : (
                     /* Notes List View */
                     <div className="p-4 space-y-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-400">
+                          <button
+                            className={`px-2 py-1 rounded ${selectionMode ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' : 'bg-gray-100 dark:bg-slate-700'}`}
+                            onClick={() => {
+                              setSelectionMode(!selectionMode)
+                              if (selectionMode) setSelectedIds(new Set())
+                            }}
+                          >{selectionMode ? 'Done' : 'Bulk Tag'}</button>
+                          {selectionMode && <span>{selectedIds.size} selected</span>}
+                        </div>
+                        {selectionMode && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <input
+                              value={bulkTagInput}
+                              onChange={(e) => setBulkTagInput(e.target.value)}
+                              placeholder="Tag"
+                              className="px-2 py-1 border border-gray-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900"
+                            />
+                            <button className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700" onClick={() => applyBulkTag('add')}>Add</button>
+                            <button className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700" onClick={() => applyBulkTag('remove')}>Remove</button>
+                            <button className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700" onClick={clearSelection}>Clear</button>
+                          </div>
+                        )}
+                      </div>
                       {filteredNotes.length === 0 ? (
                         <div className="text-center py-8">
                           <DocumentTextIcon className="w-12 h-12 text-gray-300 dark:text-slate-600 mx-auto mb-3" />
@@ -660,7 +730,7 @@ export default function WorkspaceSidebar({
                               transition={{ duration: 0.2 }}
                             >
                               <motion.button
-                                onClick={() => handleNoteClick(note.id)}
+                                onClick={() => selectionMode ? toggleSelected(note.id) : handleNoteClick(note.id)}
                                 className={`w-full text-left p-3 rounded-lg transition-all duration-200 group relative ${
                                   selectedNoteId === note.id
                                     ? 'bg-purple-100 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 shadow-sm'
@@ -669,6 +739,15 @@ export default function WorkspaceSidebar({
                                 whileHover={{ scale: 1.01 }}
                                 whileTap={{ scale: 0.99 }}
                               >
+                                {selectionMode && (
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedIds.has(note.id)}
+                                    onChange={() => toggleSelected(note.id)}
+                                    className="absolute left-2 top-2"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                )}
                                 {/* Auto-tagging progress indicator */}
                                 {tagGenerationProgress[note.id] && (
                                   <motion.div

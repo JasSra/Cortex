@@ -120,6 +120,29 @@ public class JobsController : ControllerBase
         }
     }
 
+    [HttpGet("pending")]
+    public async Task<IActionResult> GetPending()
+    {
+        try
+        {
+            var items = await _jobs.GetPendingJobsAsync(200);
+            // The JobDetailsItem maps to the OpenAPI JobDetails schema shape used by the frontend
+            var result = items.Select(i => new {
+                id = i.Id,
+                type = i.Type,
+                stream = i.Stream,
+                enqueuedAt = i.EnqueuedAt,
+                payload = i.Payload,
+            });
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch pending jobs");
+            return StatusCode(500, new { error = "Failed to fetch pending jobs" });
+        }
+    }
+
     private static string BuildSummary(int pending, int processed, int failed, int avgMs)
     {
     if (pending == 0 && processed == 0 && failed == 0)

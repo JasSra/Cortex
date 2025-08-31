@@ -220,7 +220,8 @@ export function useNotesApi() {
       })
     },
     getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
-    updateNote: (id: string, content: string, title?: string) => http.put<any>(`/api/Notes/${id}`, { content, title }).then((data) => ({
+    // Optional 4th param to skip heavy processing (autosave)
+    updateNote: (id: string, content: string, title?: string, skipProcessing?: boolean) => http.put<any>(`/api/Notes/${id}`, { content, title, skipProcessing: !!skipProcessing }).then((data) => ({
       noteId: data?.noteId ?? data?.NoteId ?? id,
       title: data?.title ?? data?.Title ?? title ?? '',
       chunkCount: data?.countChunks ?? data?.CountChunks ?? 0,
@@ -346,6 +347,7 @@ export function useIngestApi() {
 // Tags - now using the generated client with proper types
 export function useTagsApi() {
   const client = useCortexApiClient()
+  const http = useAuthedFetch()
   const TTL = 30_000 // 30s cache for tag data
 
   const getAllTags = useCallback(async () => {
@@ -359,6 +361,25 @@ export function useTagsApi() {
     const response = await client.tags2(noteId)
     return response.tags || []
   }, [client])
+
+  const getAll = useCallback(() => http.get<any>('/api/Tags'), [http])
+  const getForNote = useCallback((noteId: string) => http.get<any>(`/api/Tags/${encodeURIComponent(noteId)}`), [http])
+  const addToNote = useCallback(async (noteId: string, tags: string[]) => {
+    const body = { noteIds: [noteId], add: tags }
+    return await http.post<any>('/api/Tags/bulk', body)
+  }, [http])
+  const removeFromNote = useCallback(async (noteId: string, tags: string[]) => {
+    const body = { noteIds: [noteId], remove: tags }
+    return await http.post<any>('/api/Tags/bulk', body)
+  }, [http])
+  const addToNotes = useCallback(async (noteIds: string[], tags: string[]) => {
+    const body = { noteIds, add: tags }
+    return await http.post<any>('/api/Tags/bulk', body)
+  }, [http])
+  const removeFromNotes = useCallback(async (noteIds: string[], tags: string[]) => {
+    const body = { noteIds, remove: tags }
+    return await http.post<any>('/api/Tags/bulk', body)
+  }, [http])
 
   const searchNotesByTags = useCallback(async (
     tags: string[] | string,
@@ -386,13 +407,27 @@ export function useTagsApi() {
   }, [client])
 
   return useMemo(() => ({
+    // Generated-client helpers
     getAllTags,
     getNoteTags,
     searchNotesByTags,
+    // Raw helpers used by editor flows
+    getAll,
+    getForNote,
+    addToNote,
+    removeFromNote,
+    addToNotes,
+    removeFromNotes,
   }), [
     getAllTags,
     getNoteTags,
     searchNotesByTags,
+    getAll,
+    getForNote,
+    addToNote,
+    removeFromNote,
+    addToNotes,
+    removeFromNotes,
   ])
 }
 
@@ -593,6 +628,10 @@ export function useGraphApi() {
   }, [client])
 
   const getEntitySuggestions = useCallback((q: string) => {
+    // Guard: backend requires an entityId; skip for empty/undefined
+    if (!q || (typeof q === 'string' && q.trim().length === 0)) {
+      return Promise.resolve([] as any)
+    }
     const key = `graph:suggest:${q}`
     return getCached(key, TTL, () => client.suggestions(q))
   }, [client])
@@ -614,8 +653,13 @@ export function useGraphApi() {
 // Classification
 export function useClassificationApi() {
   const client = useCortexApiClient()
+  // Dedupe repeated classification calls per-note for a short TTL
+  const TTL = 60_000 // 60s
   return {
-    classifyNote: (noteId: string) => client.classification(noteId) as any,
+    classifyNote: (noteId: string) => {
+      const key = `classify:${noteId}`
+      return getCached(key, TTL, () => client.classification(noteId) as any)
+    },
     bulkClassify: (request: any) => client.bulk(request) as any,
   }
 }
@@ -729,6 +773,9 @@ export function useVoiceApi() {
     }
   }
 }
+
+// Tags API
+// (merged into the main useTagsApi above)
 
 // Notifications API convenience (uses raw authed fetch wrappers)
 export function useNotificationsApi() {

@@ -180,6 +180,11 @@ const JobDetailsCard: React.FC<{ job: JobDetails }> = ({ job }) => {
   // Parse the payload if it's a JSON string
   const payload = job.payload || {}
   const innerPayload = payload.payload ? JSON.parse(payload.payload) : {}
+  const reason = (payload as any).PendingReason || (payload as any).pendingReason || (job.stream === 'backlog' ? 'Embedding missing; waiting for polling processor' : 'Queued; awaiting worker')
+  const summaryParts: string[] = []
+  if (innerPayload.ChunkId) summaryParts.push(`Chunk ${innerPayload.ChunkId}`)
+  if (innerPayload.NoteId) summaryParts.push(`Note ${innerPayload.NoteId}`)
+  const summary = summaryParts.join(' • ')
   
   return (
     <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-gray-50 dark:bg-gray-700">
@@ -204,7 +209,15 @@ const JobDetailsCard: React.FC<{ job: JobDetails }> = ({ job }) => {
       </div>
       
       <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-        ID: {job.id}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+            {reason}
+          </span>
+          {summary && (
+            <span className="text-xs text-gray-600 dark:text-gray-300">{summary}</span>
+          )}
+          <span className="text-xs text-gray-500 dark:text-gray-400">ID: {job.id}</span>
+        </div>
       </div>
       
       {expanded && (

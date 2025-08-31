@@ -11,7 +11,8 @@ import {
   CalendarIcon,
   ArrowLeftIcon
 } from '@heroicons/react/24/outline'
-import { useWorkspaceApi, useNotesApi } from '../../services/apiClient'
+import { useWorkspaceApi, useNotesApi, useAssistApi, useClassificationApi, useTagsApi } from '../../services/apiClient'
+import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
 
 interface WorkspaceEditorProps {
   noteId: string | null
@@ -23,9 +24,9 @@ interface Note {
   id: string
   title: string
   content: string
-  tags: string[]
-  createdAt: string
-  lastModified: string
+  tags?: string[]
+  createdAt?: string
+  lastModified?: string
 }
 
 interface EditorState {
@@ -50,6 +51,29 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
   
   const { updateWorkspace, trackNoteAccess } = useWorkspaceApi()
   const { getNote, updateNote } = useNotesApi()
+  const { assist } = useAssistApi()
+  const { classifyNote } = useClassificationApi()
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiOutput, setAiOutput] = useState('')
+  const [showRecent, setShowRecent] = useState(false)
+  const [recentNotes, setRecentNotes] = useState<Array<{ id: string, title: string, updatedAt?: string }>>([])
+  const [tagInput, setTagInput] = useState('')
+  const [tagSuggestions, setTagSuggestions] = useState<string[] | null>(null)
+  const tagsApi = useTagsApi()
+  const [allTags, setAllTags] = useState<string[]>([])
+
+  // Load all tags once for autocomplete
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await tagsApi.getAllTags()
+        const list = Array.isArray(res) ? res : (res?.tags || res?.Tags || [])
+        const names = Array.isArray(list) ? list.map((t: any) => t.name || t.Name || t).filter(Boolean) : []
+        setAllTags(Array.from(new Set(names)))
+      } catch {/* ignore */}
+    })()
+  }, [tagsApi])
 
   // Load note data
   const loadNote = useCallback(async (id: string) => {
@@ -58,9 +82,25 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
       setError(null)
       
       const noteData = await getNote(id)
-      setNote(noteData)
-      setContent(noteData.content || '')
-      setTitle(noteData.title || '')
+      // Normalize fields for consistent UI
+      const created = noteData.createdAt || noteData.CreatedAt
+      const updated = noteData.updatedAt || noteData.UpdatedAt
+      const tagsRaw = noteData.tags ?? noteData.Tags ?? ''
+      const tags: string[] = Array.isArray(tagsRaw)
+        ? tagsRaw
+        : (typeof tagsRaw === 'string' && tagsRaw.trim().length > 0
+            ? tagsRaw.split(',').map((t: string) => t.trim()).filter(Boolean)
+            : [])
+      setNote({
+        id: noteData.id || noteData.Id,
+        title: noteData.title || noteData.Title || '',
+        content: noteData.content || noteData.Content || '',
+        tags,
+        createdAt: created,
+        lastModified: updated,
+      })
+      setContent(noteData.content || noteData.Content || '')
+      setTitle(noteData.title || noteData.Title || '')
       setHasUnsavedChanges(false)
       
       // Track note access in workspace
@@ -96,7 +136,8 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
         }
       }
 
-      await updateNote(note.id, content, title.trim() || 'Untitled Note')
+      // For autosave, skip heavy processing (classification/embeddings); for explicit save, run full pipeline
+      await updateNote(note.id, content, title.trim() || 'Untitled Note', !forceImmediate)
       
       // Update workspace editor state
       await updateWorkspace({ 
@@ -114,6 +155,7 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
         lastModified: new Date().toISOString()
       } : null)
       setHasUnsavedChanges(false)
+      setLastSavedAt(new Date().toLocaleTimeString())
       
     } catch (e: any) {
       console.error('Failed to save note:', e)
@@ -224,7 +266,90 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
     }
   }, [saveNote])
 
-  const formatDate = (timestamp: string) => {
+  // Toggle and load recent notes (dedup by id)
+  const { getRecentNotes } = useWorkspaceApi()
+  const loadRecent = useCallback(async () => {
+    try {
+      const items = await getRecentNotes(20)
+      const seen = new Set<string>()
+      const list: Array<{ id: string, title: string, updatedAt?: string }> = []
+      for (const n of items || []) {
+        const id = n.id || n.Id || n.noteId || n.NoteId
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        list.push({ id, title: n.title || n.Title || 'Untitled', updatedAt: n.updatedAt || n.UpdatedAt })
+      }
+      setRecentNotes(list)
+    } catch {/* ignore */}
+  }, [getRecentNotes])
+
+  // Open a recent note directly in the editor
+  const openRecent = useCallback(async (id: string) => {
+    setShowRecent(false)
+    await loadNote(id)
+    setIsEditing(true)
+  }, [loadNote])
+
+  // Inline tag editor handlers (local-only for now)
+  const addTag = useCallback(async () => {
+    const t = tagInput.trim()
+    if (!note || !t) return
+    if ((note.tags || []).includes(t)) { setTagInput(''); return }
+    try {
+      await tagsApi.addToNote(note.id, [t])
+      const fresh = await tagsApi.getForNote(note.id)
+      const tags: string[] = fresh?.tags ?? fresh?.Tags ?? []
+      setNote(prev => prev ? { ...prev, tags } : prev)
+    } finally {
+      setTagInput('')
+    }
+  }, [tagInput, note, tagsApi])
+
+  const removeTag = useCallback(async (t: string) => {
+    if (!note) return
+    await tagsApi.removeFromNote(note.id, [t])
+    const fresh = await tagsApi.getForNote(note.id)
+    const tags: string[] = fresh?.tags ?? fresh?.Tags ?? []
+    setNote(prev => prev ? { ...prev, tags } : prev)
+  }, [note, tagsApi])
+
+  // AI: Generate tags (suggestions)
+  const aiGenerateTags = useCallback(async () => {
+    if (!content) return
+    setAiBusy(true)
+    setAiOutput('')
+    try {
+      const prompt = 'Generate 3-8 concise tags for the following note content. Return a comma-separated list only.'
+      const res = await assist({ mode: 'suggest', prompt, context: content.slice(0, 4000), maxTokens: 60, temperature: 0.2 })
+      const raw = (res?.text || '').trim()
+      const list = raw
+        .replace(/^[\[\(\{]/, '').replace(/[\]\)\}]$/, '')
+        .split(/[,\n]/)
+        .map((s: string) => s.replace(/(^["']|["']$)/g, '').trim())
+        .filter(Boolean)
+      setTagSuggestions(list.length ? Array.from(new Set(list)) : [])
+      setAiOutput(list.length ? `Suggested tags: ${list.join(', ')}` : raw)
+    } finally {
+      setAiBusy(false)
+    }
+  }, [assist, content])
+
+  // AI: Extract action items (plain text)
+  const aiActionItems = useCallback(async () => {
+    if (!content) return
+    setAiBusy(true)
+    setAiOutput('')
+    try {
+      const prompt = 'Extract actionable items from the note as a short bullet list.'
+      const res = await assist({ mode: 'summarize', prompt, context: content.slice(0, 4000), maxTokens: 160, temperature: 0.2 })
+      setAiOutput(res?.text || '')
+    } finally {
+      setAiBusy(false)
+    }
+  }, [assist, content])
+
+  const formatDate = (timestamp?: string) => {
+    if (!timestamp) return ''
     return new Date(timestamp).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -342,15 +467,28 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
               {note.tags && note.tags.length > 0 && (
                 <div className="flex items-center gap-2">
                   <TagIcon className="w-3 h-3 text-gray-400 dark:text-slate-500" />
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1 items-center">
                     {note.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-block px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs rounded-full"
-                      >
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-[11px] rounded-full">
                         {tag}
+                        <button className="text-purple-700/70 hover:text-purple-900" title="Remove" onClick={() => removeTag(tag)}>×</button>
                       </span>
                     ))}
+                    <input
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+                      placeholder="Add tag"
+                      className="px-2 py-1 border border-gray-200 dark:border-slate-700 rounded text-[11px] bg-white dark:bg-slate-900"
+                    />
+                    <button className="text-[11px] px-2 py-1 bg-gray-100 dark:bg-slate-700 rounded" onClick={addTag}>Add</button>
+                    {tagInput && allTags.length > 0 && (
+                      <div className="absolute mt-8 z-10 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded shadow max-h-40 overflow-auto text-xs">
+                        {allTags.filter(t => t.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 8).map(t => (
+                          <button key={t} className="block w-full text-left px-2 py-1 hover:bg-gray-100 dark:hover:bg-slate-800" onClick={() => { setTagInput(t); setTimeout(addTag, 0) }}>{t}</button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -359,15 +497,13 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
             {/* Editor area */}
             <div className="flex-1 overflow-hidden">
               {isEditing ? (
-                <textarea
-                  ref={textareaRef}
-                  value={content}
-                  onChange={(e) => handleContentChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="w-full h-full p-4 bg-white dark:bg-slate-900 text-gray-900 dark:text-white border-none outline-none resize-none font-mono text-sm leading-relaxed"
-                  placeholder="Start writing your note..."
-                  spellCheck={false}
-                />
+                <div className="h-full overflow-y-auto p-2">
+                  <NoteEditorAI
+                    initialContent={content}
+                    onChange={(t) => handleContentChange(t)}
+                    onSave={() => saveNote(true)}
+                  />
+                </div>
               ) : (
                 <div className="h-full overflow-y-auto p-4">
                   <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -395,7 +531,9 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
             {note && (
               <>
                 <span>{content.length} characters</span>
+                <span>{content.trim() ? content.trim().split(/\s+/).length : 0} words</span>
                 <span>{content.split('\n').length} lines</span>
+                {lastSavedAt && <span>Saved {lastSavedAt}</span>}
               </>
             )}
           </div>
@@ -405,8 +543,71 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
                 Editing • Ctrl+S to save
               </span>
             )}
+            {/* Quick actions: AI and classification on demand */}
+            <button
+              className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 disabled:opacity-50"
+              onClick={async () => {
+                if (!content) return
+                setAiBusy(true); setAiOutput('')
+                try { const r = await assist({ mode: 'summarize', context: content.slice(-4000), maxTokens: 160, temperature: 0.2 }); setAiOutput(r?.text || '') } finally { setAiBusy(false) }
+              }}
+              disabled={aiBusy}
+            >AI Summarize</button>
+            <button
+              className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 disabled:opacity-50"
+              onClick={async () => {
+                if (!note) return
+                setAiBusy(true)
+                try { await classifyNote(note.id); const fresh = await getNote(note.id); const t = fresh.tags ?? fresh.Tags ?? ''; const arr = Array.isArray(t)? t : (typeof t==='string'? t.split(',').map((x:string)=>x.trim()).filter(Boolean):[]); setNote(prev => prev? { ...prev, tags: arr }: prev) } finally { setAiBusy(false) }
+              }}
+              disabled={aiBusy}
+            >Classify Now</button>
+            <button
+              className={`px-2 py-1 rounded ${showRecent ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-gray-100 dark:bg-slate-700'}`}
+              onClick={async () => { const next = !showRecent; setShowRecent(next); if (next) await loadRecent() }}
+            >Recent</button>
           </div>
         </div>
+        {aiOutput && (
+          <div className="mt-2 p-2 rounded bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-800 dark:text-gray-200">
+            <div className="font-medium mb-1">AI Output</div>
+            <div className="whitespace-pre-wrap text-xs">{aiOutput}</div>
+            {Array.isArray(tagSuggestions) && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  className="px-2 py-1 rounded bg-emerald-600 text-white text-xs"
+                  onClick={async () => {
+                    if (!note || !tagSuggestions?.length) return
+                    await tagsApi.addToNote(note.id, tagSuggestions)
+                    const fresh = await tagsApi.getForNote(note.id)
+                    const tags: string[] = fresh?.tags ?? fresh?.Tags ?? []
+                    setNote(prev => prev ? { ...prev, tags } : prev)
+                    setTagSuggestions(null)
+                  }}
+                >Apply Tags</button>
+                <button className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 text-xs" onClick={() => setTagSuggestions(null)}>Dismiss</button>
+              </div>
+            )}
+          </div>
+        )}
+        {showRecent && (
+          <div className="mt-2 p-2 rounded bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700">
+            <div className="font-medium text-xs mb-1 text-gray-700 dark:text-gray-300">Recent Notes</div>
+            <div className="max-h-40 overflow-auto divide-y divide-gray-100 dark:divide-slate-700">
+              {recentNotes.length === 0 ? (
+                <div className="text-xs text-gray-500">No recent items.</div>
+              ) : recentNotes.map(n => (
+                <button key={n.id} className="w-full text-left py-1.5 text-xs px-1 hover:bg-gray-50 dark:hover:bg-slate-800 rounded"
+                  onClick={() => openRecent(n.id)}
+                  title={n.title}
+                >
+                  <div className="truncate text-gray-800 dark:text-gray-200">{n.title}</div>
+                  <div className="text-[10px] text-gray-500">{n.updatedAt ? new Date(n.updatedAt).toLocaleString() : ''}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   )

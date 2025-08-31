@@ -198,12 +198,12 @@
       "connectionString": "Data Source=./Data/cortex.db"
     },
     "redis": {
-      "enabled": false,
+      "enabled": true,
       "connectionString": "localhost:6379"
     },
     "embedding": {
-      "provider": "local",
-      "model": "nomic-embed-text",
+      "provider": "openai",
+      "model": "text-embedding-ada-002",
       "dimensions": 768
     },
     "tts": {
