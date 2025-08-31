@@ -12,6 +12,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
+using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,6 +52,12 @@ builder.Services.AddScoped<IGraphService, GraphService>();
 builder.Services.AddSingleton<BackgroundJobService>();
 builder.Services.AddHostedService<BackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
 builder.Services.AddScoped<IBackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
+
+// Configure host options to prevent background service failures from stopping the host
+builder.Services.Configure<HostOptions>(hostOptions =>
+{
+    hostOptions.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
+});
 builder.Services.AddScoped<IRagService, RagService>();
 // Detection services for auto-classification
 builder.Services.AddScoped<IPiiDetectionService, PiiDetectionService>();
@@ -522,45 +529,9 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     try
     {
-        if (app.Environment.IsDevelopment())
-        {
-            Console.WriteLine("[DB] Development mode: resetting database to current model...");
-            try
-            {
-                if (File.Exists(csb.DataSource))
-                {
-                    File.Delete(csb.DataSource);
-                    Console.WriteLine($"[DB] Deleted SQLite file: {csb.DataSource}");
-                }
-                // Also remove SQLite sidecar files that can linger and cause disk I/O or locks
-                try
-                {
-                    var wal = csb.DataSource + "-wal";
-                    var shm = csb.DataSource + "-shm";
-                    if (File.Exists(wal)) { File.Delete(wal); Console.WriteLine($"[DB] Deleted SQLite WAL: {wal}"); }
-                    if (File.Exists(shm)) { File.Delete(shm); Console.WriteLine($"[DB] Deleted SQLite SHM: {shm}"); }
-                }
-                catch (Exception sidecarEx)
-                {
-                    Console.WriteLine($"[DB] Could not delete WAL/SHM files: {sidecarEx.Message}");
-                }
-            }
-            catch (Exception delEx)
-            {
-                Console.WriteLine($"[DB] Could not delete DB file: {delEx.Message}");
-            }
-
-            // Recreate schema directly from the current model (no migrations needed in dev)
-            context.Database.EnsureDeleted();
-            context.Database.EnsureCreated();
-            Console.WriteLine("[DB] Database recreated from current model");
-        }
-        else
-        {
-            Console.WriteLine("[DB] Applying migrations...");
-            context.Database.Migrate();
-            Console.WriteLine("[DB] Migrations applied successfully");
-        }
+        Console.WriteLine("[DB] Applying migrations...");
+        context.Database.Migrate();
+        Console.WriteLine("[DB] Migrations applied successfully");
     }
     catch (Exception ex)
     {
@@ -600,9 +571,9 @@ app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
     }
 });
 
-// Health check endpoint
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
-.WithName("HealthCheck");
+//// Health check endpoint
+//app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
+//.WithName("HealthCheck");
 
 app.Run();
 

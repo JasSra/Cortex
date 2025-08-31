@@ -17,9 +17,20 @@ interface UploadProgress {
   error?: string
 }
 
+interface UrlProgress {
+  id: string
+  url: string
+  status: 'pending' | 'fetching' | 'extracting' | 'uploading' | 'success' | 'error'
+  progress: number
+  result?: any
+  error?: string
+  title?: string
+  siteName?: string
+}
+
 const IngestPage: React.FC = () => {
   const { isAuthenticated } = useAuth()
-  const { uploadFiles, ingestFolder, createNote } = useIngestApi()
+  const { uploadFiles, ingestFolder, createNote, ingestUrlContent } = useIngestApi()
 
   const [results, setResults] = useState<IngestResult[]>([])
   const [isUploading, setIsUploading] = useState(false)
@@ -28,6 +39,11 @@ const IngestPage: React.FC = () => {
   const [pasteText, setPasteText] = useState('')
   const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  
+  // URL ingestion state
+  const [urlText, setUrlText] = useState('')
+  const [urlProgress, setUrlProgress] = useState<UrlProgress[]>([])
+  const [isProcessingUrls, setIsProcessingUrls] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const pasteRef = useRef<HTMLTextAreaElement>(null)
@@ -107,7 +123,6 @@ const IngestPage: React.FC = () => {
     setIsDragOver(false)
     if (ev.dataTransfer.files && ev.dataTransfer.files.length > 0) {
       onFilesSelected(ev.dataTransfer.files)
-      ev.dataTransfer.clearData()
     }
   }, [onFilesSelected])
 
@@ -142,6 +157,126 @@ const IngestPage: React.FC = () => {
       setIsUploading(false)
     }
   }, [createNote])
+
+  const onUrlsProcess = useCallback(async () => {
+    if (!urlText.trim()) return
+    
+    // Parse URLs from text (one per line or space-separated)
+    const urls = urlText.trim()
+      .split(/[\n\r\s,]+/)
+      .map(url => url.trim())
+      .filter(url => {
+        try {
+          new URL(url)
+          return true
+        } catch {
+          return false
+        }
+      })
+    
+    if (urls.length === 0) {
+      setError('No valid URLs found. Please enter valid HTTP/HTTPS URLs.')
+      return
+    }
+    
+    if (urls.length > 5) {
+      setError('Maximum 5 URLs allowed at once.')
+      return
+    }
+    
+    setError(null)
+    setIsProcessingUrls(true)
+    
+    // Create progress tracking for each URL
+    const progressItems: UrlProgress[] = urls.map(url => ({
+      id: crypto.randomUUID(),
+      url,
+      status: 'pending',
+      progress: 0
+    }))
+    
+    setUrlProgress(progressItems)
+    
+    // Process URLs one by one
+    for (const item of progressItems) {
+      try {
+        // Update status to fetching
+        setUrlProgress(prev => prev.map(p => 
+          p.id === item.id ? { ...p, status: 'fetching', progress: 25 } : p
+        ))
+        
+        // Step 1: Fetch and extract content using Next.js API
+        const fetchResponse = await fetch('/api/fetch-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: item.url })
+        })
+        
+        const fetchResult = await fetchResponse.json()
+        
+        if (!fetchResult.success) {
+          throw new Error(fetchResult.error || 'Failed to fetch URL content')
+        }
+        
+        // Update status to extracting
+        setUrlProgress(prev => prev.map(p => 
+          p.id === item.id ? { 
+            ...p, 
+            status: 'extracting', 
+            progress: 50,
+            title: fetchResult.title,
+            siteName: fetchResult.siteName
+          } : p
+        ))
+        
+        // Step 2: Send extracted content to backend for ingestion
+        const ingestResult = await ingestUrlContent({
+          url: item.url,
+          title: fetchResult.title,
+          content: fetchResult.textContent,
+          finalUrl: fetchResult.finalUrl,
+          siteName: fetchResult.siteName,
+          byline: fetchResult.byline,
+          publishedTime: fetchResult.publishedTime
+        })
+        
+        // Update status to success
+        setUrlProgress(prev => prev.map(p => 
+          p.id === item.id ? { 
+            ...p, 
+            status: 'success', 
+            progress: 100,
+            result: ingestResult
+          } : p
+        ))
+        
+        // Add to results
+        setResults(prev => [ingestResult, ...prev])
+        
+      } catch (error: any) {
+        console.error(`Error processing URL ${item.url}:`, error)
+        
+        // Update status to error
+        setUrlProgress(prev => prev.map(p => 
+          p.id === item.id ? { 
+            ...p, 
+            status: 'error', 
+            progress: 0,
+            error: error.message || 'Unknown error'
+          } : p
+        ))
+      }
+    }
+    
+    const successCount = urlProgress.filter(p => p.status === 'success').length
+    if (successCount > 0) {
+      appBus.emit('notes:updated', { source: 'ingest:urls', count: successCount })
+      // Clear URLs after successful processing
+      setUrlText('')
+    }
+    
+    setIsProcessingUrls(false)
+  }, [urlText, urlProgress, ingestUrlContent])
 
   const onFolderIngest = useCallback(async () => {
     if (!folderPath.trim()) return
@@ -180,6 +315,14 @@ const IngestPage: React.FC = () => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }, [])
+
+  const clearUrlProgress = useCallback(() => {
+    setUrlProgress([])
+  }, [])
+
+  const removeUrlItem = useCallback((id: string) => {
+    setUrlProgress(prev => prev.filter(item => item.id !== id))
   }, [])
 
   if (!isAuthenticated) {
@@ -334,6 +477,134 @@ const IngestPage: React.FC = () => {
           onPaste={onPaste}
         />
       </div>
+
+      {/* URL ingestion area */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700">
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+              Paste URLs to extract and create notes
+            </label>
+            <textarea
+              value={urlText}
+              onChange={e => setUrlText(e.target.value)}
+              className="w-full h-20 p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-slate-100 resize-none"
+              placeholder="Paste URLs here (one per line, max 5 URLs)&#10;https://example.com/article1&#10;https://example.com/article2"
+              disabled={isProcessingUrls}
+            />
+          </div>
+          <button
+            onClick={onUrlsProcess}
+            disabled={isProcessingUrls || !urlText.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            {isProcessingUrls ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <ArrowUpTrayIcon className="w-5 h-5" /> Extract URLs
+              </>
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">
+          Supports web articles, blog posts, and other HTML content. Max 5 URLs at once.
+        </p>
+      </div>
+
+      {/* URL Progress */}
+      <AnimatePresence>
+        {urlProgress.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                URL Progress ({urlProgress.filter(p => p.status === 'success').length}/{urlProgress.length})
+              </h3>
+              <button
+                onClick={clearUrlProgress}
+                className="text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 inline-flex items-center gap-1"
+              >
+                <XMarkIcon className="w-4 h-4" /> Clear
+              </button>
+            </div>
+            <div className="space-y-3 max-h-60 overflow-y-auto">
+              {urlProgress.map((item) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-700/50"
+                >
+                  <div className="flex-shrink-0">
+                    {item.status === 'pending' && <DocumentIcon className="w-5 h-5 text-gray-400" />}
+                    {item.status === 'fetching' && (
+                      <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {item.status === 'extracting' && (
+                      <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {item.status === 'uploading' && (
+                      <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {item.status === 'success' && <CheckCircleIcon className="w-5 h-5 text-green-500" />}
+                    {item.status === 'error' && <ExclamationTriangleIcon className="w-5 h-5 text-red-500" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {item.title || new URL(item.url).hostname}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-slate-400">
+                        {item.siteName || new URL(item.url).hostname}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400 mb-1 truncate">
+                      {item.url}
+                    </div>
+                    {(item.status === 'fetching' || item.status === 'extracting' || item.status === 'uploading') && (
+                      <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-2">
+                        <motion.div 
+                          className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${item.progress}%` }}
+                          transition={{ duration: 0.3 }}
+                        />
+                      </div>
+                    )}
+                    {item.status === 'success' && item.result && (
+                      <div className="text-xs text-green-600 dark:text-green-400">
+                        Success • {item.result.countChunks || 0} chunks • Note ID: {item.result.noteId}
+                      </div>
+                    )}
+                    {item.status === 'error' && (
+                      <div className="text-xs text-red-600 dark:text-red-400">
+                        {item.error || 'Processing failed'}
+                      </div>
+                    )}
+                  </div>
+                  {item.status !== 'fetching' && item.status !== 'extracting' && item.status !== 'uploading' && (
+                    <button
+                      onClick={() => removeUrlItem(item.id)}
+                      title="Remove URL"
+                      className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"
+                    >
+                      <XMarkIcon className="w-4 h-4" />
+                    </button>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Optional: folder path ingest */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700">

@@ -74,6 +74,52 @@ public class JobsController : ControllerBase
         }
     }
 
+    [HttpGet("details")]
+    public async Task<IActionResult> GetJobDetails()
+    {
+        try
+        {
+            var stats = await _jobs.GetStatsAsync();
+            var avgMs = (int)stats.AverageProcessingTime.TotalMilliseconds;
+            var summary = BuildSummary(stats.PendingJobs, stats.ProcessedJobs, stats.FailedJobs, avgMs);
+            
+            return Ok(new
+            {
+                summary,
+                pending = stats.PendingJobs,
+                processed = stats.ProcessedJobs,
+                failed = stats.FailedJobs,
+                avgMs,
+                pendingStreams = stats.PendingStreams,
+                pendingBacklog = stats.PendingBacklog,
+                usingStreams = stats.UsingStreams,
+                redisConnected = stats.RedisConnected,
+                streamDetails = stats.PendingStreams,
+                lastUpdated = DateTime.UtcNow,
+                performanceMetrics = new
+                {
+                    averageProcessingTimeMs = avgMs,
+                    totalJobsThisSession = stats.ProcessedJobs,
+                    currentQueueSize = stats.PendingJobs,
+                    systemHealth = stats.RedisConnected ? "healthy" : "degraded"
+                },
+                jobTypes = new[]
+                {
+                    new { type = "embedding", description = "Text embedding generation for semantic search" },
+                    new { type = "classification", description = "Document classification and tagging" },
+                    new { type = "pii_detection", description = "Personal information detection and masking" },
+                    new { type = "weekly_digest", description = "Weekly summary and insights generation" },
+                    new { type = "graph_enrich", description = "Knowledge graph relationship discovery" }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Jobs details request failed");
+            return StatusCode(500, new { error = "Failed to retrieve job details", details = ex.Message });
+        }
+    }
+
     private static string BuildSummary(int pending, int processed, int failed, int avgMs)
     {
     if (pending == 0 && processed == 0 && failed == 0)

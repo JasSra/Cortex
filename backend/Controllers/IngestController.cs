@@ -3,6 +3,7 @@ using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 
 namespace CortexApi.Controllers;
 
@@ -147,6 +148,78 @@ public class IngestController : ControllerBase
             return StatusCode(500, new { error = "Failed to ingest folder", details = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Ingest extracted URL content (Authenticated user required)
+    /// </summary>
+    [HttpPost("url-content")]
+    public async Task<IActionResult> IngestUrlContent([FromBody] UrlContentIngestRequest request)
+    {
+        if (!EnsureAuthenticated())
+            return Forbid();
+
+        if (string.IsNullOrWhiteSpace(request.Url) || string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest("URL and content are required");
+
+        _logger.LogInformation("Ingesting extracted content from URL {Url} for user {UserId}", 
+            request.Url, _userContext.UserId);
+
+        try
+        {
+            var result = await _ingestService.IngestSingleUrlAsync(
+                request.Url, 
+                request.Title ?? string.Empty, 
+                request.Content,
+                request.FinalUrl,
+                request.SiteName,
+                request.Byline,
+                request.PublishedTime
+            );
+
+            if (result != null && result.Status == "success")
+            {
+                // Track note creation for gamification
+                var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
+                var userProfileId = await _db.UserProfiles
+                    .Where(up => up.SubjectId == subjectId)
+                    .Select(up => up.Id)
+                    .FirstOrDefaultAsync();
+                
+                if (!string.IsNullOrEmpty(userProfileId))
+                {
+                    await _gamificationService.UpdateUserStatsAsync(userProfileId, "note_created", 1);
+                    await _gamificationService.CheckAndAwardAchievementsAsync(userProfileId, "note_created");
+                }
+            }
+
+            _logger.LogInformation("Successfully ingested URL content from {Url} for user {UserId}", 
+                request.Url, _userContext.UserId);
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error ingesting URL content from {Url} for user {UserId}", 
+                request.Url, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to ingest URL content", details = ex.Message });
+        }
+    }
+}
+
+/// <summary>
+/// Request model for URL content ingestion (after extraction)
+/// </summary>
+public class UrlContentIngestRequest
+{
+    [Required]
+    public string Url { get; set; } = string.Empty;
+    public string? Title { get; set; }
+    [Required]
+    public string Content { get; set; } = string.Empty;
+    public string? FinalUrl { get; set; }
+    public string? SiteName { get; set; }
+    public string? Byline { get; set; }
+    public string? PublishedTime { get; set; }
 }
 
 /// <summary>

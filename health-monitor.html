@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Health API Call Monitor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .call-log { background: #f0f0f0; padding: 10px; border-radius: 5px; height: 300px; overflow-y: auto; }
+        .stats { background: #e8f5e8; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Health API Call Monitor</h1>
+    <div class="stats" id="stats">Starting monitor...</div>
+    <div class="call-log" id="log"></div>
+
+    <script>
+        let callCount = 0;
+        const startTime = Date.now();
+        const log = document.getElementById('log');
+        const stats = document.getElementById('stats');
+
+        // Override fetch to monitor calls
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const url = args[0];
+            if (typeof url === 'string' && url.includes('/health')) {
+                callCount++;
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                const logEntry = `${new Date().toLocaleTimeString()}: Health API call #${callCount} (${elapsed}s)`;
+                log.innerHTML += logEntry + '<br>';
+                log.scrollTop = log.scrollHeight;
+                updateStats();
+            }
+            return originalFetch.apply(this, args);
+        };
+
+        function updateStats() {
+            const elapsed = (Date.now() - startTime) / 1000;
+            const rate = callCount > 0 ? (callCount / (elapsed / 60)).toFixed(1) : '0';
+            stats.innerHTML = `Calls: ${callCount} | Elapsed: ${elapsed.toFixed(1)}s | Rate: ${rate} calls/min`;
+        }
+
+        // Update stats every second
+        setInterval(updateStats, 1000);
+
+        // Test the health endpoint every 10 seconds to see normal behavior
+        setInterval(async () => {
+            try {
+                await fetch('http://localhost:8081/health');
+                log.innerHTML += `${new Date().toLocaleTimeString()}: Manual test call completed<br>`;
+                log.scrollTop = log.scrollHeight;
+            } catch (e) {
+                log.innerHTML += `${new Date().toLocaleTimeString()}: Manual test failed: ${e.message}<br>`;
+                log.scrollTop = log.scrollHeight;
+            }
+        }, 10000);
+
+        log.innerHTML = 'Monitor started. Open the System Status page to see if it makes repeated calls.<br>';
+    </script>
+</body>
+</html>

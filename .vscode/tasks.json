@@ -58,7 +58,7 @@
 		{
 			"label": "run-backend-8081-dev",
 			"type": "shell",
-			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:EMBEDDING__PROVIDER='local'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
+			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
 			"isBackground": true
 		},
 		{
@@ -76,7 +76,7 @@
 		{
 			"label": "run-backend-8081-dev",
 			"type": "shell",
-			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:EMBEDDING__PROVIDER='local'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
+			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
 			"isBackground": true
 		},
 		{
@@ -112,7 +112,7 @@
 		{
 			"label": "run-backend-8081-dev",
 			"type": "shell",
-			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:EMBEDDING__PROVIDER='local'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
+			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
 			"isBackground": true
 		},
 		{
@@ -124,13 +124,13 @@
 		{
 			"label": "run-backend-8081-dev-macos",
 			"type": "shell",
-			"command": "ASPNETCORE_ENVIRONMENT=Development EMBEDDING__PROVIDER=local ASPNETCORE_URLS=http://localhost:8081 dotnet run --project ./backend/CortexApi.csproj",
+			"command": "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:8081 dotnet run --project ./backend/CortexApi.csproj",
 			"isBackground": true
 		},
 		{
 			"label": "run-backend-8081-dev",
 			"type": "shell",
-			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:EMBEDDING__PROVIDER='local'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
+			"command": "pwsh -NoLogo -NoProfile -Command \"$env:ASPNETCORE_ENVIRONMENT='Development'; $env:ASPNETCORE_URLS='http://localhost:8081'; dotnet run --project c:\\Code\\Cortex\\backend\\CortexApi.csproj\"",
 			"isBackground": true
 		},
 		{

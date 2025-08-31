@@ -13,19 +13,24 @@ import ModernDashboard from './dashboard/ModernDashboard'
 import DocumentsPage from './pages/DocumentsPage'
 import KnowledgeGraphPage from './pages/KnowledgeGraphPage'
 import JobsPage from './pages/JobsPage'
+import SystemPage from './pages/SystemPage'
+import WorkspaceView from './workspace/WorkspaceView'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface PageRendererProps {
   activeView: string
+  onViewChange: (view: string) => void
 }
 
-const PageRenderer: React.FC<PageRendererProps> = ({ activeView }) => {
+const PageRenderer: React.FC<PageRendererProps> = ({ activeView, onViewChange }) => {
   const { recentAuthEvent } = useAuth()
   if (recentAuthEvent && (activeView === 'dashboard' || activeView === 'analytics')) {
     // Show Welcome immediately after fresh login/signup
     return <WelcomePage onNavigate={(v) => { (window as any).__setActiveView?.(v) }} />
   }
   switch (activeView) {
+    case 'workspace':
+      return <WorkspaceView activeView={activeView} onViewChange={onViewChange} />
     case 'analytics':
       return <AnalyticsPage />
     case 'achievements':
@@ -50,6 +55,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({ activeView }) => {
       return <KnowledgeGraphPage />
     case 'jobs':
       return <JobsPage />
+    case 'system':
+      return <SystemPage />
     default:
       return (
         <div className="p-6">

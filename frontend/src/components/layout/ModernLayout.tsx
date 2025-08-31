@@ -19,7 +19,9 @@ import {
   TrophyIcon,
   FolderIcon,
   SparklesIcon,
-  MapPinIcon
+  MapPinIcon,
+  ServerIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -39,11 +41,13 @@ interface ModernLayoutProps {
 
 // Reordered to surface the most-used sections first
 const navigation = [
+  { name: 'Workspace', href: 'workspace', icon: Cog6ToothIcon, current: false },
   { name: 'Search', href: 'search', icon: MagnifyingGlassIcon, current: true },
   { name: 'Chat Assistant', href: 'chat', icon: ChatBubbleLeftRightIcon, current: false },
   { name: 'Documents', href: 'documents', icon: DocumentTextIcon, current: false },
   { name: 'Notes Browser', href: 'notes-browser', icon: FolderIcon, current: false },
   { name: 'Knowledge Graph', href: 'graph', icon: ShareIcon, current: false },
+  { name: 'System Status', href: 'system', icon: ServerIcon, current: false },
   { name: 'Jobs', href: 'jobs', icon: ChartBarIcon, current: false },
   { name: 'Ingest', href: 'ingest', icon: DocumentTextIcon, current: false },
   { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: false },
@@ -474,7 +478,7 @@ export default function ModernLayout({
               transition={{ duration: 0.3 }}
             >
               {/* Make an escape hatch so WelcomePage can navigate */}
-              <PageRenderer activeView={activeView} />
+              <PageRenderer activeView={activeView} onViewChange={onViewChange} />
             </motion.div>
           </main>
         </div>

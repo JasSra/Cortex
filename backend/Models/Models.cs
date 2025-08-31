@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace CortexApi.Models;
 
@@ -53,6 +54,21 @@ public class CreateNoteRequest
     public string? Title { get; set; }
     [Required]
     public string Content { get; set; } = string.Empty;
+}
+
+public class UrlIngestResult
+{
+    public string? NoteId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public int CountChunks { get; set; }
+    public string OriginalUrl { get; set; } = string.Empty;
+    public string? FinalUrl { get; set; }
+    public DateTime FetchedAt { get; set; } = DateTime.UtcNow;
+    public string? Error { get; set; }
+    public string Status { get; set; } = "success";
+    public string? SiteName { get; set; }
+    public string? Byline { get; set; }
+    public string? PublishedTime { get; set; }
 }
 
 public class UserProfile
@@ -294,6 +310,7 @@ public class NoteChunk
     
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     
+    [JsonIgnore]
     public virtual Note Note { get; set; } = null!;
     public virtual ICollection<Embedding> Embeddings { get; set; } = new List<Embedding>();
 }
@@ -523,6 +540,7 @@ public class NoteTag
     public string NoteId { get; set; } = string.Empty;
     public int TagId { get; set; }
 
+    [JsonIgnore]
     public virtual Note Note { get; set; } = null!;
     public virtual Tag Tag { get; set; } = null!;
 }
@@ -537,6 +555,7 @@ public class Classification
     public string Model { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    [JsonIgnore]
     public virtual Note Note { get; set; } = null!;
 }
 
@@ -595,6 +614,7 @@ public class TextSpan
     public double Confidence { get; set; } = 1.0; // Detection confidence 0-1
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     
+    [JsonIgnore]
     public virtual Note Note { get; set; } = null!;
     public virtual Entity? Entity { get; set; }
 }
@@ -1014,4 +1034,84 @@ public class NoteMeta
     public int SensitivityLevel { get; set; }
     public int ChunkCount { get; set; }
     public List<string> Tags { get; set; } = new();
+}
+
+public class EmbeddingCache
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string TextHash { get; set; } = string.Empty; // SHA256 of normalized text
+    public string Provider { get; set; } = "openai";
+    public string Model { get; set; } = "text-embedding-3-small";
+    public int Dim { get; set; } = 1536;
+    public string VectorJson { get; set; } = "[]"; // serialized float[]
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// User workspace state for working area
+public class UserWorkspace
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    
+    public string UserId { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// ID of the currently active/open note
+    /// </summary>
+    public string? ActiveNoteId { get; set; }
+    
+    /// <summary>
+    /// JSON array of recently accessed note IDs (max 20)
+    /// </summary>
+    public string RecentNoteIds { get; set; } = "[]";
+    
+    /// <summary>
+    /// JSON object with editor state (cursor position, scroll, etc.)
+    /// </summary>
+    public string EditorState { get; set; } = "{}";
+    
+    /// <summary>
+    /// JSON array of pinned tag IDs for quick access
+    /// </summary>
+    public string PinnedTags { get; set; } = "[]";
+    
+    /// <summary>
+    /// JSON object with workspace layout preferences
+    /// </summary>
+    public string LayoutPreferences { get; set; } = "{}";
+    
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    
+    public virtual Note? ActiveNote { get; set; }
+}
+
+// Track user note access for recent notes functionality  
+public class UserNoteAccess
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    
+    public string UserId { get; set; } = string.Empty;
+    public string NoteId { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Type of access: view, edit, create
+    /// </summary>
+    public string AccessType { get; set; } = "view";
+    
+    /// <summary>
+    /// Duration of access in seconds
+    /// </summary>
+    public int DurationSeconds { get; set; }
+    
+    /// <summary>
+    /// Editor state when note was closed (for restoration)
+    /// </summary>
+    public string? EditorStateSnapshot { get; set; }
+    
+    public DateTime AccessedAt { get; set; } = DateTime.UtcNow;
+    
+    public virtual Note Note { get; set; } = null!;
 }

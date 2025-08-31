@@ -217,72 +217,93 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 	{
-		// Delay a moment for app startup
-		await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
-		
-		// Try to initialize Redis Streams
-		bool useStreams = await InitializeRedisAsync();
-
-        // periodic graph enrichment ticker
-        var lastGraphSweep = DateTime.UtcNow;
-
-		while (!stoppingToken.IsCancellationRequested)
+		try
 		{
-			try
-			{
-				using var scope = _scopeFactory.CreateScope();
-				var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
-				var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
-				var embed = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
+			// Delay a moment for app startup
+			await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+			
+			// Try to initialize Redis Streams
+			bool useStreams = await InitializeRedisAsync();
 
-				// Ensure vector index once
-				if (!_indexEnsured)
+			// periodic graph enrichment ticker
+			var lastGraphSweep = DateTime.UtcNow;
+
+			while (!stoppingToken.IsCancellationRequested)
+			{
+				try
 				{
+					using var scope = _scopeFactory.CreateScope();
+					var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
+					var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
+					var embed = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
+
+					// Ensure vector index once
+					if (!_indexEnsured)
+					{
+						try
+						{
+							await vector.EnsureIndexAsync(embed.GetEmbeddingDim(), stoppingToken);
+							_indexEnsured = true;
+						}
+						catch (Exception ex)
+						{
+							// Optional backend; try again later
+							_logger.LogDebug(ex, "Vector index ensure deferred");
+						}
+					}
+
+					if (useStreams && _db != null)
+					{
+						// Process jobs from Redis Streams
+						await ProcessStreamsAsync(scope, stoppingToken);
+					}
+					else
+					{
+						// Fallback to polling mode
+						await ProcessPollingAsync(scope, stoppingToken);
+					}
+
+					// Periodically sweep notes to extract entities/edges
+					if ((DateTime.UtcNow - lastGraphSweep) > TimeSpan.FromMinutes(5))
+					{
+						await SweepGraphAsync(scope, stoppingToken);
+						lastGraphSweep = DateTime.UtcNow;
+					}
+
+					// Backoff logic
+					_idleStreak = _idleStreak > 0 ? Math.Min(_idleStreak + 1, 6) : 0;
+					var idleSeconds = _idleStreak > 0 ? Math.Min(30, Math.Pow(2, _idleStreak)) : 1;
+					var delay = TimeSpan.FromSeconds(idleSeconds);
+					await Task.Delay(delay, stoppingToken);
+				}
+				catch (TaskCanceledException)
+				{
+					// shutdown
+					break;
+				}
+				catch (Exception ex)
+				{
+					_logger.LogError(ex, "BackgroundJobService loop error");
 					try
 					{
-						await vector.EnsureIndexAsync(embed.GetEmbeddingDim(), stoppingToken);
-						_indexEnsured = true;
+						await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
 					}
-					catch (Exception ex)
+					catch (TaskCanceledException)
 					{
-						// Optional backend; try again later
-						_logger.LogDebug(ex, "Vector index ensure deferred");
+						// Shutdown during error recovery delay
+						break;
 					}
 				}
-
-				if (useStreams && _db != null)
-				{
-					// Process jobs from Redis Streams
-					await ProcessStreamsAsync(scope, stoppingToken);
-				}
-				else
-				{
-					// Fallback to polling mode
-					await ProcessPollingAsync(scope, stoppingToken);
-				}
-
-                // Periodically sweep notes to extract entities/edges
-                if ((DateTime.UtcNow - lastGraphSweep) > TimeSpan.FromMinutes(5))
-                {
-                    await SweepGraphAsync(scope, stoppingToken);
-                    lastGraphSweep = DateTime.UtcNow;
-                }
-
-				// Backoff logic
-				_idleStreak = _idleStreak > 0 ? Math.Min(_idleStreak + 1, 6) : 0;
-				var idleSeconds = _idleStreak > 0 ? Math.Min(30, Math.Pow(2, _idleStreak)) : 1;
-				var delay = TimeSpan.FromSeconds(idleSeconds);
-				await Task.Delay(delay, stoppingToken);
 			}
-			catch (TaskCanceledException)
-			{
-				// shutdown
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "BackgroundJobService loop error");
-				await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-			}
+		}
+		catch (TaskCanceledException)
+		{
+			// Graceful shutdown - this is expected when the application stops
+			_logger.LogInformation("BackgroundJobService shutting down gracefully");
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "BackgroundJobService startup error");
 		}
 	}
 	
@@ -372,8 +393,10 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		foreach (var chunk in work)
 		{
 			var note = await db.Notes.FirstAsync(n => n.Id == chunk.NoteId, stoppingToken);
-			var vec = await embed.EmbedAsync(chunk.Content, stoppingToken);
-			if (vec is null) continue;
+
+            // Reuse vector from cache when possible
+            var (vec, usedCache) = await TryGetOrCreateVectorAsync(db, embed, chunk.Content, stoppingToken);
+            if (vec is null) continue;
 
 			await vector.UpsertChunkAsync(note, chunk, vec, stoppingToken);
 
@@ -450,6 +473,76 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		}
 	}
 
+    private async Task<(float[]? vec, bool usedCache)> TryGetOrCreateVectorAsync(CortexDbContext db, IEmbeddingService embed, string text, CancellationToken ct)
+    {
+        string NormalizeForHash(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return string.Empty;
+            var lf = input.Replace("\r\n", "\n").Replace("\r", "\n");
+            var sb = new System.Text.StringBuilder(lf.Length);
+            bool lastSpace = false;
+            foreach (var ch in lf)
+            {
+                char c = ch;
+                if (char.IsWhiteSpace(c) && c != '\n') c = ' ';
+                if (c == ' ')
+                {
+                    if (lastSpace) continue;
+                    lastSpace = true;
+                }
+                else lastSpace = false;
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            return sb.ToString().Trim();
+        }
+
+        var provider = _configuration["Embedding:Provider"] ?? "openai";
+        var model = _configuration["Embedding:Model"] ?? "text-embedding-3-small";
+
+        // Hash normalized text
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var norm = NormalizeForHash(text);
+        var hash = Convert.ToHexString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(norm))).ToLowerInvariant();
+
+        // Lookup cache
+        var cached = await db.EmbeddingCache.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.TextHash == hash && e.Provider == provider && e.Model == model, ct);
+        if (cached != null)
+        {
+            try
+            {
+                var vec = JsonSerializer.Deserialize<float[]>(cached.VectorJson);
+                if (vec != null && vec.Length == embed.GetEmbeddingDim())
+                    return (vec, true);
+            }
+            catch { /* fall through to re-embed */ }
+        }
+
+        var created = await embed.EmbedAsync(text, ct);
+        if (created == null) return (null, false);
+
+        // Store in cache
+        try
+        {
+            db.EmbeddingCache.Add(new EmbeddingCache
+            {
+                TextHash = hash,
+                Provider = provider,
+                Model = model,
+                Dim = created.Length,
+                VectorJson = JsonSerializer.Serialize(created),
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // Best-effort cache write, ignore uniqueness races
+        }
+
+        return (created, false);
+    }
+
     private async Task ProcessEmbeddingJob(IServiceScope scope, string payloadJson, CancellationToken stoppingToken)
     {
         var payload = JsonSerializer.Deserialize<EmbeddingJobPayload>(payloadJson);
@@ -462,25 +555,25 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
         var chunk = await db.NoteChunks.Include(c => c.Note).FirstOrDefaultAsync(c => c.Id == payload.ChunkId, stoppingToken);
         if (chunk == null) return;
 
-        var embedding = await embed.EmbedAsync(chunk.Content, stoppingToken);
+        // Early exit if already embedded
+        if (await db.Embeddings.AsNoTracking().AnyAsync(e => e.ChunkId == chunk.Id, stoppingToken))
+            return;
+
+        var (embedding, usedCache) = await TryGetOrCreateVectorAsync(db, embed, chunk.Content, stoppingToken);
         if (embedding == null) return;
 
         await vector.UpsertChunkAsync(chunk.Note, chunk, embedding, stoppingToken);
 
-        // Create or update embedding record
-        var existingEmbedding = await db.Embeddings.FirstOrDefaultAsync(e => e.ChunkId == chunk.Id, stoppingToken);
-        if (existingEmbedding == null)
+        // Create embedding record
+        db.Embeddings.Add(new Embedding
         {
-            db.Embeddings.Add(new Embedding
-            {
-                ChunkId = chunk.Id,
-                Provider = _configuration["Embedding:Provider"] ?? "openai",
-                Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
-                Dim = embedding.Length,
-                VectorRef = $"chunk:{chunk.Id}",
-                CreatedAt = DateTime.UtcNow
-            });
-        }
+            ChunkId = chunk.Id,
+            Provider = _configuration["Embedding:Provider"] ?? "openai",
+            Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
+            Dim = embedding.Length,
+            VectorRef = $"chunk:{chunk.Id}",
+            CreatedAt = DateTime.UtcNow
+        });
 
         await db.SaveChangesAsync(stoppingToken);
     }
