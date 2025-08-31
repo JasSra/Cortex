@@ -31,10 +31,11 @@ async function checkConnectivity() {
     if (response.ok) {
       const data = await response.json();
       const responseTime = Date.now() - startTime;
-      
+
       // Check if the response indicates healthy status
-      const isHealthy = data && (data.status === 'healthy' || data.status === 'ok');
-      
+      const statusVal = (data && (data.status || data.Status)) || 'unknown';
+      const isHealthy = statusVal === 'healthy' || statusVal === 'ok';
+
       if (isHealthy && !isOnline) {
         // Backend came back online
         isOnline = true;
@@ -56,16 +57,16 @@ async function checkConnectivity() {
           details: 'Backend returned unhealthy status'
         });
       }
-      
-      // Send periodic status updates (even when status hasn't changed)
+
+      // Send periodic status updates (reflect current health)
       postMessage({
         type: 'HEALTH_CHECK',
-        isOnline: true,
+        isOnline: isHealthy,
         responseTime,
         timestamp: new Date().toISOString(),
-        details: 'Health check successful'
+        details: isHealthy ? 'Health check successful' : `Health check reported status: ${statusVal}`
       });
-      
+
     } else {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }

@@ -67,9 +67,12 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
   useEffect(() => {
     (async () => {
       try {
-        const res = await tagsApi.getAllTags()
-        const list = Array.isArray(res) ? res : (res?.tags || res?.Tags || [])
-        const names = Array.isArray(list) ? list.map((t: any) => t.name || t.Name || t).filter(Boolean) : []
+     const res = await tagsApi.getAllTags()
+     // getAllTags returns a string[] of tag names via generated client
+     const names = Array.isArray(res)
+    ? res.map((t: any) => (typeof t === 'string' ? t : (t?.name || t?.Name)))
+      .filter(Boolean)
+    : []
         setAllTags(Array.from(new Set(names)))
       } catch {/* ignore */}
     })()
