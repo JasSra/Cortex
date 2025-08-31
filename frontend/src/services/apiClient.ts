@@ -76,6 +76,11 @@ function getCached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Pr
   return p
 }
 
+function invalidateCache(key: string): void {
+  __cache.delete(key)
+  __inflight.delete(key)
+}
+
 // Main hook: use the generated CortexApiClient everywhere
 export function useCortexApiClient(): CortexApiClient {
   const { getAccessToken, logout } = useAppAuth()
@@ -170,6 +175,23 @@ export function useGamificationApi() {
     seedAchievements,
     getAllAchievementsTest,
   ])
+}
+
+// Public Health (no auth required)
+export function useHealthApi() {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+  
+  const getSystemHealth = useCallback(async () => {
+    const response = await fetch(`${baseUrl}/health`)
+    if (!response.ok) {
+      throw new Error(`Health check failed: ${response.status}`)
+    }
+    return response.json()
+  }, [baseUrl])
+
+  return {
+    getSystemHealth,
+  }
 }
 
 // Admin
@@ -292,7 +314,86 @@ export function useIngestApi() {
     }
   }, [authedFetch, baseUrl])
 
-  return useMemo(() => ({ uploadFiles, ingestFolder, createNote }), [uploadFiles, ingestFolder, createNote])
+  const ingestUrlContent = useCallback(async (urlData: {
+    url: string
+    title?: string
+    content: string
+    finalUrl?: string
+    siteName?: string
+    byline?: string
+    publishedTime?: string
+  }) => {
+    const res = await authedFetch(`${baseUrl}/api/Ingest/url-content`, {
+      method: 'POST',
+      body: JSON.stringify(urlData),
+    })
+    if (!res.ok) throw new Error(`URL ingestion failed: ${res.status}`)
+    const data = await res.json()
+    return {
+      noteId: data.noteId ?? data.NoteId,
+      title: data.title ?? data.Title,
+      status: data.status ?? 'success',
+      chunkCount: data.countChunks ?? data.CountChunks ?? data.countChunks ?? 0,
+      originalUrl: data.originalUrl ?? data.OriginalUrl,
+      finalUrl: data.finalUrl ?? data.FinalUrl,
+      error: data.error,
+    }
+  }, [authedFetch, baseUrl])
+
+  return useMemo(() => ({ uploadFiles, ingestFolder, createNote, ingestUrlContent }), [uploadFiles, ingestFolder, createNote, ingestUrlContent])
+}
+
+// Tags - now using the generated client with proper types
+export function useTagsApi() {
+  const client = useCortexApiClient()
+  const TTL = 30_000 // 30s cache for tag data
+
+  const getAllTags = useCallback(async () => {
+    return getCached('tags:all', TTL, async () => {
+      const response = await client.tags()
+      return response.tags || []
+    })
+  }, [client])
+
+  const getNoteTags = useCallback(async (noteId: string) => {
+    const response = await client.tags2(noteId)
+    return response.tags || []
+  }, [client])
+
+  const searchNotesByTags = useCallback(async (
+    tags: string[] | string,
+    options: {
+      mode?: 'all' | 'any'
+      limit?: number
+      offset?: number
+    } = {}
+  ) => {
+    const {
+      mode = 'all',
+      limit = 20,
+      offset = 0
+    } = options
+
+    const tagString = Array.isArray(tags) ? tags.join(',') : tags
+    const response = await client.search(tagString, mode, limit, offset)
+    
+    return {
+      items: response.items || [],
+      total: response.total || 0,
+      offset: response.offset || 0,
+      limit: response.limit || limit
+    }
+  }, [client])
+
+  return useMemo(() => ({
+    getAllTags,
+    getNoteTags,
+    searchNotesByTags,
+  }), [
+    getAllTags,
+    getNoteTags,
+    searchNotesByTags,
+  ])
 }
 
 // Search
@@ -324,8 +425,8 @@ export function useSearchApi() {
     return normalize(res)
   }, [client, normalize])
 
-  const searchGet = useCallback(async (q: string, k?: number, mode?: string, alpha?: number) => {
-    const res = await client.searchGET(q, k, mode, alpha)
+  const searchGet = useCallback(async (q: string, k?: number, mode?: string, alpha?: number, offset?: number) => {
+    const res = await client.searchGET(q, k, offset, mode, alpha)
     return normalize(res)
   }, [client, normalize])
 
@@ -356,6 +457,7 @@ export function useSearchApi() {
 // Jobs / background processing
 export function useJobsApi() {
   const http = useAuthedFetch()
+  const client = useCortexApiClient()
   const { getAccessToken } = useAppAuth()
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
   
@@ -374,6 +476,29 @@ export function useJobsApi() {
     }
   }, [http])
 
+  const getPendingJobs = useCallback(async () => {
+    return await client.pending()
+  }, [client])
+
+  const getJobDetails = useCallback(async () => {
+    const res = await http.get<any>(`/api/Jobs/details`)
+    return {
+      summary: res?.summary ?? res?.Summary ?? 'Background workers are idle.',
+      pending: res?.pending ?? res?.Pending ?? 0,
+      processed: res?.processed ?? res?.Processed ?? 0,
+      failed: res?.failed ?? res?.Failed ?? 0,
+      avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
+      pendingStreams: res?.pendingStreams ?? res?.PendingStreams ?? 0,
+      pendingBacklog: res?.pendingBacklog ?? res?.PendingBacklog ?? 0,
+      usingStreams: res?.usingStreams ?? res?.UsingStreams ?? false,
+      redisConnected: res?.redisConnected ?? res?.RedisConnected ?? false,
+      streamDetails: res?.streamDetails ?? res?.StreamDetails ?? {},
+      lastUpdated: res?.lastUpdated ?? res?.LastUpdated ?? new Date().toISOString(),
+      performanceMetrics: res?.performanceMetrics ?? res?.PerformanceMetrics ?? {},
+      jobTypes: res?.jobTypes ?? res?.JobTypes ?? []
+    }
+  }, [http])
+
   const statusStreamUrl = useCallback(async () => {
     const token = await getAccessToken()
     const url = new URL(`${baseUrl}/api/Jobs/status/stream`)
@@ -384,6 +509,10 @@ export function useJobsApi() {
   return {
     // One-shot status (normalized)
     getStatus,
+    // Get detailed pending jobs information
+    getPendingJobs,
+    // Get comprehensive job details with performance metrics
+    getJobDetails,
     // Helper to build SSE URL with token
     statusStreamUrl,
     // Subscribe and push normalized updates
@@ -833,4 +962,66 @@ export function useCardsApi() {
     noteCard: (id: string) => http.post<any>(`/api/Cards/note/${encodeURIComponent(id)}`),
     confirmDeleteCard: (action?: string) => http.post<any>(`/api/Cards/confirm-delete${action ? `?action=${encodeURIComponent(action)}` : ''}`),
   }
+}
+
+// Workspace API - User workspace management with recent notes and editor state
+export function useWorkspaceApi() {
+  const http = useAuthedFetch()
+  const TTL = 5_000 // 5s cache for workspace data
+  
+  const getWorkspace = useCallback(() => {
+    return getCached('workspace:current', TTL, () => http.get<any>('/api/Workspace'))
+  }, [http])
+  
+  const updateWorkspace = useCallback(async (updates: {
+    activeNoteId?: string | null
+    recentNoteIds?: string[]
+    editorState?: Record<string, any>
+    pinnedTags?: string[]
+    layoutPreferences?: Record<string, any>
+  }) => {
+    const result = await http.put<any>('/api/Workspace', updates)
+    // Invalidate cache after update
+    invalidateCache('workspace:current')
+    return result
+  }, [http])
+  
+  const getRecentNotes = useCallback((limit = 10) => {
+    return http.get<any[]>(`/api/Workspace/recent-notes?limit=${limit}`)
+  }, [http])
+  
+  const trackNoteAccess = useCallback(async (noteId: string, accessType = 'view', durationSeconds = 0, editorState?: Record<string, any>) => {
+    const body = {
+      noteId,
+      accessType,
+      durationSeconds,
+      editorStateSnapshot: editorState ? JSON.stringify(editorState) : null
+    }
+    return await http.post<any>('/api/Workspace/track-access', body)
+  }, [http])
+  
+  const getNotesByTags = useCallback((tags: string[], mode: 'all' | 'any' = 'all', limit = 20, offset = 0) => {
+    const tagQuery = tags.join(',')
+    return http.get<any[]>(`/api/Workspace/notes-by-tags?tags=${encodeURIComponent(tagQuery)}&mode=${mode}&limit=${limit}&offset=${offset}`)
+  }, [http])
+  
+  const getAllTags = useCallback(() => {
+    return getCached('workspace:tags', 30_000, () => http.get<string[]>('/api/Workspace/tags'))
+  }, [http])
+  
+  return useMemo(() => ({
+    getWorkspace,
+    updateWorkspace,
+    getRecentNotes,
+    trackNoteAccess,
+    getNotesByTags,
+    getAllTags,
+  }), [
+    getWorkspace,
+    updateWorkspace,
+    getRecentNotes,
+    trackNoteAccess,
+    getNotesByTags,
+    getAllTags,
+  ])
 }

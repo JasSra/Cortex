@@ -29,7 +29,13 @@
 - Custom hooks for API interactions with proper error handling
 - Interface definitions for all data structures
 
-### 3. Modern React Patterns
+### 3. **API Client Usage Rule**
+- **NEVER use manual `/api` fetch calls in frontend code**
+- **ALWAYS use the generated `CortexApiClient` or custom hooks from `apiClient.ts`**
+- All API interactions must go through the authenticated client for proper token handling
+- Manual fetch calls bypass authentication and type safety
+
+### 4. Modern React Patterns
 - **App Router**: Next.js 14 with app directory structure
 - **Server Components**: Use when possible, client components marked with `'use client'`
 - **Custom Hooks**: Centralized API logic in `src/services/apiClient.ts`
@@ -102,12 +108,20 @@ export default function ComponentName({ activeView, onViewChange }: ComponentPro
 
 ### API Integration Patterns
 ```tsx
-// Use custom hooks from apiClient.ts
-const { uploadFiles, createNote } = useIngestApi()
+// ✅ CORRECT: Use custom hooks from apiClient.ts
+const { uploadFiles, createNote, ingestUrlContent } = useIngestApi()
 const { searchGet } = useSearchApi()
 const { getUserStats } = useGamificationApi()
 
-// Handle async operations with loading states
+// ✅ CORRECT: Generated client for typed operations
+const client = useCortexApiClient()
+
+// ❌ FORBIDDEN: Manual API calls
+// NEVER DO THIS:
+// const response = await fetch('/api/notes', ...)
+// const response = await fetch(`${baseUrl}/api/ingest/files`, ...)
+
+// ✅ CORRECT: Handle async operations with loading states
 const [isLoading, setIsLoading] = useState(false)
 const [error, setError] = useState<string | null>(null)
 
@@ -115,13 +129,22 @@ const handleUpload = useCallback(async (files: FileList) => {
   setError(null)
   setIsLoading(true)
   try {
-    const results = await uploadFiles(files)
+    const results = await uploadFiles(files) // ✅ Uses authenticated client
     // Handle success
   } catch (e: any) {
     setError(e?.message || 'Operation failed')
   } finally {
     setIsLoading(false)
   }
+}, [uploadFiles])
+```
+
+### API Client Rules (CRITICAL)
+- **🚫 NEVER use `fetch('/api/...')` or `fetch(\`\${baseUrl}/api/...\`)` directly**
+- **🚫 NEVER use `localStorage.getItem('authToken')` for authentication**
+- **✅ ALWAYS use `useCortexApiClient()` or custom hooks (`useIngestApi`, `useNotesApi`, etc.)**
+- **✅ ALL API calls must go through the authenticated client**
+- **✅ Use TypeScript interfaces for all API responses**
 }, [uploadFiles])
 ```
 
@@ -145,15 +168,16 @@ const handleUpload = useCallback(async (files: FileList) => {
 
 ### API Client Usage
 ```tsx
-// Generated client for typed operations
+// ✅ CORRECT: Generated client for typed operations
 const client = useCortexApiClient()
 
-// Custom hooks for specific domains
+// ✅ CORRECT: Custom hooks for specific domains
 const notesApi = useNotesApi()
 const searchApi = useSearchApi()
+const ingestApi = useIngestApi()
 const gamificationApi = useGamificationApi()
 
-// Always handle both success and error cases
+// ✅ CORRECT: Always handle both success and error cases
 try {
   const results = await searchApi.searchGet(query, limit, 'hybrid', 0.6)
   // Normalize response format (backend may return Hits or hits)
@@ -161,6 +185,11 @@ try {
 } catch (error) {
   console.error('Search failed:', error)
 }
+
+// ❌ FORBIDDEN: Direct API calls
+// NEVER DO THIS:
+// await fetch('/api/search', { method: 'POST', body: JSON.stringify(query) })
+// await fetch(`${baseUrl}/api/ingest/url-content`, { headers: { 'Authorization': ... } })
 ```
 
 ### Authentication Flow
@@ -357,6 +386,8 @@ NEXT_PUBLIC_AZURE_AD_AUTHORITY=https://your-tenant.b2clogin.com/...
 
 ### ✅ Do This
 - Use TypeScript strictly with proper interfaces
+- **Use only the generated CortexApiClient or custom hooks from apiClient.ts**
+- **Always use authenticated API methods (useIngestApi, useNotesApi, etc.)**
 - Implement loading states for all async operations
 - Handle both success and error cases
 - Use semantic HTML with proper accessibility
@@ -366,6 +397,9 @@ NEXT_PUBLIC_AZURE_AD_AUTHORITY=https://your-tenant.b2clogin.com/...
 - Implement proper cleanup in useEffect
 
 ### ❌ Avoid This
+- **Manual `/api` fetch calls (NEVER use fetch('/api/...') directly)**
+- **Bypassing authentication with direct HTTP calls**
+- **Using localStorage.getItem('authToken') instead of proper auth flow**
 - Direct DOM manipulation (use React patterns)
 - Inline styles (use Tailwind classes)
 - Hardcoded API URLs (use environment variables)
@@ -398,3 +432,14 @@ interface UploadComponentProps {
 ```
 
 Remember: This is a sophisticated application with security, performance, and user experience as primary concerns. Always consider the authentication state, handle errors gracefully, and maintain consistency with the existing patterns.
+
+## 🚨 CRITICAL RULES 🚨
+
+### API Client Usage (MANDATORY)
+1. **NEVER use manual `fetch('/api/...')` calls in frontend code**
+2. **ALWAYS use the generated `CortexApiClient` or custom hooks from `apiClient.ts`**
+3. **ALL API interactions must go through the authenticated client**
+4. **Authentication tokens are handled automatically by the client - do NOT use localStorage**
+5. **Use typed interfaces for all API responses**
+
+These rules ensure proper authentication, type safety, and maintainable code. Violations will cause authentication failures and security issues.

@@ -133,6 +133,7 @@ public class TagsController : ControllerBase
     /// Get all unique tags for the current user
     /// </summary>
     [HttpGet]
+    [ProducesResponseType(typeof(TagsResponse), 200)]
     public async Task<IActionResult> GetTags()
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
@@ -194,6 +195,7 @@ public class TagsController : ControllerBase
     /// Get tags for a specific note
     /// </summary>
     [HttpGet("{noteId}")]
+    [ProducesResponseType(typeof(NoteTagsResponse), 200)]
     public async Task<IActionResult> GetNoteTags(string noteId)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
@@ -218,6 +220,7 @@ public class TagsController : ControllerBase
     /// Search notes by tags (AND/OR). Returns paginated note metadata and total count.
     /// </summary>
     [HttpGet("search")]
+    [ProducesResponseType(typeof(TagSearchResponse), 200)]
     public async Task<IActionResult> SearchByTags([FromQuery] string tags, [FromQuery] string mode = "all", [FromQuery] int limit = 20, [FromQuery] int offset = 0)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))

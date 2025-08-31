@@ -14,7 +14,7 @@ import {
   XMarkIcon
 } from '@heroicons/react/24/outline'
 import { useMascot } from '@/contexts/MascotContext'
-import { useSearchApi } from '@/services/apiClient'
+import { useSearchApi, useTagsApi } from '@/services/apiClient'
 
 interface SearchResult {
   id: string
@@ -65,6 +65,20 @@ const SearchEverythingPage: React.FC = () => {
   
   const { speak, listen, think, idle, suggest } = useMascot()
   const { searchGet } = useSearchApi()
+  const { getAllTags, searchNotesByTags } = useTagsApi()
+
+  // Load available tags
+  useEffect(() => {
+    const loadTags = async () => {
+      try {
+        const tags = await getAllTags()
+        setAvailableTags(tags.map(t => t.name).filter((name): name is string => !!name))
+      } catch (error) {
+        console.error('Failed to load tags:', error)
+      }
+    }
+    loadTags()
+  }, [getAllTags])
 
   // Load recent searches from localStorage
   useEffect(() => {
@@ -116,8 +130,8 @@ const SearchEverythingPage: React.FC = () => {
 
   // Perform search with filters
   const performSearch = useCallback(async (searchQuery: string = query) => {
-    if (!searchQuery.trim()) {
-      suggest("Try entering a search term, or click the microphone to use voice search!")
+    if (!searchQuery.trim() && filters.tags.length === 0) {
+      suggest("Try entering a search term or selecting some tags!")
       return
     }
 
@@ -126,7 +140,40 @@ const SearchEverythingPage: React.FC = () => {
 
     try {
       const startTime = Date.now()
-  const response: any = await searchGet(searchQuery, 20, 'hybrid', 0.6)
+      let response: any
+
+      // If we have tags, use tag-based search
+      if (filters.tags.length > 0) {
+        const tagSearchResult = await searchNotesByTags(filters.tags, {
+          mode: 'all', // You could make this configurable
+          limit: 20,
+          offset: 0
+        })
+        
+        // Convert NoteMeta to SearchResult format
+        const hits = tagSearchResult.items.map(item => ({
+          id: item.id,
+          title: item.title,
+          content: '', // NoteMeta doesn't include content
+          score: 1.0, // Tag matches are considered high confidence
+          metadata: {
+            source: item.fileType || '',
+            createdAt: item.createdAt,
+            tags: item.tags || [],
+            sensitivityLevel: item.sensitivityLevel || 0
+          }
+        }))
+        
+        response = {
+          hits,
+          total: tagSearchResult.total,
+          executionTime: Date.now() - startTime
+        }
+      } else {
+        // Regular text search
+        response = await searchGet(searchQuery, 20, 'hybrid', 0.6)
+      }
+      
       const executionTime = Date.now() - startTime
 
       setResults(response.hits || [])
@@ -135,14 +182,17 @@ const SearchEverythingPage: React.FC = () => {
         executionTime
       })
 
-      // Save to recent searches
-      const newRecentSearches = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, 5)
-      setRecentSearches(newRecentSearches)
-      localStorage.setItem('cortex-recent-searches', JSON.stringify(newRecentSearches))
+      // Save to recent searches (only for text queries)
+      if (searchQuery.trim()) {
+        const newRecentSearches = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, 5)
+        setRecentSearches(newRecentSearches)
+        localStorage.setItem('cortex-recent-searches', JSON.stringify(newRecentSearches))
+      }
 
       // Mascot feedback
       if (response.hits?.length > 0) {
-        speak(`Found ${response.hits.length} results in ${executionTime}ms!`, 'responding')
+        const searchType = filters.tags.length > 0 ? 'tag-filtered' : 'text'
+        speak(`Found ${response.hits.length} ${searchType} results in ${executionTime}ms!`, 'responding')
       } else {
         speak("No results found. Try different keywords or check your filters.", 'suggesting')
       }
@@ -154,7 +204,7 @@ const SearchEverythingPage: React.FC = () => {
       setIsSearching(false)
       idle()
     }
-  }, [query, filters, searchGet, speak, think, idle, suggest, recentSearches])
+  }, [query, filters, searchGet, searchNotesByTags, speak, think, idle, suggest, recentSearches])
 
   // Handle search form submission
   const handleSearch = (e: React.FormEvent) => {
@@ -254,6 +304,31 @@ const SearchEverythingPage: React.FC = () => {
               </motion.button>
             </div>
           </form>
+
+          {/* Quick Actions for Tag Search */}
+          {filters.tags.length > 0 && (
+            <motion.div 
+              className="max-w-4xl mx-auto mt-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <div className="flex gap-2 items-center">
+                <motion.button
+                  type="button"
+                  onClick={() => performSearch('')}
+                  className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <TagIcon className="w-4 h-4" />
+                  Search by Tags Only
+                </motion.button>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {filters.tags.length} tag{filters.tags.length !== 1 ? 's' : ''} selected
+                </p>
+              </div>
+            </motion.div>
+          )}
 
           {/* Recent Searches */}
           {recentSearches.length > 0 && !query && (
@@ -404,11 +479,83 @@ const SearchEverythingPage: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Tags
                     </label>
-                    <input
-                      type="text"
-                      placeholder="Enter tags..."
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    />
+                    <div className="space-y-2">
+                      {/* Selected Tags */}
+                      {filters.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {filters.tags.map((tag, index) => (
+                            <span
+                              key={index}
+                              className="inline-flex items-center gap-1 bg-purple-100 dark:bg-purple-800 text-purple-800 dark:text-purple-200 px-2 py-1 rounded text-xs"
+                            >
+                              {tag}
+                              <button
+                                type="button"
+                                title={`Remove ${tag} tag`}
+                                onClick={() => setFilters(prev => ({
+                                  ...prev,
+                                  tags: prev.tags.filter((_, i) => i !== index)
+                                }))}
+                                className="hover:bg-purple-200 dark:hover:bg-purple-700 rounded"
+                              >
+                                <XMarkIcon className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Tag Input with Autocomplete */}
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Type to search tags..."
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              const value = e.currentTarget.value.trim()
+                              if (value && !filters.tags.includes(value)) {
+                                setFilters(prev => ({
+                                  ...prev,
+                                  tags: [...prev.tags, value]
+                                }))
+                                e.currentTarget.value = ''
+                              }
+                            }
+                          }}
+                        />
+                        
+                        {/* Autocomplete Dropdown */}
+                        {availableTags.length > 0 && (
+                          <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md mt-1 max-h-40 overflow-y-auto z-10 shadow-lg">
+                            {availableTags
+                              .filter(tag => !filters.tags.includes(tag))
+                              .slice(0, 10)
+                              .map((tag) => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={() => {
+                                    setFilters(prev => ({
+                                      ...prev,
+                                      tags: [...prev.tags, tag]
+                                    }))
+                                  }}
+                                  className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-white"
+                                >
+                                  {tag}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Press Enter to add a tag, or click from suggestions above
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

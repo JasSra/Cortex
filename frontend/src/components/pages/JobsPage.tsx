@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useJobsApi, useGraphApi } from '@/services/apiClient'
+import { JobDetails } from '@/api/cortex-api-client'
 
 interface StatSample {
   ts: number
@@ -14,10 +15,12 @@ interface StatSample {
 }
 
 const JobsPage: React.FC = () => {
-  const { getStatus, statusStreamUrl, enqueueGraphEnrich } = useJobsApi()
+  const { getStatus, getPendingJobs, statusStreamUrl, enqueueGraphEnrich } = useJobsApi()
   const { discoverAll } = useGraphApi()
   const [samples, setSamples] = useState<StatSample[]>([])
   const [current, setCurrent] = useState<any | null>(null)
+  const [pendingJobs, setPendingJobs] = useState<JobDetails[]>([])
+  const [showDetails, setShowDetails] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [noteId, setNoteId] = useState('')
   const esRef = useRef<EventSource | null>(null)
@@ -54,6 +57,13 @@ const JobsPage: React.FC = () => {
     }
   }, [getStatus, statusStreamUrl]) // Now safe with memoized functions
 
+  // Fetch pending jobs details when showing details
+  useEffect(() => {
+    if (showDetails) {
+      getPendingJobs().then(setPendingJobs).catch(() => setPendingJobs([]))
+    }
+  }, [showDetails, getPendingJobs])
+
   const last5 = useMemo(() => samples.slice(-50).reverse(), [samples])
 
   return (
@@ -77,6 +87,36 @@ const JobsPage: React.FC = () => {
           {current?.summary || 'Background workers are idle.'}
         </div>
       </div>
+
+      {current?.pending > 0 && (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-900 dark:text-white">Pending Jobs Details</h2>
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+            >
+              {showDetails ? 'Hide Details' : `Show Details (${current.pending})`}
+            </button>
+          </div>
+          
+          {showDetails && (
+            <div className="space-y-3">
+              {pendingJobs.length > 0 ? (
+                <div className="max-h-96 overflow-y-auto">
+                  <div className="space-y-2">
+                    {pendingJobs.map((job, index) => (
+                      <JobDetailsCard key={job.id || index} job={job} />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Loading job details...</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
         <h2 className="font-semibold text-gray-900 dark:text-white">Actions</h2>
@@ -133,6 +173,62 @@ const StatCard: React.FC<{ label: string; value: number }> = ({ label, value }) 
     <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
   </motion.div>
 )
+
+const JobDetailsCard: React.FC<{ job: JobDetails }> = ({ job }) => {
+  const [expanded, setExpanded] = useState(false)
+  
+  // Parse the payload if it's a JSON string
+  const payload = job.payload || {}
+  const innerPayload = payload.payload ? JSON.parse(payload.payload) : {}
+  
+  return (
+    <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-gray-50 dark:bg-gray-700">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-medium text-gray-900 dark:text-white">
+            {job.type}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {job.stream}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {job.enqueuedAt ? new Date(job.enqueuedAt).toLocaleString() : 'N/A'}
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-blue-600 hover:text-blue-700"
+        >
+          {expanded ? 'Hide' : 'Show'} Payload
+        </button>
+      </div>
+      
+      <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+        ID: {job.id}
+      </div>
+      
+      {expanded && (
+        <div className="mt-3 p-2 bg-gray-100 dark:bg-gray-600 rounded text-xs font-mono">
+          <div className="mb-2">
+            <strong>Chunk ID:</strong> {innerPayload.ChunkId || 'N/A'}
+          </div>
+          <div className="mb-2">
+            <strong>Note ID:</strong> {innerPayload.NoteId || 'N/A'}
+          </div>
+          <div className="mb-2">
+            <strong>User ID:</strong> {innerPayload.UserId || 'N/A'}
+          </div>
+          <div>
+            <strong>Full Payload:</strong>
+            <pre className="mt-1 text-xs whitespace-pre-wrap break-all">
+              {JSON.stringify(payload, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default JobsPage
 

@@ -21,7 +21,7 @@ import {
 import { DocumentTextIcon as DocumentTextSolid } from '@heroicons/react/24/solid'
 import { useMascot } from '@/contexts/MascotContext'
 import appBus from '@/lib/appBus'
-import { useNotesApi, useSearchApi } from '@/services/apiClient'
+import { useNotesApi, useSearchApi, useTagsApi } from '@/services/apiClient'
 import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
 import { useJobsApi } from '@/services/apiClient'
 
@@ -321,7 +321,21 @@ const NotesBrowserPage: React.FC = () => {
   const { speak, think, idle, suggest } = useMascot()
   // getNotes is obtained above from useNotesApi
   const { searchGet } = useSearchApi()
+  const { getAllTags } = useTagsApi()
   const { enqueueGraphEnrich } = useJobsApi()
+
+  // Load available tags
+  useEffect(() => {
+    const loadTags = async () => {
+      try {
+        const tags = await getAllTags()
+        setAvailableTags(tags.map(t => t.name).filter((name): name is string => !!name))
+      } catch (error) {
+        console.error('Failed to load tags:', error)
+      }
+    }
+    loadTags()
+  }, [getAllTags])
 
   const sortOptions: SortOption[] = [
     { field: 'updatedAt', direction: 'desc', label: 'Recently Updated' },

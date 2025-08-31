@@ -508,39 +508,6 @@ export class CortexApiClient {
     /**
      * @return Success
      */
-    healthCheck(): Promise<void> {
-        let url_ = this.baseUrl + "/health";
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "GET",
-            headers: {
-            }
-        };
-
-        return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processHealthCheck(_response);
-        });
-    }
-
-    protected processHealthCheck(response: Response): Promise<void> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            return;
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<void>(null as any);
-    }
-
-    /**
-     * @return Success
-     */
     achievements(): Promise<void> {
         let url_ = this.baseUrl + "/api/Gamification/achievements";
         url_ = url_.replace(/[?&]$/, "");
@@ -1228,6 +1195,39 @@ export class CortexApiClient {
     }
 
     /**
+     * @return Success
+     */
+    health3(): Promise<void> {
+        let url_ = this.baseUrl + "/health";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processHealth3(_response);
+        });
+    }
+
+    protected processHealth3(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * @param files (optional) 
      * @return Success
      */
@@ -1378,6 +1378,50 @@ export class CortexApiClient {
             });
         }
         return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    pending(): Promise<JobDetails[]> {
+        let url_ = this.baseUrl + "/api/Jobs/pending";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processPending(_response);
+        });
+    }
+
+    protected processPending(response: Response): Promise<JobDetails[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(JobDetails.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<JobDetails[]>(null as any);
     }
 
     /**
@@ -1648,7 +1692,7 @@ export class CortexApiClient {
     /**
      * @return Success
      */
-    health3(): Promise<void> {
+    health4(): Promise<void> {
         let url_ = this.baseUrl + "/api/Notes/health";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -1659,11 +1703,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processHealth3(_response);
+            return this.processHealth4(_response);
         });
     }
 
-    protected processHealth3(response: Response): Promise<void> {
+    protected processHealth4(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -2706,7 +2750,7 @@ export class CortexApiClient {
     /**
      * @return Success
      */
-    health4(): Promise<void> {
+    health5(): Promise<void> {
         let url_ = this.baseUrl + "/api/Security/health";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -2717,11 +2761,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processHealth4(_response);
+            return this.processHealth5(_response);
         });
     }
 
-    protected processHealth4(response: Response): Promise<void> {
+    protected processHealth5(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -3309,13 +3353,14 @@ export class CortexApiClient {
     /**
      * @return Success
      */
-    tags(): Promise<void> {
+    tags(): Promise<TagsResponse> {
         let url_ = this.baseUrl + "/api/Tags";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
             method: "GET",
             headers: {
+                "Accept": "text/plain"
             }
         };
 
@@ -3324,25 +3369,28 @@ export class CortexApiClient {
         });
     }
 
-    protected processTags(response: Response): Promise<void> {
+    protected processTags(response: Response): Promise<TagsResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = TagsResponse.fromJS(resultData200);
+            return result200;
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<TagsResponse>(null as any);
     }
 
     /**
      * @return Success
      */
-    tags2(noteId: string): Promise<void> {
+    tags2(noteId: string): Promise<NoteTagsResponse> {
         let url_ = this.baseUrl + "/api/Tags/{noteId}";
         if (noteId === undefined || noteId === null)
             throw new Error("The parameter 'noteId' must be defined.");
@@ -3352,6 +3400,7 @@ export class CortexApiClient {
         let options_: RequestInit = {
             method: "GET",
             headers: {
+                "Accept": "text/plain"
             }
         };
 
@@ -3360,19 +3409,22 @@ export class CortexApiClient {
         });
     }
 
-    protected processTags2(response: Response): Promise<void> {
+    protected processTags2(response: Response): Promise<NoteTagsResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = NoteTagsResponse.fromJS(resultData200);
+            return result200;
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<NoteTagsResponse>(null as any);
     }
 
     /**
@@ -3382,7 +3434,7 @@ export class CortexApiClient {
      * @param offset (optional) 
      * @return Success
      */
-    search(tags: string | undefined, mode: string | undefined, limit: number | undefined, offset: number | undefined): Promise<void> {
+    search(tags: string | undefined, mode: string | undefined, limit: number | undefined, offset: number | undefined): Promise<TagSearchResponse> {
         let url_ = this.baseUrl + "/api/Tags/search?";
         if (tags === null)
             throw new Error("The parameter 'tags' cannot be null.");
@@ -3405,6 +3457,7 @@ export class CortexApiClient {
         let options_: RequestInit = {
             method: "GET",
             headers: {
+                "Accept": "text/plain"
             }
         };
 
@@ -3413,19 +3466,22 @@ export class CortexApiClient {
         });
     }
 
-    protected processSearch(response: Response): Promise<void> {
+    protected processSearch(response: Response): Promise<TagSearchResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
-            return;
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = TagSearchResponse.fromJS(resultData200);
+            return result200;
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<void>(null as any);
+        return Promise.resolve<TagSearchResponse>(null as any);
     }
 
     /**
@@ -6047,6 +6103,70 @@ export interface IGraphResponse {
     totalEdges?: number;
 }
 
+export class JobDetails implements IJobDetails {
+    id?: string | undefined;
+    type?: string | undefined;
+    stream?: string | undefined;
+    enqueuedAt?: Date;
+    payload?: { [key: string]: any; } | undefined;
+
+    constructor(data?: IJobDetails) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.id = _data["id"];
+            this.type = _data["type"];
+            this.stream = _data["stream"];
+            this.enqueuedAt = _data["enqueuedAt"] ? new Date(_data["enqueuedAt"].toString()) : <any>undefined;
+            if (_data["payload"]) {
+                this.payload = {} as any;
+                for (let key in _data["payload"]) {
+                    if (_data["payload"].hasOwnProperty(key))
+                        (<any>this.payload)![key] = _data["payload"][key];
+                }
+            }
+        }
+    }
+
+    static fromJS(data: any): JobDetails {
+        data = typeof data === 'object' ? data : {};
+        let result = new JobDetails();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["id"] = this.id;
+        data["type"] = this.type;
+        data["stream"] = this.stream;
+        data["enqueuedAt"] = this.enqueuedAt ? this.enqueuedAt.toISOString() : <any>undefined;
+        if (this.payload) {
+            data["payload"] = {};
+            for (let key in this.payload) {
+                if (this.payload.hasOwnProperty(key))
+                    (<any>data["payload"])[key] = (<any>this.payload)[key];
+            }
+        }
+        return data;
+    }
+}
+
+export interface IJobDetails {
+    id?: string | undefined;
+    type?: string | undefined;
+    stream?: string | undefined;
+    enqueuedAt?: Date;
+    payload?: { [key: string]: any; } | undefined;
+}
+
 export class MascotInteraction implements IMascotInteraction {
     id?: string | undefined;
     type?: string | undefined;
@@ -6467,6 +6587,78 @@ export interface INoteChunk {
     embeddings?: Embedding[] | undefined;
 }
 
+export class NoteMeta implements INoteMeta {
+    id?: string | undefined;
+    title?: string | undefined;
+    createdAt?: Date;
+    updatedAt?: Date;
+    fileType?: string | undefined;
+    sensitivityLevel?: number;
+    chunkCount?: number;
+    tags?: string[] | undefined;
+
+    constructor(data?: INoteMeta) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.id = _data["id"];
+            this.title = _data["title"];
+            this.createdAt = _data["createdAt"] ? new Date(_data["createdAt"].toString()) : <any>undefined;
+            this.updatedAt = _data["updatedAt"] ? new Date(_data["updatedAt"].toString()) : <any>undefined;
+            this.fileType = _data["fileType"];
+            this.sensitivityLevel = _data["sensitivityLevel"];
+            this.chunkCount = _data["chunkCount"];
+            if (Array.isArray(_data["tags"])) {
+                this.tags = [] as any;
+                for (let item of _data["tags"])
+                    this.tags!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): NoteMeta {
+        data = typeof data === 'object' ? data : {};
+        let result = new NoteMeta();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["id"] = this.id;
+        data["title"] = this.title;
+        data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : <any>undefined;
+        data["updatedAt"] = this.updatedAt ? this.updatedAt.toISOString() : <any>undefined;
+        data["fileType"] = this.fileType;
+        data["sensitivityLevel"] = this.sensitivityLevel;
+        data["chunkCount"] = this.chunkCount;
+        if (Array.isArray(this.tags)) {
+            data["tags"] = [];
+            for (let item of this.tags)
+                data["tags"].push(item);
+        }
+        return data;
+    }
+}
+
+export interface INoteMeta {
+    id?: string | undefined;
+    title?: string | undefined;
+    createdAt?: Date;
+    updatedAt?: Date;
+    fileType?: string | undefined;
+    sensitivityLevel?: number;
+    chunkCount?: number;
+    tags?: string[] | undefined;
+}
+
 export class NoteTag implements INoteTag {
     noteId?: string | undefined;
     tagId?: number;
@@ -6513,6 +6705,54 @@ export interface INoteTag {
     tagId?: number;
     note?: Note;
     tag?: Tag;
+}
+
+export class NoteTagsResponse implements INoteTagsResponse {
+    noteId?: string | undefined;
+    tags?: string[] | undefined;
+
+    constructor(data?: INoteTagsResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.noteId = _data["noteId"];
+            if (Array.isArray(_data["tags"])) {
+                this.tags = [] as any;
+                for (let item of _data["tags"])
+                    this.tags!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): NoteTagsResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new NoteTagsResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["noteId"] = this.noteId;
+        if (Array.isArray(this.tags)) {
+            data["tags"] = [];
+            for (let item of this.tags)
+                data["tags"].push(item);
+        }
+        return data;
+    }
+}
+
+export interface INoteTagsResponse {
+    noteId?: string | undefined;
+    tags?: string[] | undefined;
 }
 
 export class NotificationHistoryEntry implements INotificationHistoryEntry {
@@ -7787,6 +8027,146 @@ export interface ITag {
     id?: number;
     name?: string | undefined;
     noteTags?: NoteTag[] | undefined;
+}
+
+export class TagInfo implements ITagInfo {
+    name?: string | undefined;
+    count?: number;
+
+    constructor(data?: ITagInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.name = _data["name"];
+            this.count = _data["count"];
+        }
+    }
+
+    static fromJS(data: any): TagInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new TagInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["name"] = this.name;
+        data["count"] = this.count;
+        return data;
+    }
+}
+
+export interface ITagInfo {
+    name?: string | undefined;
+    count?: number;
+}
+
+export class TagSearchResponse implements ITagSearchResponse {
+    total?: number;
+    offset?: number;
+    limit?: number;
+    items?: NoteMeta[] | undefined;
+
+    constructor(data?: ITagSearchResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.total = _data["total"];
+            this.offset = _data["offset"];
+            this.limit = _data["limit"];
+            if (Array.isArray(_data["items"])) {
+                this.items = [] as any;
+                for (let item of _data["items"])
+                    this.items!.push(NoteMeta.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): TagSearchResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new TagSearchResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["total"] = this.total;
+        data["offset"] = this.offset;
+        data["limit"] = this.limit;
+        if (Array.isArray(this.items)) {
+            data["items"] = [];
+            for (let item of this.items)
+                data["items"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface ITagSearchResponse {
+    total?: number;
+    offset?: number;
+    limit?: number;
+    items?: NoteMeta[] | undefined;
+}
+
+export class TagsResponse implements ITagsResponse {
+    tags?: TagInfo[] | undefined;
+
+    constructor(data?: ITagsResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            if (Array.isArray(_data["tags"])) {
+                this.tags = [] as any;
+                for (let item of _data["tags"])
+                    this.tags!.push(TagInfo.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): TagsResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new TagsResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        if (Array.isArray(this.tags)) {
+            data["tags"] = [];
+            for (let item of this.tags)
+                data["tags"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface ITagsResponse {
+    tags?: TagInfo[] | undefined;
 }
 
 export class TestNotificationRequest implements ITestNotificationRequest {

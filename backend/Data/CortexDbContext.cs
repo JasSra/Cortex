@@ -43,6 +43,11 @@ public class CortexDbContext : DbContext
 
     // App-managed roles
     public DbSet<UserRoleAssignment> UserRoleAssignments { get; set; }
+    public DbSet<EmbeddingCache> EmbeddingCache { get; set; }
+    
+    // Workspace and user activity tracking
+    public DbSet<UserWorkspace> UserWorkspaces { get; set; }
+    public DbSet<UserNoteAccess> UserNoteAccess { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,7 +62,8 @@ public class CortexDbContext : DbContext
             entity.Property(e => e.FilePath).IsRequired().HasMaxLength(1000);
             entity.Property(e => e.FileType).IsRequired().HasMaxLength(50);
             entity.Property(e => e.Sha256Hash).IsRequired().HasMaxLength(64);
-            entity.HasIndex(e => e.Sha256Hash).IsUnique();
+            // Change uniqueness to per-user
+            entity.HasIndex(e => new { e.UserId, e.Sha256Hash }).IsUnique();
             entity.HasIndex(e => e.CreatedAt);
             entity.HasIndex(e => e.FileType);
             entity.HasIndex(e => e.UserId);
@@ -78,6 +84,8 @@ public class CortexDbContext : DbContext
             entity.Property(e => e.Text).HasDefaultValue("");
             entity.Property(e => e.Sha256).HasMaxLength(64);
             entity.HasIndex(e => e.Sha256);
+            // Prevent duplicate chunks within a note
+            entity.HasIndex(e => new { e.NoteId, e.Sha256 }).IsUnique(false);
             
             entity.HasOne(e => e.Note)
                   .WithMany(n => n.Chunks)
@@ -316,6 +324,54 @@ public class CortexDbContext : DbContext
             entity.Property(e => e.SubjectId).IsRequired().HasMaxLength(255);
             entity.Property(e => e.Role).IsRequired().HasMaxLength(50);
             entity.HasIndex(e => new { e.SubjectId, e.Role }).IsUnique();
+        });
+
+        // Embedding cache
+        modelBuilder.Entity<EmbeddingCache>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TextHash).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.Provider).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Model).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.VectorJson).IsRequired();
+            entity.HasIndex(e => new { e.TextHash, e.Provider, e.Model }).IsUnique();
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        // UserWorkspace configuration
+        modelBuilder.Entity<UserWorkspace>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserId).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.ActiveNoteId).HasMaxLength(255);
+            entity.Property(e => e.RecentNoteIds).IsRequired();
+            entity.Property(e => e.EditorState).IsRequired();
+            entity.Property(e => e.PinnedTags).IsRequired();
+            entity.Property(e => e.LayoutPreferences).IsRequired();
+            entity.HasIndex(e => e.UserId).IsUnique(); // One workspace per user
+            entity.HasIndex(e => e.UpdatedAt);
+            
+            entity.HasOne(e => e.ActiveNote)
+                  .WithMany()
+                  .HasForeignKey(e => e.ActiveNoteId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // UserNoteAccess configuration
+        modelBuilder.Entity<UserNoteAccess>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserId).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.NoteId).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.AccessType).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.UserId, e.AccessedAt });
+            entity.HasIndex(e => new { e.UserId, e.NoteId });
+            entity.HasIndex(e => e.AccessedAt);
+            
+            entity.HasOne(e => e.Note)
+                  .WithMany()
+                  .HasForeignKey(e => e.NoteId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
