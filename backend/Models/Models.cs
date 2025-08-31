@@ -995,3 +995,23 @@ public class StoredFile
     public string Tags { get; set; } = string.Empty; // comma-separated tags
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+public class TagSearchResponse
+{
+    public int Total { get; set; }
+    public int Offset { get; set; }
+    public int Limit { get; set; }
+    public List<NoteMeta> Items { get; set; } = new();
+}
+
+public class NoteMeta
+{
+    public string Id { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string FileType { get; set; } = string.Empty;
+    public int SensitivityLevel { get; set; }
+    public int ChunkCount { get; set; }
+    public List<string> Tags { get; set; } = new();
+}

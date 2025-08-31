@@ -234,10 +234,6 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 				var db = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
 				var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
 				var embed = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
-                var ner = scope.ServiceProvider.GetRequiredService<INerService>();
-                var graph = scope.ServiceProvider.GetRequiredService<IGraphService>();
-				var classification = scope.ServiceProvider.GetRequiredService<IClassificationService>();
-				var piiDetection = scope.ServiceProvider.GetRequiredService<IPiiDetectionService>();
 
 				// Ensure vector index once
 				if (!_indexEnsured)

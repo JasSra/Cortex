@@ -888,6 +888,59 @@
         }
       }
     },
+    "/api/Jobs/graph-enrich": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphEnrichJobPayload"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphEnrichJobPayload"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphEnrichJobPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Jobs/graph-enrich/{noteId}": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "parameters": [
+          {
+            "name": "noteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
     "/api/Jobs/status": {
       "get": {
         "tags": [
@@ -1015,6 +1068,14 @@
               "type": "integer",
               "format": "int32",
               "default": 0
+            }
+          },
+          {
+            "name": "includeContent",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -2043,6 +2104,15 @@
             }
           },
           {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
+            }
+          },
+          {
             "name": "mode",
             "in": "query",
             "schema": {
@@ -2536,6 +2606,48 @@
         }
       }
     },
+    "/api/Storage/file/{id}": {
+      "get": {
+        "tags": [
+          "Storage"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/Storage/{id}": {
       "delete": {
         "tags": [
@@ -2898,6 +3010,53 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Tags/search": {
+      "get": {
+        "tags": [
+          "Tags"
+        ],
+        "parameters": [
+          {
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
             }
           }
         ],
@@ -3569,6 +3728,10 @@
             "nullable": true
           },
           "k": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "offset": {
             "type": "integer",
             "format": "int32"
           },
@@ -4368,6 +4531,16 @@
           "confidence": {
             "type": "number",
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GraphEnrichJobPayload": {
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -5208,6 +5381,10 @@
             "type": "integer",
             "format": "int32"
           },
+          "offset": {
+            "type": "integer",
+            "format": "int32"
+          },
           "filters": {
             "type": "object",
             "additionalProperties": {
@@ -5235,6 +5412,18 @@
               "$ref": "#/components/schemas/SearchHit"
             },
             "nullable": true
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "k": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

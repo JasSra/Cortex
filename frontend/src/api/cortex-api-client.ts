@@ -1307,6 +1307,80 @@ export class CortexApiClient {
     }
 
     /**
+     * @param body (optional) 
+     * @return Success
+     */
+    graphEnrich(body: GraphEnrichJobPayload | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Jobs/graph-enrich";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processGraphEnrich(_response);
+        });
+    }
+
+    protected processGraphEnrich(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    graphEnrich2(noteId: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/Jobs/graph-enrich/{noteId}";
+        if (noteId === undefined || noteId === null)
+            throw new Error("The parameter 'noteId' must be defined.");
+        url_ = url_.replace("{noteId}", encodeURIComponent("" + noteId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processGraphEnrich2(_response);
+        });
+    }
+
+    protected processGraphEnrich2(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * @return Success
      */
     status(): Promise<void> {
@@ -1488,9 +1562,10 @@ export class CortexApiClient {
     /**
      * @param limit (optional) 
      * @param offset (optional) 
+     * @param includeContent (optional) 
      * @return Success
      */
-    notesGET2(limit: number | undefined, offset: number | undefined): Promise<void> {
+    notesGET2(limit: number | undefined, offset: number | undefined, includeContent: boolean | undefined): Promise<void> {
         let url_ = this.baseUrl + "/api/Notes?";
         if (limit === null)
             throw new Error("The parameter 'limit' cannot be null.");
@@ -1500,6 +1575,10 @@ export class CortexApiClient {
             throw new Error("The parameter 'offset' cannot be null.");
         else if (offset !== undefined)
             url_ += "offset=" + encodeURIComponent("" + offset) + "&";
+        if (includeContent === null)
+            throw new Error("The parameter 'includeContent' cannot be null.");
+        else if (includeContent !== undefined)
+            url_ += "includeContent=" + encodeURIComponent("" + includeContent) + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -2340,11 +2419,12 @@ export class CortexApiClient {
     /**
      * @param q (optional) 
      * @param k (optional) 
+     * @param offset (optional) 
      * @param mode (optional) 
      * @param alpha (optional) 
      * @return Success
      */
-    searchGET(q: string | undefined, k: number | undefined, mode: string | undefined, alpha: number | undefined): Promise<SearchResponse> {
+    searchGET(q: string | undefined, k: number | undefined, offset: number | undefined, mode: string | undefined, alpha: number | undefined): Promise<SearchResponse> {
         let url_ = this.baseUrl + "/api/Search?";
         if (q === null)
             throw new Error("The parameter 'q' cannot be null.");
@@ -2354,6 +2434,10 @@ export class CortexApiClient {
             throw new Error("The parameter 'k' cannot be null.");
         else if (k !== undefined)
             url_ += "k=" + encodeURIComponent("" + k) + "&";
+        if (offset === null)
+            throw new Error("The parameter 'offset' cannot be null.");
+        else if (offset !== undefined)
+            url_ += "offset=" + encodeURIComponent("" + offset) + "&";
         if (mode === null)
             throw new Error("The parameter 'mode' cannot be null.");
         else if (mode !== undefined)
@@ -2827,6 +2911,49 @@ export class CortexApiClient {
     }
 
     /**
+     * @return Success
+     */
+    file(id: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/Storage/file/{id}";
+        if (id === undefined || id === null)
+            throw new Error("The parameter 'id' must be defined.");
+        url_ = url_.replace("{id}", encodeURIComponent("" + id));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processFile(_response);
+        });
+    }
+
+    protected processFile(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            let result404: any = null;
+            let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result404 = ProblemDetails.fromJS(resultData404);
+            return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * @return No Content
      */
     storageDELETE(id: string): Promise<void> {
@@ -3234,6 +3361,59 @@ export class CortexApiClient {
     }
 
     protected processTags2(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param tags (optional) 
+     * @param mode (optional) 
+     * @param limit (optional) 
+     * @param offset (optional) 
+     * @return Success
+     */
+    search(tags: string | undefined, mode: string | undefined, limit: number | undefined, offset: number | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Tags/search?";
+        if (tags === null)
+            throw new Error("The parameter 'tags' cannot be null.");
+        else if (tags !== undefined)
+            url_ += "tags=" + encodeURIComponent("" + tags) + "&";
+        if (mode === null)
+            throw new Error("The parameter 'mode' cannot be null.");
+        else if (mode !== undefined)
+            url_ += "mode=" + encodeURIComponent("" + mode) + "&";
+        if (limit === null)
+            throw new Error("The parameter 'limit' cannot be null.");
+        else if (limit !== undefined)
+            url_ += "limit=" + encodeURIComponent("" + limit) + "&";
+        if (offset === null)
+            throw new Error("The parameter 'offset' cannot be null.");
+        else if (offset !== undefined)
+            url_ += "offset=" + encodeURIComponent("" + offset) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processSearch(_response);
+        });
+    }
+
+    protected processSearch(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -3954,6 +4134,7 @@ export interface IActivitySummary {
 export class AdvancedSearchRequest implements IAdvancedSearchRequest {
     q?: string | undefined;
     k?: number;
+    offset?: number;
     mode?: string | undefined;
     alpha?: number;
     useReranking?: boolean;
@@ -3981,6 +4162,7 @@ export class AdvancedSearchRequest implements IAdvancedSearchRequest {
         if (_data) {
             this.q = _data["q"];
             this.k = _data["k"];
+            this.offset = _data["offset"];
             this.mode = _data["mode"];
             this.alpha = _data["alpha"];
             this.useReranking = _data["useReranking"];
@@ -4028,6 +4210,7 @@ export class AdvancedSearchRequest implements IAdvancedSearchRequest {
         data = typeof data === 'object' ? data : {};
         data["q"] = this.q;
         data["k"] = this.k;
+        data["offset"] = this.offset;
         data["mode"] = this.mode;
         data["alpha"] = this.alpha;
         data["useReranking"] = this.useReranking;
@@ -4068,6 +4251,7 @@ export class AdvancedSearchRequest implements IAdvancedSearchRequest {
 export interface IAdvancedSearchRequest {
     q?: string | undefined;
     k?: number;
+    offset?: number;
     mode?: string | undefined;
     alpha?: number;
     useReranking?: boolean;
@@ -5577,6 +5761,42 @@ export interface IGraphEdge {
     toId?: string | undefined;
     relationType?: string | undefined;
     confidence?: number;
+}
+
+export class GraphEnrichJobPayload implements IGraphEnrichJobPayload {
+    noteId?: string | undefined;
+
+    constructor(data?: IGraphEnrichJobPayload) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.noteId = _data["noteId"];
+        }
+    }
+
+    static fromJS(data: any): GraphEnrichJobPayload {
+        data = typeof data === 'object' ? data : {};
+        let result = new GraphEnrichJobPayload();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["noteId"] = this.noteId;
+        return data;
+    }
+}
+
+export interface IGraphEnrichJobPayload {
+    noteId?: string | undefined;
 }
 
 export class GraphHub implements IGraphHub {
@@ -7158,6 +7378,7 @@ export interface ISearchHit {
 export class SearchRequest implements ISearchRequest {
     q?: string | undefined;
     k?: number;
+    offset?: number;
     filters?: { [key: string]: string; } | undefined;
     mode?: string | undefined;
     alpha?: number;
@@ -7175,6 +7396,7 @@ export class SearchRequest implements ISearchRequest {
         if (_data) {
             this.q = _data["q"];
             this.k = _data["k"];
+            this.offset = _data["offset"];
             if (_data["filters"]) {
                 this.filters = {} as any;
                 for (let key in _data["filters"]) {
@@ -7198,6 +7420,7 @@ export class SearchRequest implements ISearchRequest {
         data = typeof data === 'object' ? data : {};
         data["q"] = this.q;
         data["k"] = this.k;
+        data["offset"] = this.offset;
         if (this.filters) {
             data["filters"] = {};
             for (let key in this.filters) {
@@ -7214,6 +7437,7 @@ export class SearchRequest implements ISearchRequest {
 export interface ISearchRequest {
     q?: string | undefined;
     k?: number;
+    offset?: number;
     filters?: { [key: string]: string; } | undefined;
     mode?: string | undefined;
     alpha?: number;
@@ -7221,6 +7445,9 @@ export interface ISearchRequest {
 
 export class SearchResponse implements ISearchResponse {
     hits?: SearchHit[] | undefined;
+    total?: number;
+    offset?: number;
+    k?: number;
 
     constructor(data?: ISearchResponse) {
         if (data) {
@@ -7238,6 +7465,9 @@ export class SearchResponse implements ISearchResponse {
                 for (let item of _data["hits"])
                     this.hits!.push(SearchHit.fromJS(item));
             }
+            this.total = _data["total"];
+            this.offset = _data["offset"];
+            this.k = _data["k"];
         }
     }
 
@@ -7255,12 +7485,18 @@ export class SearchResponse implements ISearchResponse {
             for (let item of this.hits)
                 data["hits"].push(item.toJSON());
         }
+        data["total"] = this.total;
+        data["offset"] = this.offset;
+        data["k"] = this.k;
         return data;
     }
 }
 
 export interface ISearchResponse {
     hits?: SearchHit[] | undefined;
+    total?: number;
+    offset?: number;
+    k?: number;
 }
 
 export class StorageListResponse implements IStorageListResponse {

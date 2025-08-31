@@ -214,6 +214,77 @@ public class TagsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Search notes by tags (AND/OR). Returns paginated note metadata and total count.
+    /// </summary>
+    [HttpGet("search")]
+    public async Task<IActionResult> SearchByTags([FromQuery] string tags, [FromQuery] string mode = "all", [FromQuery] int limit = 20, [FromQuery] int offset = 0)
+    {
+        if (!Rbac.RequireRole(_userContext, "Reader"))
+            return Forbid("Reader role required");
+
+        if (limit <= 0) limit = 20;
+        if (limit > 100) limit = 100;
+        if (offset < 0) offset = 0;
+
+        var tagList = (tags ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (tagList.Count == 0)
+            return BadRequest("At least one tag is required");
+
+        IQueryable<Note> q = _context.Notes
+            .Where(n => n.UserId == _userContext.UserId && !n.IsDeleted);
+
+        if (string.Equals(mode, "any", StringComparison.OrdinalIgnoreCase))
+        {
+            // OR across tags using Any over constant list (translates to SQL OR)
+            q = q.Where(n => !string.IsNullOrEmpty(n.Tags)
+                && tagList.Any(t => ("," + n.Tags + ",").Contains("," + t + ",")));
+        }
+        else
+        {
+            // AND across tags: chain Where for each tag
+            foreach (var t in tagList)
+            {
+                var tt = t; // avoid modified-closure capture
+                q = q.Where(n => !string.IsNullOrEmpty(n.Tags)
+                    && ("," + n.Tags + ",").Contains("," + tt + ","));
+            }
+        }
+
+        var total = await q.CountAsync();
+
+        var items = await q
+            .OrderByDescending(n => n.UpdatedAt)
+            .Skip(offset)
+            .Take(limit)
+            .Select(n => new NoteMeta
+            {
+                Id = n.Id,
+                Title = n.Title,
+                CreatedAt = n.CreatedAt,
+                UpdatedAt = n.UpdatedAt,
+                FileType = n.FileType,
+                SensitivityLevel = n.SensitivityLevel,
+                ChunkCount = n.ChunkCount,
+                Tags = string.IsNullOrEmpty(n.Tags) ? new List<string>() : n.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
+            })
+            .ToListAsync();
+
+        return Ok(new TagSearchResponse
+        {
+            Total = total,
+            Offset = offset,
+            Limit = limit,
+            Items = items
+        });
+    }
+
     private List<string> ParseTags(string? tagString)
     {
         if (string.IsNullOrWhiteSpace(tagString))

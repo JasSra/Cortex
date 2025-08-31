@@ -37,48 +37,7 @@ export default function DropZone() {
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    processFiles(droppedFiles);
-  }, []);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files);
-      processFiles(selectedFiles);
-    }
-  };
-
-  const processFiles = (fileList: File[]) => {
-    const supportedTypes = ['.txt', '.md', '.pdf', '.docx'];
-    const validFiles = fileList.filter(file => {
-      const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-      return supportedTypes.includes(extension);
-    });
-
-    if (validFiles.length === 0) {
-      alert('Please select supported file types: .txt, .md, .pdf, .docx');
-      return;
-    }
-
-    const newFiles: UploadedFile[] = validFiles.map(file => ({
-      id: crypto.randomUUID(),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      status: 'pending',
-      progress: 0
-    }));
-
-    setFiles(prev => [...prev, ...newFiles]);
-    uploadFiles(validFiles, newFiles);
-  };
-
-  const uploadFiles = async (fileList: File[], uploadedFiles: UploadedFile[]) => {
+  const uploadFiles = useCallback(async (fileList: File[], uploadedFiles: UploadedFile[]) => {
     setIsUploading(true);
 
     const formData = new FormData();
@@ -132,6 +91,37 @@ export default function DropZone() {
       ));
     } finally {
       setIsUploading(false);
+    }
+  }, []);
+
+  const processFiles = useCallback((fileList: File[]) => {
+    // Accept all files - let the backend handle validation and processing
+    const newFiles: UploadedFile[] = fileList.map(file => ({
+      id: crypto.randomUUID(),
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      status: 'pending',
+      progress: 0
+    }));
+
+    setFiles(prev => [...prev, ...newFiles]);
+    uploadFiles(fileList, newFiles);
+  }, [setFiles, uploadFiles]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    processFiles(droppedFiles);
+  }, [processFiles]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selectedFiles = Array.from(e.target.files);
+      processFiles(selectedFiles);
     }
   };
 
@@ -192,7 +182,6 @@ export default function DropZone() {
                 <input
                   type="file"
                   multiple
-                  accept=".txt,.md,.pdf,.docx"
                   onChange={handleFileSelect}
                   className="hidden"
                 />
@@ -201,7 +190,7 @@ export default function DropZone() {
           </div>
           
           <p className="text-sm text-gray-400">
-            Supported formats: .txt, .md, .pdf, .docx
+            All file types accepted - system will attempt to extract text content
           </p>
         </div>
       </div>

@@ -1,6 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using CortexApi.Data;
 using CortexApi.Models;
 using CortexApi.Security;
@@ -31,18 +31,17 @@ namespace CortexApi.Controllers
             _http = http;
         }
 
-    [HttpPost("upload")] // single or batch via multipart
-    [RequestSizeLimit(MaxSizeBytes * 10)] // allow some headroom for batch
-    [ProducesResponseType(typeof(UploadFilesResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(object), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<UploadFilesResponse>> Upload([FromForm] IFormFileCollection files, CancellationToken ct)
+        [HttpPost("upload")] // single or batch via multipart
+        [RequestSizeLimit(MaxSizeBytes * 10)] // allow some headroom for batch
+        [ProducesResponseType(typeof(UploadFilesResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<UploadFilesResponse>> Upload([FromForm] IFormFileCollection files, CancellationToken ct)
         {
             if (files == null || files.Count == 0)
-        return BadRequest("No files provided");
+                return BadRequest("No files provided");
 
             var storageRoot = _config["Storage:Root"] ?? Path.Combine(AppContext.BaseDirectory, "storage");
-            var publicBase = _config["Storage:PublicBaseUrl"]; // optional, fallback to /storage
             Directory.CreateDirectory(storageRoot);
 
             var results = new List<StoredFileResponse>();
@@ -97,7 +96,7 @@ namespace CortexApi.Controllers
                     _db.StoredFiles.Add(entity);
                     await _db.SaveChangesAsync(ct);
 
-                    var url = ResolvePublicUrl(publicBase, relPath);
+                    var url = ResolveSecureUrl(entity.Id);
                     results.Add(new StoredFileResponse
                     {
                         Id = entity.Id,
@@ -128,13 +127,12 @@ namespace CortexApi.Controllers
 
             var total = await q.CountAsync(ct);
             var page = await q.Skip(offset).Take(limit).ToListAsync(ct);
-            var publicBase = _config["Storage:PublicBaseUrl"]; // optional
 
             var items = page.Select(e => new StoredFileResponse
             {
                 Id = e.Id,
                 FileName = e.OriginalFileName,
-                Url = ResolvePublicUrl(publicBase, e.RelativePath),
+                Url = ResolveSecureUrl(e.Id),
                 SizeBytes = e.SizeBytes,
                 ContentType = e.ContentType,
                 Extension = e.Extension,
@@ -142,6 +140,26 @@ namespace CortexApi.Controllers
             }).ToList();
 
             return Ok(new StorageListResponse { Total = total, Items = items });
+        }
+
+        [HttpGet("file/{id}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetFile(string id, CancellationToken ct)
+        {
+            var entity = await _db.StoredFiles.FirstOrDefaultAsync(f => f.Id == id && f.UserId == _user.UserId, ct);
+            if (entity == null) return NotFound();
+
+            try
+            {
+                var stream = System.IO.File.OpenRead(entity.StoredPath);
+                return File(stream, entity.ContentType ?? "application/octet-stream", entity.OriginalFileName, enableRangeProcessing: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to open stored file {Path}", entity.StoredPath);
+                return NotFound();
+            }
         }
 
         [HttpDelete("{id}")]
@@ -257,21 +275,18 @@ Metadata:
             return tags.ToList();
         }
 
-        private string ResolvePublicUrl(string? baseUrl, string relativePath)
+        private string ResolveSecureUrl(string id)
         {
-            if (!string.IsNullOrWhiteSpace(baseUrl))
+            // If an explicit public base URL is configured, caller takes responsibility for security.
+            var publicBase = _config["Storage:PublicBaseUrl"];
+            if (!string.IsNullOrWhiteSpace(publicBase))
             {
-                return CombineUrl(baseUrl, relativePath);
+                // Keep legacy behavior (not recommended). Join base + api route for id to ensure auth is still required by default.
+                if (!publicBase.EndsWith('/')) publicBase += "/";
+                return publicBase + $"api/Storage/file/{id}";
             }
-            // default static mount under /storage
-            return CombineUrl("/storage", relativePath);
-        }
-
-        private static string CombineUrl(string baseUrl, string relative)
-        {
-            if (string.IsNullOrEmpty(baseUrl)) return relative;
-            if (!baseUrl.EndsWith('/')) baseUrl += "/";
-            return baseUrl + relative.TrimStart('/');
+            // Default: serve via authenticated API endpoint
+            return $"/api/Storage/file/{id}";
         }
     }
 

@@ -3,6 +3,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { MascotProvider } from "@/contexts/MascotContext";
+import { ConnectivityProvider } from "@/contexts/ConnectivityContext";
 import { AuthWrapper } from "@/components/AuthWrapper";
 import { StructuredData } from "@/components/StructuredData";
 
@@ -108,11 +109,13 @@ export default function RootLayout({
       <body className="antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
         <ThemeProvider>
           <AuthProvider>
-            <MascotProvider position="bottom-right" size="medium">
-              <AuthWrapper>
-                {children}
-              </AuthWrapper>
-            </MascotProvider>
+            <ConnectivityProvider>
+              <MascotProvider position="bottom-right" size="medium">
+                <AuthWrapper>
+                  {children}
+                </AuthWrapper>
+              </MascotProvider>
+            </ConnectivityProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

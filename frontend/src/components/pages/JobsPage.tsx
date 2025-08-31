@@ -52,7 +52,7 @@ const JobsPage: React.FC = () => {
       cancelled = true
       esRef.current?.close()
     }
-  }, [getStatus, statusStreamUrl])
+  }, [getStatus, statusStreamUrl]) // Now safe with memoized functions
 
   const last5 = useMemo(() => samples.slice(-50).reverse(), [samples])
 

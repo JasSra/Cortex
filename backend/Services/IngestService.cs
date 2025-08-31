@@ -37,6 +37,7 @@ public class IngestService : IIngestService
     private readonly IPiiDetectionService _piiDetectionService;
     private readonly ISecretsDetectionService _secretsDetectionService;
     private readonly IClassificationService _classificationService;
+    private readonly ISuggestionsService _suggestionsService;
 
     public IngestService(
         CortexDbContext context, 
@@ -46,7 +47,8 @@ public class IngestService : IIngestService
         IUserContextAccessor user,
         IPiiDetectionService piiDetectionService,
         ISecretsDetectionService secretsDetectionService,
-        IClassificationService classificationService)
+        IClassificationService classificationService,
+        ISuggestionsService suggestionsService)
     {
         _context = context;
         _configuration = configuration;
@@ -57,6 +59,7 @@ public class IngestService : IIngestService
         _piiDetectionService = piiDetectionService;
         _secretsDetectionService = secretsDetectionService;
         _classificationService = classificationService;
+        _suggestionsService = suggestionsService;
     }
 
     public async Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files)
@@ -135,11 +138,19 @@ public class IngestService : IIngestService
 
         var now = DateTime.UtcNow;
         
+        // Generate title suggestion if none provided
+        string finalTitle = title;
+        if (string.IsNullOrWhiteSpace(finalTitle))
+        {
+            var suggested = await _suggestionsService.SuggestNoteTitleAsync(content, null);
+            finalTitle = string.IsNullOrWhiteSpace(suggested) ? $"Note {now:yyyy-MM-dd HH:mm}" : suggested.Trim();
+        }
+
         // Create note and chunks directly from text
         var note = new Note
         {
             UserId = _user.UserId ?? "dev-user",
-            Title = string.IsNullOrWhiteSpace(title) ? $"Note {now:yyyy-MM-dd HH:mm}" : title,
+            Title = finalTitle,
             Content = content,
             OriginalPath = "text-input",
             FilePath = string.Empty,
@@ -194,7 +205,14 @@ public class IngestService : IIngestService
         }
 
         var now = DateTime.UtcNow;
-        note.Title = string.IsNullOrWhiteSpace(title) ? note.Title : title.Trim();
+        string finalTitle = title;
+        if (string.IsNullOrWhiteSpace(finalTitle))
+        {
+            var suggested = await _suggestionsService.SuggestNoteTitleAsync(content, note.Title);
+            finalTitle = string.IsNullOrWhiteSpace(suggested) ? note.Title : suggested.Trim();
+        }
+
+        note.Title = string.IsNullOrWhiteSpace(finalTitle) ? note.Title : finalTitle.Trim();
         note.Content = content;
         note.UpdatedAt = now;
         note.Source = "editor";
@@ -257,11 +275,11 @@ public class IngestService : IIngestService
         // Save file to data directory
         var now = DateTime.UtcNow;
         var yearMonth = $"{now.Year:D4}/{now.Month:D2}";
-    var dataPath = PathIO.Combine(_dataDir, "raw", yearMonth);
+        var dataPath = PathIO.Combine(_dataDir, "raw", yearMonth);
         Directory.CreateDirectory(dataPath);
 
-    var fileName = $"{Guid.NewGuid()}{PathIO.GetExtension(file.FileName)}";
-    var filePath = PathIO.Combine(dataPath, fileName);
+        var fileName = $"{Guid.NewGuid()}{PathIO.GetExtension(file.FileName)}";
+        var filePath = PathIO.Combine(dataPath, fileName);
 
         using (var fileStream = new FileStream(filePath, FileMode.Create))
         {
@@ -276,11 +294,17 @@ public class IngestService : IIngestService
             return null;
         }
 
+        // Suggest a better title than the file name
+        var suggestedTitle = await _suggestionsService.SuggestNoteTitleAsync(content, file.FileName);
+        var finalTitle = string.IsNullOrWhiteSpace(suggestedTitle)
+            ? PathIO.GetFileNameWithoutExtension(file.FileName)
+            : suggestedTitle.Trim();
+
         // Create note and chunks
         var note = new Note
         {
             UserId = _user.UserId,
-            Title = PathIO.GetFileNameWithoutExtension(file.FileName),
+            Title = finalTitle,
             Content = content, // store plain text for previews/word counts
             OriginalPath = file.FileName,
             FilePath = filePath,
@@ -336,18 +360,24 @@ public class IngestService : IIngestService
         }
 
         // Extract text content
-    var content = await ExtractTextAsync(filePath, fileInfo.Name);
+        var content = await ExtractTextAsync(filePath, fileInfo.Name);
         if (string.IsNullOrWhiteSpace(content))
         {
             return null;
         }
 
-    // Create note and chunks
-    var note = new Note
+        // Suggest a better title than the file name
+        var suggestedTitle = await _suggestionsService.SuggestNoteTitleAsync(content, fileInfo.Name);
+        var finalTitle = string.IsNullOrWhiteSpace(suggestedTitle)
+            ? PathIO.GetFileNameWithoutExtension(fileInfo.Name)
+            : suggestedTitle.Trim();
+
+        // Create note and chunks
+        var note = new Note
         {
             UserId = _user.UserId,
-            Title = PathIO.GetFileNameWithoutExtension(fileInfo.Name),
-        Content = content, // store plain text for previews/word counts
+            Title = finalTitle,
+            Content = content, // store plain text for previews/word counts
             OriginalPath = filePath,
             FilePath = filePath,
             FileType = fileInfo.Extension.ToLower(),
@@ -397,16 +427,33 @@ public class IngestService : IIngestService
 
     private async Task<string> ExtractTextAsync(string filePath, string originalFileName)
     {
-    var extension = PathIO.GetExtension(originalFileName).ToLower();
+        var extension = PathIO.GetExtension(originalFileName).ToLower();
 
-        return extension switch
+        switch (extension)
         {
-            ".txt" => await File.ReadAllTextAsync(filePath, Encoding.UTF8),
-            ".md" => await ExtractMarkdownAsync(filePath),
-            ".pdf" => await ExtractPdfTextAsync(filePath),
-            ".docx" => await ExtractDocxTextAsync(filePath),
-            _ => string.Empty
-        };
+            case ".txt":
+                return await File.ReadAllTextAsync(filePath, Encoding.UTF8);
+            case ".md":
+                return await ExtractMarkdownAsync(filePath);
+            case ".pdf":
+                return await ExtractPdfTextAsync(filePath);
+            case ".docx":
+                return await ExtractDocxTextAsync(filePath);
+            default:
+                // Fallback: if this file appears to be a text file, read it as UTF-8 (or detected BOM)
+                if (IsLikelyTextFile(filePath, out var enc))
+                {
+                    try
+                    {
+                        return await File.ReadAllTextAsync(filePath, enc ?? Encoding.UTF8);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Fallback text extraction failed for {File}", originalFileName);
+                    }
+                }
+                return string.Empty;
+        }
     }
 
     private async Task<string> ExtractMarkdownAsync(string filePath)
@@ -445,6 +492,65 @@ public class IngestService : IIngestService
             var body = document.MainDocumentPart?.Document?.Body;
             return body?.InnerText ?? string.Empty;
         });
+    }
+
+    // Heuristic detection for text files without known extension
+    private static bool IsLikelyTextFile(string path, out Encoding? encoding)
+    {
+        encoding = null;
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var buffer = new byte[Math.Min(8192, (int)Math.Max(1, fs.Length))];
+            var read = fs.Read(buffer, 0, buffer.Length);
+
+            // BOM detection
+            if (read >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+            {
+                encoding = Encoding.UTF8;
+                return true;
+            }
+            if (read >= 2 && buffer[0] == 0xFF && buffer[1] == 0xFE)
+            {
+                encoding = Encoding.Unicode; // UTF-16 LE
+                return true;
+            }
+            if (read >= 2 && buffer[0] == 0xFE && buffer[1] == 0xFF)
+            {
+                encoding = Encoding.BigEndianUnicode; // UTF-16 BE
+                return true;
+            }
+            if (read >= 4 && buffer[0] == 0xFF && buffer[1] == 0xFE && buffer[2] == 0x00 && buffer[3] == 0x00)
+            {
+                encoding = Encoding.UTF32; // UTF-32 LE
+                return true;
+            }
+            if (read >= 4 && buffer[0] == 0x00 && buffer[1] == 0x00 && buffer[2] == 0xFE && buffer[3] == 0xFF)
+            {
+                encoding = new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+                return true;
+            }
+
+            // Heuristic: if there are NUL bytes or very high proportion of non-printable characters, likely binary
+            int controlCount = 0;
+            for (int i = 0; i < read; i++)
+            {
+                byte b = buffer[i];
+                if (b == 0) return false; // NUL indicates binary
+                // Count control characters outside common whitespace: tab(9), lf(10), cr(13)
+                if ((b < 32 && b != 9 && b != 10 && b != 13) || b == 127) controlCount++;
+            }
+
+            // If control characters ratio is small, treat as text
+            double ratio = read == 0 ? 0 : (double)controlCount / read;
+            encoding = Encoding.UTF8; // assume UTF-8 if no BOM
+            return ratio < 0.02; // allow up to 2% control chars
+        }
+        catch
+        {
+            encoding = null;
+            return false;
+        }
     }
 
     private List<NoteChunk> ChunkText(string content, string noteId)

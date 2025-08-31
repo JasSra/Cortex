@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useAppAuth } from '@/hooks/useAppAuth'
 import { LoginPage } from './LoginPage'
 import WelcomeDialog from './WelcomeDialog'
+import ConnectivityBackdrop from './ConnectivityBackdrop'
 
 interface AuthWrapperProps {
   children: ReactNode
@@ -14,7 +15,13 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
   const { isAuthenticated, loading, recentAuthEvent, clearRecentAuthEvent } = useAuth()
   const [showWelcome, setShowWelcome] = useState(false)
   const [welcomeType, setWelcomeType] = useState<'signup' | 'login'>('login')
-  const bypassAuth = process.env.NEXT_PUBLIC_BYPASS_AUTH === '1' || process.env.NEXT_PUBLIC_BYPASS_AUTH === 'true'
+  // Allow local/dev mode to bypass auth as well
+  const bypassAuth = (
+    process.env.NEXT_PUBLIC_BYPASS_AUTH === '1' ||
+    process.env.NEXT_PUBLIC_BYPASS_AUTH === 'true' ||
+    process.env.NEXT_PUBLIC_DEV_MODE === '1' ||
+    process.env.NEXT_PUBLIC_DEV_MODE === 'true'
+  )
 
   useEffect(() => {
     if (recentAuthEvent) {
@@ -47,6 +54,7 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
   return (
     <>
       {children}
+      <ConnectivityBackdrop />
       {!bypassAuth && (
         <WelcomeDialog 
           open={showWelcome} 
