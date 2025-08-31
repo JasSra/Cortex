@@ -1,6 +1,8 @@
 using CortexApi.Models;
 using CortexApi.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
+using System.Text.Json;
 
 namespace CortexApi.Services;
 
@@ -10,6 +12,9 @@ public interface ISuggestionsService
     Task<List<ProactiveSuggestion>> GetProactiveSuggestionsAsync(int limit = 5);
     Task<List<string>> GetTrendingTopicsAsync(int days = 7, int limit = 10);
     Task<List<EntityInsight>> GetEntityInsightsAsync(string? entityType = null);
+
+    // Suggest a concise title for a note based on its textual content
+    Task<string?> SuggestNoteTitleAsync(string content, string? fileNameHint = null, CancellationToken ct = default);
 }
 
 public class SuggestionsService : ISuggestionsService
@@ -19,19 +24,25 @@ public class SuggestionsService : ISuggestionsService
     private readonly IGraphService _graphService;
     private readonly INerService _nerService;
     private readonly ILogger<SuggestionsService> _logger;
+    private readonly IConfiguration _config;
+    private readonly HttpClient _http;
 
     public SuggestionsService(
         CortexDbContext context,
         ISearchService searchService,
         IGraphService graphService,
         INerService nerService,
-        ILogger<SuggestionsService> logger)
+        ILogger<SuggestionsService> logger,
+        IConfiguration config,
+        HttpClient http)
     {
         _context = context;
         _searchService = searchService;
         _graphService = graphService;
         _nerService = nerService;
         _logger = logger;
+        _config = config;
+        _http = http;
     }
 
     public async Task<DailyDigest> GenerateDailyDigestAsync(DateTime? date = null)
@@ -228,6 +239,69 @@ public class SuggestionsService : ISuggestionsService
             .ToListAsync();
 
         return entityStats;
+    }
+
+    public async Task<string?> SuggestNoteTitleAsync(string content, string? fileNameHint = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var apiKey = _config["OpenAI:ApiKey"] ?? _config["OPENAI_API_KEY"];
+            if (string.IsNullOrWhiteSpace(apiKey)) return null;
+            var model = _config["OPENAI_MODEL"] ?? _config["OpenAI:Model"] ?? "gpt-4o-mini";
+
+            // Trim content to avoid long prompts
+            var maxChars = 4000;
+            var snippet = content.Length > maxChars ? content.Substring(0, maxChars) : content;
+
+            var prompt = $@"You are a naming assistant. Given a note's textual content, propose a concise, specific title under 8 words.
+- No quotes, no trailing punctuation.
+- Prefer informative nouns, avoid generic words like 'note' or 'document'.
+- If a filename hint is provided, you may use it to keep context but improve it.
+
+Filename hint: {fileNameHint ?? "(none)"}
+
+Content snippet:
+---
+{snippet}
+---
+Return ONLY the title as plain text.";
+
+            var req = new
+            {
+                model,
+                messages = new object[]
+                {
+                    new { role = "system", content = "You generate only a concise title as plain text." },
+                    new { role = "user", content = prompt }
+                },
+                temperature = 0.2
+            };
+
+            using var contentJson = new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json");
+            _http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            using var resp = await _http.PostAsync("https://api.openai.com/v1/chat/completions", contentJson, ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("OpenAI title suggestion failed: {Status} {Body}", (int)resp.StatusCode, body);
+                return null;
+            }
+
+            var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var title = json.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
+            title = (title ?? string.Empty).Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(title)) return null;
+
+            // Enforce 8-word limit softly
+            var words = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length > 8) title = string.Join(' ', words.Take(8));
+            return title;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SuggestNoteTitleAsync failed");
+            return null;
+        }
     }
 
     private async Task<List<string>> GenerateInsightsAsync(List<Note> todaysNotes, List<string> topCategories)

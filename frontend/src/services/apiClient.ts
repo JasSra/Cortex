@@ -213,26 +213,50 @@ export function useIngestApi() {
   const authedFetch = useMemo(() => createAuthedFetch(getAccessToken, logout), [getAccessToken, logout])
 
   const uploadFiles = useCallback(async (files: File[] | FileList) => {
-    const token = await getAccessToken()
-    const form = new FormData()
-    const arr = Array.isArray(files) ? files : Array.from(files)
-    for (const f of arr) form.append('files', f, f.name)
-    const res = await fetch(`${baseUrl}/api/Ingest/files`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } as any : undefined,
-      body: form,
-    })
-    if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-    const text = await res.text()
-    const raw = text ? JSON.parse(text) : []
-    // Normalize backend result shape to frontend IngestResult
-    return (raw as any[]).map(r => ({
-      noteId: r.noteId ?? r.NoteId,
-      title: r.title ?? r.Title,
-      status: r.status ?? 'ingested',
-      chunkCount: r.chunkCount ?? r.CountChunks ?? r.countChunks ?? 0,
-      error: r.error,
-    }))
+    try {
+      const token = await getAccessToken()
+      const form = new FormData()
+      const arr = Array.isArray(files) ? files : Array.from(files)
+      for (const f of arr) form.append('files', f, f.name)
+      
+      const res = await fetch(`${baseUrl}/api/Ingest/files`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } as any : undefined,
+        body: form,
+      })
+      
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(`Upload failed: ${res.status} - ${errorText}`)
+      }
+      
+      const text = await res.text()
+      if (!text) {
+        console.warn('Empty response from upload API')
+        return []
+      }
+      
+      const raw = JSON.parse(text)
+      if (!Array.isArray(raw)) {
+        console.error('Unexpected response format:', raw)
+        throw new Error('Invalid response format from server')
+      }
+      
+      // Normalize backend result shape to frontend IngestResult
+      const results = raw.map((r, index) => ({
+        noteId: r.noteId ?? r.NoteId,
+        title: r.title ?? r.Title,
+        status: r.status ?? 'ingested',
+        chunkCount: r.chunkCount ?? r.CountChunks ?? r.countChunks ?? 0,
+        error: r.error,
+      }))
+      
+      console.log(`Successfully processed ${results.length} files`)
+      return results
+    } catch (error) {
+      console.error('Upload files error:', error)
+      throw error
+    }
   }, [baseUrl, getAccessToken])
 
   const ingestFolder = useCallback(async (path: string) => {
@@ -334,29 +358,34 @@ export function useJobsApi() {
   const http = useAuthedFetch()
   const { getAccessToken } = useAppAuth()
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+  
+  const getStatus = useCallback(async () => {
+    const res = await http.get<any>(`/api/Jobs/status`)
+    return {
+      summary: res?.summary ?? res?.Summary ?? 'Background workers are idle.',
+      pending: res?.pending ?? res?.Pending ?? 0,
+      processed: res?.processed ?? res?.Processed ?? 0,
+      failed: res?.failed ?? res?.Failed ?? 0,
+      avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
+      pendingStreams: res?.pendingStreams ?? res?.PendingStreams ?? 0,
+      pendingBacklog: res?.pendingBacklog ?? res?.PendingBacklog ?? 0,
+      usingStreams: res?.usingStreams ?? res?.UsingStreams ?? false,
+      redisConnected: res?.redisConnected ?? res?.RedisConnected ?? false,
+    }
+  }, [http])
+
+  const statusStreamUrl = useCallback(async () => {
+    const token = await getAccessToken()
+    const url = new URL(`${baseUrl}/api/Jobs/status/stream`)
+    if (token) url.searchParams.set('access_token', token)
+    return url.toString()
+  }, [getAccessToken, baseUrl])
+
   return {
     // One-shot status (normalized)
-    getStatus: async () => {
-      const res = await http.get<any>(`/api/Jobs/status`)
-      return {
-        summary: res?.summary ?? res?.Summary ?? 'Background workers are idle.',
-        pending: res?.pending ?? res?.Pending ?? 0,
-        processed: res?.processed ?? res?.Processed ?? 0,
-        failed: res?.failed ?? res?.Failed ?? 0,
-        avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
-        pendingStreams: res?.pendingStreams ?? res?.PendingStreams ?? 0,
-        pendingBacklog: res?.pendingBacklog ?? res?.PendingBacklog ?? 0,
-        usingStreams: res?.usingStreams ?? res?.UsingStreams ?? false,
-        redisConnected: res?.redisConnected ?? res?.RedisConnected ?? false,
-      }
-    },
+    getStatus,
     // Helper to build SSE URL with token
-    statusStreamUrl: async () => {
-      const token = await getAccessToken()
-      const url = new URL(`${baseUrl}/api/Jobs/status/stream`)
-      if (token) url.searchParams.set('access_token', token)
-      return url.toString()
-    },
+    statusStreamUrl,
     // Subscribe and push normalized updates
     subscribeStatusStream: (onUpdate: (s: { summary: string; pending: number; processed: number; failed: number; avgMs: number; pendingStreams?: number; pendingBacklog?: number; usingStreams?: boolean; redisConnected?: boolean }) => void) => {
       let es: EventSource | null = null

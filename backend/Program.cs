@@ -11,8 +11,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.AspNetCore.StaticFiles;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.ML;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -118,9 +116,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Add CORS (configurable via CORS_ORIGINS or Server:CorsOrigins)
-var corsOrigins = builder.Configuration["CORS_ORIGINS"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                 ?? builder.Configuration.GetSection("Server:CorsOrigins").Get<string[]>()
-                 ?? new[] { "http://localhost:3000", "http://localhost:3001" };
+var corsOriginsSetting = builder.Configuration["CORS_ORIGINS"];
+string[] corsOrigins;
+if (!string.IsNullOrWhiteSpace(corsOriginsSetting))
+{
+    corsOrigins = corsOriginsSetting.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+else
+{
+    corsOrigins = builder.Configuration.GetSection("Server:CorsOrigins").Get<string[]>()
+                   ?? new[] { "http://localhost:3000", "http://localhost:3001" };
+}
 
 builder.Services.AddCors(options =>
 {
@@ -493,16 +499,7 @@ app.UseWebSockets();
 // Inject per-request user context before endpoints
 app.UseMiddleware<UserContextMiddleware>();
 
-// Serve uploaded files from configurable storage root under /storage
-var storageRoot = builder.Configuration["Storage:Root"] ?? Path.Combine(app.Environment.ContentRootPath, "storage");
-if (!Directory.Exists(storageRoot)) Directory.CreateDirectory(storageRoot);
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(storageRoot),
-    RequestPath = "/storage",
-    ServeUnknownFileTypes = true,
-    ContentTypeProvider = new FileExtensionContentTypeProvider()
-});
+// Removed public static file exposure under /storage; files are served via authenticated API endpoints in StorageController.
 
 // Ensure database is up-to-date (use EF Core migrations)
 using (var scope = app.Services.CreateScope())

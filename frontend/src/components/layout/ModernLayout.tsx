@@ -27,6 +27,7 @@ import { useSearchApi } from '../../services/apiClient'
 import GamificationWidget from '../gamification/GamificationWidget'
 import UserProfileDropdown from '../UserProfileDropdown'
 import JobStatusWidget from '../JobStatusWidget'
+import ConnectivityIndicator from '../ConnectivityIndicator'
 import PageRenderer from '../PageRenderer'
 
 interface ModernLayoutProps {
@@ -442,6 +443,9 @@ export default function ModernLayout({
                 <MoonIcon className="h-5 w-5 text-slate-600 dark:text-slate-400" />
               )}
             </motion.button>
+
+            {/* Connectivity Status */}
+            <ConnectivityIndicator size="sm" />
 
             {/* Notifications */}
             <motion.button
