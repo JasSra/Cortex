@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Services;
 using CortexApi.Security;
 
@@ -9,6 +10,7 @@ namespace CortexApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class VoiceController : ControllerBase
 {
     private readonly IVoiceService _voiceService;

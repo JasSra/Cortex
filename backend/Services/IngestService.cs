@@ -31,7 +31,7 @@ public interface IIngestService
 public class IngestService : IIngestService
 {
     private readonly CortexDbContext _context;
-    private readonly IConfiguration _configuration;
+    private readonly IConfigurationService _configurationService;
     private readonly ILogger<IngestService> _logger;
     private readonly string _dataDir;
     private readonly IVectorService _vectorService;
@@ -43,7 +43,7 @@ public class IngestService : IIngestService
 
     public IngestService(
         CortexDbContext context, 
-        IConfiguration configuration, 
+        IConfigurationService configurationService, 
         ILogger<IngestService> logger, 
         IVectorService vectorService, 
         IUserContextAccessor user,
@@ -53,9 +53,10 @@ public class IngestService : IIngestService
         ISuggestionsService suggestionsService)
     {
         _context = context;
-        _configuration = configuration;
+        _configurationService = configurationService;
         _logger = logger;
-        _dataDir = _configuration["DATA_DIR"] ?? "./data";
+        var config = _configurationService.GetConfiguration();
+        _dataDir = config["DATA_DIR"] ?? "./data";
         _vectorService = vectorService;
         _user = user;
         _piiDetectionService = piiDetectionService;
@@ -87,7 +88,8 @@ public class IngestService : IIngestService
 
     public async Task<List<IngestResult>> IngestFolderAsync(string folderPath)
     {
-        if (!_configuration.GetValue<bool>("ALLOW_LOCAL_SCAN", false))
+        var config = _configurationService.GetConfiguration();
+        if (!config.GetValue<bool>("ALLOW_LOCAL_SCAN", false))
         {
             throw new UnauthorizedAccessException("Local folder scanning is disabled");
         }

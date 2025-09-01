@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using CortexApi.Data;
 using CortexApi.Services;
+using CortexApi.Services.Providers;
 using CortexApi.Models;
 using System.Net.WebSockets;
 using System.Data;
@@ -38,6 +39,38 @@ builder.Services.AddDbContext<CortexDbContext>(options =>
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
 
 builder.Services.AddHttpClient();
+
+// Register LLM Providers
+builder.Services.AddHttpClient<OpenAiLlmProvider>();
+builder.Services.AddHttpClient<OllamaLlmProvider>();
+builder.Services.AddScoped<OpenAiLlmProvider>();
+builder.Services.AddScoped<OllamaLlmProvider>();
+builder.Services.AddScoped<ILlmProviderFactory, LlmProviderFactory>();
+
+// Register Embedding Providers
+builder.Services.AddHttpClient<OpenAiEmbeddingProvider>();
+builder.Services.AddHttpClient<LocalEmbeddingProvider>();
+builder.Services.AddScoped<OpenAiEmbeddingProvider>();
+builder.Services.AddScoped<LocalEmbeddingProvider>();
+builder.Services.AddScoped<IEmbeddingProviderFactory, EmbeddingProviderFactory>();
+
+// Register active providers based on configuration
+builder.Services.AddScoped<ILlmProvider>(provider =>
+{
+    var config = provider.GetRequiredService<IConfigurationService>();
+    var factory = provider.GetRequiredService<ILlmProviderFactory>();
+    var llmProvider = config.GetConfiguration()["LLM:Provider"] ?? "openai";
+    return factory.CreateProvider(llmProvider);
+});
+
+builder.Services.AddScoped<IEmbeddingProvider>(provider =>
+{
+    var config = provider.GetRequiredService<IConfigurationService>();
+    var factory = provider.GetRequiredService<IEmbeddingProviderFactory>();
+    var embeddingProvider = config.GetConfiguration()["Embedding:Provider"] ?? "openai";
+    return factory.CreateProvider(embeddingProvider);
+});
+
 builder.Services.AddScoped<IIngestService, IngestService>();
 builder.Services.AddScoped<ISearchService, SearchService>();
 builder.Services.AddScoped<IVoiceService, VoiceService>();
@@ -72,6 +105,8 @@ builder.Services.AddScoped<IGamificationService, GamificationService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 // Notification service for push notifications and email
 builder.Services.AddScoped<INotificationService, NotificationService>();
+// Configuration service for dynamic app configuration
+builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
 // User context / RBAC
 builder.Services.AddScoped<UserContextAccessor>();
 builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());
@@ -585,66 +620,8 @@ using (var scope = app.Services.CreateScope())
             using var conn2 = new SqliteConnection(absoluteSqliteConnectionString);
             await conn2.OpenAsync();
 
-            static async Task<bool> TableExistsAsync(SqliteConnection c, string name)
-            {
-                using var cmd = c.CreateCommand();
-                cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=@n LIMIT 1;";
-                cmd.Parameters.AddWithValue("@n", name);
-                return (await cmd.ExecuteScalarAsync()) != null;
-            }
-
-            // Ensure UserWorkspaces table exists
-            if (!await TableExistsAsync(conn2, "UserWorkspaces"))
-            {
-                Console.WriteLine("[DB] Self-heal: creating missing table UserWorkspaces…");
-                using (var cmd = conn2.CreateCommand())
-                {
-                    cmd.CommandText = @"
-CREATE TABLE IF NOT EXISTS ""UserWorkspaces"" (
-    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_UserWorkspaces"" PRIMARY KEY,
-    ""UserId"" TEXT NOT NULL,
-    ""ActiveNoteId"" TEXT NULL,
-    ""RecentNoteIds"" TEXT NOT NULL,
-    ""EditorState"" TEXT NOT NULL,
-    ""PinnedTags"" TEXT NOT NULL,
-    ""LayoutPreferences"" TEXT NOT NULL,
-    ""CreatedAt"" TEXT NOT NULL,
-    ""UpdatedAt"" TEXT NOT NULL,
-    CONSTRAINT ""FK_UserWorkspaces_Notes_ActiveNoteId"" FOREIGN KEY (""ActiveNoteId"") REFERENCES ""Notes"" (""Id"") ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS ""IX_UserWorkspaces_ActiveNoteId"" ON ""UserWorkspaces"" (""ActiveNoteId"");
-CREATE INDEX IF NOT EXISTS ""IX_UserWorkspaces_UpdatedAt"" ON ""UserWorkspaces"" (""UpdatedAt"");
-CREATE UNIQUE INDEX IF NOT EXISTS ""IX_UserWorkspaces_UserId"" ON ""UserWorkspaces"" (""UserId"");
-";
-                    await cmd.ExecuteNonQueryAsync();
-                }
-            }
-
-            // Ensure UserNoteAccess table exists
-            if (!await TableExistsAsync(conn2, "UserNoteAccess"))
-            {
-                Console.WriteLine("[DB] Self-heal: creating missing table UserNoteAccess…");
-                using (var cmd = conn2.CreateCommand())
-                {
-                    cmd.CommandText = @"
-CREATE TABLE IF NOT EXISTS ""UserNoteAccess"" (
-    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_UserNoteAccess"" PRIMARY KEY,
-    ""UserId"" TEXT NOT NULL,
-    ""NoteId"" TEXT NOT NULL,
-    ""AccessType"" TEXT NOT NULL,
-    ""DurationSeconds"" INTEGER NOT NULL,
-    ""EditorStateSnapshot"" TEXT NULL,
-    ""AccessedAt"" TEXT NOT NULL,
-    CONSTRAINT ""FK_UserNoteAccess_Notes_NoteId"" FOREIGN KEY (""NoteId"") REFERENCES ""Notes"" (""Id"") ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_AccessedAt"" ON ""UserNoteAccess"" (""AccessedAt"");
-CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_NoteId"" ON ""UserNoteAccess"" (""NoteId"");
-CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_UserId_AccessedAt"" ON ""UserNoteAccess"" (""UserId"", ""AccessedAt"");
-CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_UserId_NoteId"" ON ""UserNoteAccess"" (""UserId"", ""NoteId"");
-";
-                    await cmd.ExecuteNonQueryAsync();
-                }
-            }
+            // Database schema is now managed entirely through EF Core migrations
+            // Manual table creation code removed - use migrations for schema changes
         }
         catch (Exception ex)
         {
@@ -664,6 +641,19 @@ CREATE INDEX IF NOT EXISTS ""IX_UserNoteAccess_UserId_NoteId"" ON ""UserNoteAcce
         await vector.EnsureIndexAsync(embed.GetEmbeddingDim());
     }
     catch { /* optional backend; ignore */ }
+
+    // Bootstrap configuration from appsettings to database (one-time only)
+    try
+    {
+        var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
+        await configService.BootstrapConfigurationAsync();
+        // Reload configuration from database for immediate use
+        await configService.ReloadConfigurationAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Config] Bootstrap failed: {ex.Message}");
+    }
 }
 
 // Use Controllers (most endpoints moved to separate controller files)

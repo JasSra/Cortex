@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using CortexApi.Data;
 using CortexApi.Models;
@@ -12,6 +13,7 @@ namespace CortexApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class WorkspaceController : ControllerBase
 {
     private readonly CortexDbContext _context;

@@ -71,7 +71,7 @@ public class HealthDb
 [Route("api/[controller]")]
 public class HealthController : ControllerBase
 {
-    private readonly IConfiguration _config;
+    private readonly IConfigurationService _configurationService;
     private readonly IEmbeddingService _embedding;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IBackgroundJobService _jobs;
@@ -83,9 +83,9 @@ public class HealthController : ControllerBase
         "jobs:embedding","jobs:classification","jobs:pii_detection","jobs:weekly_digest","jobs:graph_enrich"
     };
 
-    public HealthController(IConfiguration config, IEmbeddingService embedding, IServiceScopeFactory scopeFactory, IBackgroundJobService jobs, HttpClient http)
+    public HealthController(IConfigurationService configurationService, IEmbeddingService embedding, IServiceScopeFactory scopeFactory, IBackgroundJobService jobs, HttpClient http)
     {
-        _config = config;
+        _configurationService = configurationService;
         _embedding = embedding;
         _scopeFactory = scopeFactory;
         _jobs = jobs;
@@ -137,14 +137,16 @@ public class HealthController : ControllerBase
         if (resp.Redis.Configured && !resp.Redis.Connected) status = "degraded";
 
         // Embedding provider check (end-to-end invoke)
+        var config = _configurationService.GetConfiguration();
         var embedSw = Stopwatch.StartNew();
         try
         {
             var dim = _embedding.GetEmbeddingDim();
             var vec = await _embedding.EmbedAsync("health-check", HttpContext.RequestAborted);
             embedSw.Stop();
-            resp.Embeddings.Provider = _config["Embedding:Provider"] ?? "openai";
-            resp.Embeddings.Model = _config["Embedding:Model"] ?? "text-embedding-3-small";
+            
+            resp.Embeddings.Provider = config["Embedding:Provider"] ?? "openai";
+            resp.Embeddings.Model = config["Embedding:Model"] ?? "text-embedding-3-small";
             resp.Embeddings.Dim = dim;
             resp.Embeddings.Ok = vec != null && vec.Length == dim;
             resp.Embeddings.LatencyMs = (int)embedSw.ElapsedMilliseconds;
@@ -159,7 +161,7 @@ public class HealthController : ControllerBase
         }
 
         // OpenAI key reachability (only if configured)
-        var apiKey = _config["OpenAI:ApiKey"] ?? _config["OPENAI_API_KEY"];
+        var apiKey = config["OpenAI:ApiKey"] ?? config["OPENAI_API_KEY"];
         resp.OpenAI.Configured = !string.IsNullOrWhiteSpace(apiKey);
         if (resp.OpenAI.Configured)
         {
@@ -189,7 +191,8 @@ public class HealthController : ControllerBase
 
     private async Task PopulateRedisAsync(HealthResponse resp)
     {
-        var redisConfig = _config["REDIS_CONNECTION"] ?? _config["Redis:Connection"] ?? _config.GetConnectionString("Redis");
+        var config = _configurationService.GetConfiguration();
+        var redisConfig = config["REDIS_CONNECTION"] ?? config["Redis:Connection"] ?? config.GetConnectionString("Redis");
         resp.Redis.Configured = !string.IsNullOrWhiteSpace(redisConfig);
         if (!resp.Redis.Configured) return;
 

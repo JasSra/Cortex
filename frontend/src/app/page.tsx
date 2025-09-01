@@ -11,6 +11,7 @@ import KnowledgeGraphVisualizer from '@/components/graph/KnowledgeGraphVisualize
 import NotesBrowserPage from '@/components/pages/NotesBrowserPage'
 import AdvancedSearchPage from '@/components/pages/AdvancedSearchPage'
 import DocumentsPage from '@/components/pages/DocumentsPage'
+import ConfigurationPage from './config/page'
 import { UserProfile } from '@/components/UserProfile'
 
 export default function Home() {
@@ -89,6 +90,10 @@ export default function Home() {
       
       case 'graph':
         return <KnowledgeGraphVisualizer />
+      
+      case 'config':
+      case 'configuration':
+        return <ConfigurationPage />
       
       case 'settings':
         return (

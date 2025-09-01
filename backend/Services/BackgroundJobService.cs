@@ -65,7 +65,7 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 {
 	private readonly IServiceScopeFactory _scopeFactory;
 	private readonly ILogger<BackgroundJobService> _logger;
-	private readonly IConfiguration _configuration;
+	private readonly IConfigurationService _configurationService;
 	private bool _indexEnsured = false;
 	private readonly HashSet<string> _inProgress = new();
 	private readonly object _lock = new();
@@ -82,11 +82,11 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 	private const string CONSUMER_GROUP = "cortex-workers";
 	private const string CONSUMER_NAME = "worker-1";
 
-	public BackgroundJobService(IServiceScopeFactory scopeFactory, ILogger<BackgroundJobService> logger, IConfiguration configuration)
+	public BackgroundJobService(IServiceScopeFactory scopeFactory, ILogger<BackgroundJobService> logger, IConfigurationService configurationService)
 	{
 		_scopeFactory = scopeFactory;
 		_logger = logger;
-		_configuration = configuration;
+		_configurationService = configurationService;
 	}
 
 	public async Task<IReadOnlyList<JobDetailsItem>> GetPendingJobsAsync(int maxItems = 100, CancellationToken ct = default)
@@ -212,10 +212,11 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 		try
 		{
 			// Accept multiple config keys for Redis to match VectorService
+			var config = _configurationService.GetConfiguration();
 			var redisConfig =
-				_configuration["REDIS_CONNECTION"]
-				?? _configuration["Redis:Connection"]
-				?? _configuration.GetConnectionString("Redis");
+				config["REDIS_CONNECTION"]
+				?? config["Redis:Connection"]
+				?? config.GetConnectionString("Redis");
 			if (string.IsNullOrEmpty(redisConfig))
 			{
 				_logger.LogWarning("Redis connection string not configured, falling back to polling mode");
@@ -534,11 +535,12 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
 			if (existingEmbedding == null)
 			{
 				// Create new embedding record
+				var config = _configurationService.GetConfiguration();
 				var embeddingRecord = new Models.Embedding
 				{
 					ChunkId = chunk.Id,
-					Provider = _configuration["Embedding:Provider"] ?? "openai",
-					Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
+					Provider = config["Embedding:Provider"] ?? "openai",
+					Model = config["Embedding:Model"] ?? "text-embedding-3-small",
 					Dim = vec.Length,
 					VectorRef = $"chunk:{chunk.Id}",
 					CreatedAt = DateTime.UtcNow
@@ -625,8 +627,9 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
             return sb.ToString().Trim();
         }
 
-        var provider = _configuration["Embedding:Provider"] ?? "openai";
-        var model = _configuration["Embedding:Model"] ?? "text-embedding-3-small";
+        var config = _configurationService.GetConfiguration();
+        var provider = config["Embedding:Provider"] ?? "openai";
+        var model = config["Embedding:Model"] ?? "text-embedding-3-small";
 
         // Hash normalized text
         using var sha = System.Security.Cryptography.SHA256.Create();
@@ -724,11 +727,12 @@ public class BackgroundJobService : BackgroundService, IBackgroundJobService
         await vector.UpsertChunkAsync(chunk.Note, chunk, embedding, stoppingToken);
 
         // Create embedding record
+        var config = _configurationService.GetConfiguration();
         db.Embeddings.Add(new Embedding
         {
             ChunkId = chunk.Id,
-            Provider = _configuration["Embedding:Provider"] ?? "openai",
-            Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
+            Provider = config["Embedding:Provider"] ?? "openai",
+            Model = config["Embedding:Model"] ?? "text-embedding-3-small",
             Dim = embedding.Length,
             VectorRef = $"chunk:{chunk.Id}",
             CreatedAt = DateTime.UtcNow

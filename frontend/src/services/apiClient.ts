@@ -13,6 +13,13 @@ import type {
 } from './types/notifications'
 import type { VoiceConfigRequest, VoiceConfigValidationResult } from './types/voice'
 import type { MascotProfileDto, UpdateMascotProfileRequest } from './types/mascot'
+import type {
+  ConfigurationSection,
+  ConfigurationUpdateItem,
+  ConfigurationValidationResult,
+  ProviderTest,
+  ConfigurationTestResult
+} from './types/configuration'
 
 function createAuthedFetch(
   getAccessToken: () => Promise<string | null>,
@@ -1070,5 +1077,60 @@ export function useWorkspaceApi() {
     trackNoteAccess,
     getNotesByTags,
     getAllTags,
+  ])
+}
+
+// Configuration API - System configuration management
+export function useConfigurationApi() {
+  const http = useAuthedFetch()
+  
+  const getAllConfiguration = useCallback(() => {
+    return http.get<ConfigurationSection[]>('/api/Configuration')
+  }, [http])
+  
+  const getConfigurationSection = useCallback((section: string) => {
+    return http.get<ConfigurationSection>(`/api/Configuration/${encodeURIComponent(section)}`)
+  }, [http])
+  
+  const updateConfiguration = useCallback(async (updates: ConfigurationUpdateItem[]) => {
+    const request = { Settings: updates }
+    return await http.post<any>('/api/Configuration', request)
+  }, [http])
+  
+  const validateConfiguration = useCallback(async (settings: ConfigurationUpdateItem[]) => {
+    const request = { Settings: settings }
+    return await http.post<ConfigurationValidationResult>('/api/Configuration/validate', request)
+  }, [http])
+  
+  const getConfigurationValue = useCallback((key: string) => {
+    return http.get<{key: string, value: string}>(`/api/Configuration/value/${encodeURIComponent(key)}`)
+  }, [http])
+  
+  const setConfigurationValue = useCallback(async (key: string, value: string) => {
+    const request = { Value: value }
+    return await http.post<any>(`/api/Configuration/value/${encodeURIComponent(key)}`, request)
+  }, [http])
+  
+  const testConfiguration = useCallback(async (tests: ProviderTest[]) => {
+    const request = { Tests: tests }
+    return await http.post<ConfigurationTestResult>('/api/Configuration/test', request)
+  }, [http])
+  
+  return useMemo(() => ({
+    getAllConfiguration,
+    getConfigurationSection,
+    updateConfiguration,
+    validateConfiguration,
+    getConfigurationValue,
+    setConfigurationValue,
+    testConfiguration,
+  }), [
+    getAllConfiguration,
+    getConfigurationSection,
+    updateConfiguration,
+    validateConfiguration,
+    getConfigurationValue,
+    setConfigurationValue,
+    testConfiguration,
   ])
 }

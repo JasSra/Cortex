@@ -48,6 +48,9 @@ public class CortexDbContext : DbContext
     // Workspace and user activity tracking
     public DbSet<UserWorkspace> UserWorkspaces { get; set; }
     public DbSet<UserNoteAccess> UserNoteAccess { get; set; }
+    
+    // Configuration settings
+    public DbSet<ConfigurationSetting> ConfigurationSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -372,6 +375,25 @@ public class CortexDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.NoteId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+        
+        // ConfigurationSetting configuration
+        modelBuilder.Entity<ConfigurationSetting>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Key).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Value).IsRequired();
+            entity.Property(e => e.ValueType).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Section).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.DefaultValue).IsRequired();
+            entity.Property(e => e.ValidationRules).IsRequired();
+            
+            // Unique constraint on key
+            entity.HasIndex(e => e.Key).IsUnique();
+            entity.HasIndex(e => e.Section);
+            entity.HasIndex(e => e.SortOrder);
+            entity.HasIndex(e => e.UpdatedAt);
         });
     }
 }

@@ -42,6 +42,13 @@
 - **Context Providers**: Auth, Theme, and Mascot contexts for global state
 - **Zustand Store**: `useCortexStore` for client-side state management
 
+### 5. Provider Pattern Architecture
+- **LLM Services**: Use `ILlmProvider` interface with OpenAI and Ollama implementations
+- **Embedding Services**: Use `IEmbeddingProvider` interface with OpenAI and Local implementations
+- **Provider Factories**: `ILlmProviderFactory` and `IEmbeddingProviderFactory` for swappable providers
+- **Configuration-Driven**: Providers selected via database configuration, not hardcoded
+- **Validation**: All providers support configuration validation before use
+
 ## Component Architecture
 ```
 src/
@@ -60,6 +67,46 @@ src/
 ```
 
 ## Code Style Guidelines
+
+### Backend Service Patterns
+```csharp
+// ✅ CORRECT: Use provider interfaces, not direct API calls
+public class MyService : IMyService
+{
+    private readonly ILlmProvider _llmProvider;
+    private readonly IEmbeddingProvider _embeddingProvider;
+    private readonly IConfigurationService _configurationService;
+    private readonly ILogger<MyService> _logger;
+
+    public MyService(ILlmProvider llmProvider, IEmbeddingProvider embeddingProvider, 
+                     IConfigurationService configurationService, ILogger<MyService> logger)
+    {
+        _llmProvider = llmProvider;
+        _embeddingProvider = embeddingProvider;
+        _configurationService = configurationService;
+        _logger = logger;
+    }
+
+    public async Task<string?> GenerateResponseAsync(string prompt, CancellationToken ct = default)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new ChatMessage { Role = "user", Content = prompt }
+        };
+
+        return await _llmProvider.GenerateChatCompletionAsync(messages, new LlmCompletionOptions
+        {
+            Temperature = 0.7
+        }, ct);
+    }
+}
+
+// ❌ FORBIDDEN: Direct configuration access for providers
+// NEVER DO THIS:
+// var apiKey = _configuration["OpenAI:ApiKey"];
+// var httpClient = new HttpClient();
+// var response = await httpClient.PostAsync("https://api.openai.com/...", ...);
+```
 
 ### React Components Pattern
 ```tsx
@@ -165,6 +212,75 @@ const handleUpload = useCallback(async (files: FileList) => {
 ```
 
 ## Backend Integration
+
+### Provider Pattern Usage
+```csharp
+// ✅ CORRECT: Use provider interfaces for AI services
+public class SuggestionsService : ISuggestionsService
+{
+    private readonly ILlmProvider _llmProvider;
+    private readonly ILogger<SuggestionsService> _logger;
+
+    public SuggestionsService(ILlmProvider llmProvider, ILogger<SuggestionsService> logger)
+    {
+        _llmProvider = llmProvider;
+        _logger = logger;
+    }
+
+    public async Task<string?> SuggestNoteTitleAsync(string content, CancellationToken ct = default)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new ChatMessage { Role = "system", Content = "You generate concise titles." },
+            new ChatMessage { Role = "user", Content = prompt }
+        };
+
+        return await _llmProvider.GenerateChatCompletionAsync(messages, new LlmCompletionOptions
+        {
+            Temperature = 0.2,
+            MaxTokens = 20
+        }, ct);
+    }
+}
+
+// ✅ CORRECT: Use embedding provider interface
+public class EmbeddingService : IEmbeddingService
+{
+    private readonly IEmbeddingProvider _embeddingProvider;
+
+    public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default)
+    {
+        return await _embeddingProvider.GenerateEmbeddingAsync(text, ct: ct);
+    }
+}
+
+// ❌ FORBIDDEN: Direct OpenAI API calls
+// NEVER DO THIS:
+// var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", ...);
+// var apiKey = _configuration["OpenAI:ApiKey"];
+```
+
+### Provider Registration (Program.cs)
+```csharp
+// Register provider implementations
+builder.Services.AddScoped<OpenAiLlmProvider>();
+builder.Services.AddScoped<OllamaLlmProvider>();
+builder.Services.AddScoped<OpenAiEmbeddingProvider>();
+builder.Services.AddScoped<LocalEmbeddingProvider>();
+
+// Register factories
+builder.Services.AddScoped<ILlmProviderFactory, LlmProviderFactory>();
+builder.Services.AddScoped<IEmbeddingProviderFactory, EmbeddingProviderFactory>();
+
+// Register active providers based on configuration
+builder.Services.AddScoped<ILlmProvider>(provider =>
+{
+    var config = provider.GetRequiredService<IConfigurationService>();
+    var factory = provider.GetRequiredService<ILlmProviderFactory>();
+    var llmProvider = config.GetConfiguration()["LLM:Provider"] ?? "openai";
+    return factory.CreateProvider(llmProvider);
+});
+```
 
 ### API Client Usage
 ```tsx

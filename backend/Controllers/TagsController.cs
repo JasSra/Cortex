@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Models;
 using CortexApi.Security;
 using CortexApi.Data;
@@ -11,6 +12,7 @@ namespace CortexApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class TagsController : ControllerBase
 {
     private readonly IUserContextAccessor _userContext;

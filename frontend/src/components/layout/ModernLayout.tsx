@@ -53,6 +53,7 @@ const navigation = [
   { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: false },
   { name: 'Analytics', href: 'analytics', icon: ChartBarIcon, current: false },
   { name: 'Achievements', href: 'achievements', icon: TrophyIcon, current: false },
+  { name: 'Configuration', href: 'config', icon: Cog6ToothIcon, current: false },
   { name: 'Settings', href: 'settings', icon: CogIcon, current: false },
 ]
 

@@ -22,7 +22,6 @@ public class GraphService : IGraphService
 {
     private readonly CortexDbContext _context;
     private readonly ILogger<GraphService> _logger;
-    private readonly IConfiguration _config;
     private readonly INerService _nerService;
     private readonly IDriver? _neo4jDriver;
     private readonly bool _useNeo4j;
@@ -30,12 +29,10 @@ public class GraphService : IGraphService
     public GraphService(
         CortexDbContext context, 
         ILogger<GraphService> logger, 
-        IConfiguration config,
         INerService nerService)
     {
         _context = context;
         _logger = logger;
-        _config = config;
         _nerService = nerService;
         
     // Explicitly disable Neo4j backend until implemented to avoid confusion

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
@@ -7,6 +8,7 @@ namespace CortexApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class GraphController : ControllerBase
 {
     private readonly IGraphService _graphService;

@@ -1,10 +1,12 @@
 using CortexApi.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CortexApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class JobsController : ControllerBase
 {
     private readonly IBackgroundJobService _jobs;

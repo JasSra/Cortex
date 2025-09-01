@@ -1115,3 +1115,126 @@ public class UserNoteAccess
     
     public virtual Note Note { get; set; } = null!;
 }
+
+// Configuration setting entity - stores all app configuration in database
+public class ConfigurationSetting
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    
+    /// <summary>
+    /// Configuration key (e.g., "OpenAI:ApiKey", "Embedding:Provider")
+    /// </summary>
+    public string Key { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Configuration value (stored as string, parsed as needed)
+    /// </summary>
+    public string Value { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Data type of the value (string, number, boolean, json)
+    /// </summary>
+    public string ValueType { get; set; } = "string";
+    
+    /// <summary>
+    /// Configuration category/section (e.g., "OpenAI", "Embedding", "Redis")
+    /// </summary>
+    public string Section { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Human-readable description of this setting
+    /// </summary>
+    public string Description { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Whether this setting is sensitive (password, API key, etc.)
+    /// </summary>
+    public bool IsSensitive { get; set; }
+    
+    /// <summary>
+    /// Whether this setting requires app restart to take effect
+    /// </summary>
+    public bool RequiresRestart { get; set; }
+    
+    /// <summary>
+    /// Default value for this setting
+    /// </summary>
+    public string DefaultValue { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Validation rules for this setting (JSON)
+    /// </summary>
+    public string ValidationRules { get; set; } = "{}";
+    
+    /// <summary>
+    /// Sort order for display in UI
+    /// </summary>
+    public int SortOrder { get; set; }
+    
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// DTOs for configuration API
+public class ConfigurationSectionDto
+{
+    public string Name { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public List<ConfigurationSettingDto> Settings { get; set; } = new();
+}
+
+public class ConfigurationSettingDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Key { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string ValueType { get; set; } = string.Empty;
+    public string Section { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public bool IsSensitive { get; set; }
+    public bool RequiresRestart { get; set; }
+    public string DefaultValue { get; set; } = string.Empty;
+    public string ValidationRules { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class UpdateConfigurationRequest
+{
+    public List<ConfigurationUpdateItem> Settings { get; set; } = new();
+}
+
+public class ConfigurationUpdateItem
+{
+    public string Key { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+}
+
+public class ValidateConfigurationRequest
+{
+    public List<ConfigurationUpdateItem> Settings { get; set; } = new();
+}
+
+public class ConfigurationValidationResult
+{
+    public bool IsValid { get; set; }
+    public List<ValidationError> Errors { get; set; } = new();
+    public List<ValidationWarning> Warnings { get; set; } = new();
+    public string Message { get; set; } = string.Empty;
+}
+
+public class ValidationError
+{
+    public string Key { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+}
+
+public class ValidationWarning
+{
+    public string Key { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+}

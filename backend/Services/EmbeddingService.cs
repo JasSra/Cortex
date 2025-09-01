@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using CortexApi.Data;
+using CortexApi.Services.Providers;
 using Microsoft.EntityFrameworkCore;
 
 namespace CortexApi.Services;
@@ -14,107 +15,37 @@ public interface IEmbeddingService
 
 public class EmbeddingService : IEmbeddingService
 {
-    private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
+    private readonly IEmbeddingProvider _embeddingProvider;
     private readonly ILogger<EmbeddingService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public EmbeddingService(HttpClient httpClient, IConfiguration configuration, ILogger<EmbeddingService> logger, IServiceScopeFactory scopeFactory)
+    public EmbeddingService(IEmbeddingProvider embeddingProvider, ILogger<EmbeddingService> logger, IServiceScopeFactory scopeFactory)
     {
-        _httpClient = httpClient;
-        _configuration = configuration;
+        _embeddingProvider = embeddingProvider;
         _logger = logger;
         _scopeFactory = scopeFactory;
     }
 
     public int GetEmbeddingDim()
     {
-        if (int.TryParse(_configuration["Embedding:Dim"], out var dim))
-            return dim;
-        // Default for OpenAI text-embedding-3-small
-        return 1536;
+        return _embeddingProvider.EmbeddingDimension;
     }
 
     public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default)
     {
-        var provider = _configuration["Embedding:Provider"] ?? "openai";
-        var model = _configuration["Embedding:Model"] ?? "text-embedding-3-small";
-        var fallbackToLocal = string.Equals(_configuration["Embedding:FallbackToLocal"], "true", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(_configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
-
-        if (provider.Equals("openai", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            var apiKey = _configuration["OpenAI:ApiKey"] ?? _configuration["OPENAI_API_KEY"];
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                _logger.LogWarning("OpenAI API key not configured; cannot embed using OpenAI");
-                if (fallbackToLocal)
-                {
-                    _logger.LogWarning("Falling back to local hashing-based embeddings (dev mode)");
-                    return LocalEmbed(text);
-                }
-                return null;
-            }
-
-            try
-            {
-                var payload = new
-                {
-                    model,
-                    input = text
-                };
-                var json = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                cts.CancelAfter(TimeSpan.FromSeconds(20));
-                using var resp = await _httpClient.PostAsync("https://api.openai.com/v1/embeddings", json, cts.Token);
-                var respText = await resp.Content.ReadAsStringAsync(ct);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    _logger.LogError("OpenAI embeddings failed: {Status} {Body}", (int)resp.StatusCode, Truncate(respText, 400));
-                    if (fallbackToLocal)
-                    {
-                        _logger.LogWarning("Falling back to local hashing-based embeddings after OpenAI failure");
-                        return LocalEmbed(text);
-                    }
-                    return null;
-                }
-
-                using var doc = JsonDocument.Parse(respText);
-                var data = doc.RootElement.GetProperty("data")[0].GetProperty("embedding");
-                var arr = new float[data.GetArrayLength()];
-                var i = 0;
-                foreach (var v in data.EnumerateArray())
-                {
-                    arr[i++] = v.GetSingle();
-                }
-                return arr;
-            }
-            catch (OperationCanceledException oce)
-            {
-                _logger.LogError(oce, "OpenAI embedding request timed out");
-                if (fallbackToLocal)
-                {
-                    _logger.LogWarning("Falling back to local hashing-based embeddings after timeout");
-                    return LocalEmbed(text);
-                }
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "OpenAI embedding call failed");
-                if (fallbackToLocal)
-                {
-                    _logger.LogWarning("Falling back to local hashing-based embeddings after exception");
-                    return LocalEmbed(text);
-                }
-                return null;
-            }
+            var result = await _embeddingProvider.GenerateEmbeddingAsync(text, ct: ct);
+            return result;
         }
-
-        // Local provider placeholder: simple hashing-based embedding to allow dev without network
-        return LocalEmbed(text);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate embedding for text of length {Length}", text.Length);
+            
+            // Fallback to local hash-based embedding for development
+            _logger.LogWarning("Falling back to local hash-based embeddings (dev mode)");
+            return LocalEmbed(text);
+        }
     }
 
     private float[] LocalEmbed(string text)
@@ -179,8 +110,8 @@ public class EmbeddingService : IEmbeddingService
                 var embeddingRecord = new Models.Embedding
                 {
                     ChunkId = chunk.Id,
-                    Provider = _configuration["Embedding:Provider"] ?? "openai",
-                    Model = _configuration["Embedding:Model"] ?? "text-embedding-3-small",
+                    Provider = _embeddingProvider.Name,
+                    Model = "auto", // Provider determines model
                     Dim = embedding.Length,
                     VectorRef = $"chunk:{chunk.Id}",
                     CreatedAt = DateTime.UtcNow
