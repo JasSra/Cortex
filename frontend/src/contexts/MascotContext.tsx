@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import Mascot, { MascotState } from '../components/Mascot'
 import SpriteMascot from '@/components/mascot/SpriteMascot'
+import { useUserApi } from '@/services/apiClient'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface MascotContextType {
   state: MascotState
@@ -37,6 +39,27 @@ export const MascotProvider: React.FC<MascotProviderProps> = ({
   const [state, setState] = useState<MascotState>('idle')
   const [message, setMessage] = useState<string | undefined>()
   const [selectedMascotId, setSelectedMascotIdState] = useState<string | undefined>(undefined)
+  const [mascotEnabled, setMascotEnabled] = useState<boolean>(true)
+  
+  const { isAuthenticated } = useAuth()
+  const { getSettings } = useUserApi()
+
+  // Load mascot enabled setting
+  useEffect(() => {
+    if (!isAuthenticated) return
+    
+    const loadSettings = async () => {
+      try {
+        const settings = await getSettings()
+        setMascotEnabled(settings?.mascotEnabled ?? true)
+      } catch (error) {
+        console.warn('Failed to load mascot settings, defaulting to enabled:', error)
+        setMascotEnabled(true)
+      }
+    }
+    
+    loadSettings()
+  }, [isAuthenticated, getSettings])
 
   // Load/persist selected mascot
   useEffect(() => {
@@ -162,23 +185,25 @@ export const MascotProvider: React.FC<MascotProviderProps> = ({
   return (
     <MascotContext.Provider value={contextValue}>
       {children}
-      {selectedMascotId ? (
-        <SpriteMascot
-          mascotId={selectedMascotId}
-          state={state}
-          message={message}
-          position={position}
-          size={size}
-          onInteraction={handleMascotInteraction}
-        />
-      ) : (
-        <Mascot
-          state={state}
-          message={message}
-          position={position}
-          size={size}
-          onInteraction={handleMascotInteraction}
-        />
+      {mascotEnabled && (
+        selectedMascotId ? (
+          <SpriteMascot
+            mascotId={selectedMascotId}
+            state={state}
+            message={message}
+            position={position}
+            size={size}
+            onInteraction={handleMascotInteraction}
+          />
+        ) : (
+          <Mascot
+            state={state}
+            message={message}
+            position={position}
+            size={size}
+            onInteraction={handleMascotInteraction}
+          />
+        )
       )}
     </MascotContext.Provider>
   )

@@ -15,6 +15,7 @@ import KnowledgeGraphPage from './pages/KnowledgeGraphPage'
 import JobsPage from './pages/JobsPage'
 import SystemPage from './pages/SystemPage'
 import WorkspaceView from './workspace/WorkspaceView'
+import ConfigurationPage from '../app/config/page'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface PageRendererProps {
@@ -57,6 +58,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({ activeView, onViewChange })
       return <JobsPage />
     case 'system':
       return <SystemPage />
+    case 'config':
+      return <ConfigurationPage />
     default:
       return (
         <div className="p-6">

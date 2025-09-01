@@ -9,10 +9,14 @@ import {
   BookmarkIcon,
   TagIcon,
   CalendarIcon,
-  ArrowLeftIcon
+  ArrowLeftIcon,
+  ClipboardDocumentIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline'
 import { useWorkspaceApi, useNotesApi, useAssistApi, useClassificationApi, useTagsApi } from '../../services/apiClient'
 import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
+import ProgressDialog from '@/components/common/ProgressDialog'
+import { formatRelativeTime, formatTimeWithTooltip } from '@/lib/timeUtils'
 
 interface WorkspaceEditorProps {
   noteId: string | null
@@ -51,7 +55,7 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
   
   const { updateWorkspace, trackNoteAccess } = useWorkspaceApi()
   const { getNote, updateNote } = useNotesApi()
-  const { assist } = useAssistApi()
+  const { assist, generateSummary, classifyContent } = useAssistApi()
   const { classifyNote } = useClassificationApi()
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
@@ -59,6 +63,22 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
   const [showRecent, setShowRecent] = useState(false)
   const [recentNotes, setRecentNotes] = useState<Array<{ id: string, title: string, updatedAt?: string }>>([])
   const [tagInput, setTagInput] = useState('')
+  
+  // Progress dialog state
+  const [progressDialog, setProgressDialog] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    progress?: number
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    progress: undefined
+  })
+  
+  // Text selection state
+  const [selectedText, setSelectedText] = useState('')
   const [tagSuggestions, setTagSuggestions] = useState<string[] | null>(null)
   const tagsApi = useTagsApi()
   const [allTags, setAllTags] = useState<string[]>([])
@@ -351,6 +371,82 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
     }
   }, [assist, content])
 
+  // Enhanced AI functions with progress dialogs
+  const aiSummarizeWithProgress = useCallback(async (textToSummarize?: string) => {
+    const text = textToSummarize || selectedText || content
+    if (!text) return
+
+    setProgressDialog({
+      isOpen: true,
+      title: 'AI Summary',
+      message: 'Generating intelligent summary...',
+      progress: undefined
+    })
+
+    try {
+      const response = await generateSummary({ content: text, maxLength: 150 })
+      setAiOutput(response.summary)
+      setProgressDialog(prev => ({ ...prev, isOpen: false }))
+    } catch (error) {
+      console.error('Summary generation failed:', error)
+      setProgressDialog(prev => ({ ...prev, isOpen: false }))
+      setError('Failed to generate summary')
+    }
+  }, [generateSummary, selectedText, content])
+
+  const aiClassifyWithProgress = useCallback(async (textToClassify?: string) => {
+    const text = textToClassify || selectedText || content
+    if (!text) return
+
+    setProgressDialog({
+      isOpen: true,
+      title: 'AI Classification',
+      message: 'Analyzing content and extracting insights...',
+      progress: undefined
+    })
+
+    try {
+      const response = await classifyContent({ content: text })
+      setAiOutput(`Classification Results:
+Tags: ${response.tags.join(', ')}
+Sensitivity: ${response.sensitivity}/10 (${Math.round(response.sensitivityScore * 100)}% confidence)
+Summary: ${response.summary}`)
+      
+      // If we have tag suggestions, show them
+      if (response.tags.length > 0) {
+        setTagSuggestions(response.tags)
+      }
+      
+      setProgressDialog(prev => ({ ...prev, isOpen: false }))
+    } catch (error) {
+      console.error('Classification failed:', error)
+      setProgressDialog(prev => ({ ...prev, isOpen: false }))
+      setError('Failed to classify content')
+    }
+  }, [classifyContent, selectedText, content])
+
+  // Handle text selection
+  const handleTextSelection = useCallback((selectedText: string) => {
+    setSelectedText(selectedText)
+  }, [])
+
+  // Copy content to clipboard
+  const copyToClipboard = useCallback(async (text?: string) => {
+    const textToCopy = text || selectedText || content || title
+    if (!textToCopy) return
+
+    try {
+      await navigator.clipboard.writeText(textToCopy)
+      // Show brief success indicator
+      const originalOutput = aiOutput
+      setAiOutput('✓ Copied to clipboard!')
+      setTimeout(() => setAiOutput(originalOutput), 2000)
+    } catch (error) {
+      console.error('Copy failed:', error)
+      setError('Failed to copy text')
+    }
+  }, [selectedText, content, title, aiOutput])
+
   const formatDate = (timestamp?: string) => {
     if (!timestamp) return ''
     return new Date(timestamp).toLocaleDateString('en-US', {
@@ -505,6 +601,7 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
                     initialContent={content}
                     onChange={(t) => handleContentChange(t)}
                     onSave={() => saveNote(true)}
+                    onSelect={handleTextSelection}
                   />
                 </div>
               ) : (
@@ -536,7 +633,11 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
                 <span>{content.length} characters</span>
                 <span>{content.trim() ? content.trim().split(/\s+/).length : 0} words</span>
                 <span>{content.split('\n').length} lines</span>
-                {lastSavedAt && <span>Saved {lastSavedAt}</span>}
+                {lastSavedAt && (
+                  <span title={new Date(lastSavedAt).toLocaleString()}>
+                    Saved {formatRelativeTime(lastSavedAt)}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -546,27 +647,39 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
                 Editing • Ctrl+S to save
               </span>
             )}
-            {/* Quick actions: AI and classification on demand */}
+            
+            {/* Enhanced toolbar with copy button and better AI features */}
             <button
-              className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 disabled:opacity-50"
-              onClick={async () => {
-                if (!content) return
-                setAiBusy(true); setAiOutput('')
-                try { const r = await assist({ mode: 'summarize', context: content.slice(-4000), maxTokens: 160, temperature: 0.2 }); setAiOutput(r?.text || '') } finally { setAiBusy(false) }
-              }}
-              disabled={aiBusy}
-            >AI Summarize</button>
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+              onClick={() => copyToClipboard()}
+              title="Copy content to clipboard"
+            >
+              <ClipboardDocumentIcon className="w-4 h-4" />
+              Copy
+            </button>
+            
             <button
-              className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 disabled:opacity-50"
-              onClick={async () => {
-                if (!note) return
-                setAiBusy(true)
-                try { await classifyNote(note.id); const fresh = await getNote(note.id); const t = fresh.tags ?? fresh.Tags ?? ''; const arr = Array.isArray(t)? t : (typeof t==='string'? t.split(',').map((x:string)=>x.trim()).filter(Boolean):[]); setNote(prev => prev? { ...prev, tags: arr }: prev) } finally { setAiBusy(false) }
-              }}
-              disabled={aiBusy}
-            >Classify Now</button>
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 disabled:opacity-50 transition-colors"
+              onClick={() => aiSummarizeWithProgress()}
+              disabled={aiBusy || progressDialog.isOpen}
+              title={selectedText ? 'Summarize selected text' : 'Summarize content'}
+            >
+              <SparklesIcon className="w-4 h-4" />
+              {selectedText ? 'Summarize Selection' : 'AI Summary'}
+            </button>
+            
             <button
-              className={`px-2 py-1 rounded ${showRecent ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-gray-100 dark:bg-slate-700'}`}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 hover:bg-purple-200 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 disabled:opacity-50 transition-colors"
+              onClick={() => aiClassifyWithProgress()}
+              disabled={aiBusy || progressDialog.isOpen}
+              title={selectedText ? 'Classify selected text' : 'Classify content'}
+            >
+              <TagIcon className="w-4 h-4" />
+              {selectedText ? 'Classify Selection' : 'Classify'}
+            </button>
+            
+            <button
+              className={`px-2 py-1 rounded transition-colors ${showRecent ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600'}`}
               onClick={async () => { const next = !showRecent; setShowRecent(next); if (next) await loadRecent() }}
             >Recent</button>
           </div>
@@ -605,13 +718,28 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
                   title={n.title}
                 >
                   <div className="truncate text-gray-800 dark:text-gray-200">{n.title}</div>
-                  <div className="text-[10px] text-gray-500">{n.updatedAt ? new Date(n.updatedAt).toLocaleString() : ''}</div>
+                  <div 
+                    className="text-[10px] text-gray-500"
+                    title={n.updatedAt ? new Date(n.updatedAt).toLocaleString() : ''}
+                  >
+                    {n.updatedAt ? formatRelativeTime(n.updatedAt) : ''}
+                  </div>
                 </button>
               ))}
             </div>
           </div>
         )}
       </div>
+
+      {/* Progress Dialog for AI operations */}
+      <ProgressDialog
+        isOpen={progressDialog.isOpen}
+        onClose={() => setProgressDialog(prev => ({ ...prev, isOpen: false }))}
+        title={progressDialog.title}
+        message={progressDialog.message}
+        progress={progressDialog.progress}
+        canCancel={true}
+      />
     </motion.div>
   )
 }

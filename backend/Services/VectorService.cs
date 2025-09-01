@@ -124,28 +124,31 @@ public class VectorService : IVectorService
         await _db.ExecuteAsync("JSON.SET", key, "$", json);
     }
 
-    public async Task<List<(string chunkId, double score)>> KnnAsync(float[] query, int topK, string? userId, CancellationToken ct = default)
+    public async Task<List<(string chunkId, double score)>> KnnAsync(float[] queryVector, int topK, string? userId, CancellationToken ct = default)
     {
         // Use FT.SEARCH with KNN vector query
         var list = new List<(string chunkId, double score)>();
         EnsureConnected();
         if (!_connected || _db is null) return list;
 
-        var blob = new byte[query.Length * sizeof(float)];
-        Buffer.BlockCopy(query, 0, blob, 0, blob.Length);
+        var blob = new byte[queryVector.Length * sizeof(float)];
+        Buffer.BlockCopy(queryVector, 0, blob, 0, blob.Length);
 
         // TAG filter on userId if provided
-        var filter = string.IsNullOrWhiteSpace(userId) ? "*" : $"@userId:{{{userId}}}";
+        var userFilter = string.IsNullOrWhiteSpace(userId) ? "*" : $"@userId:{{{userId}}}";
+        
+        // Use KNN syntax for Redis Stack 2.x
+        var query = $"*=>[KNN {topK} @embedding $vec]";
+        if (!string.IsNullOrEmpty(userFilter))
+        {
+            query = $"({userFilter})=>[KNN {topK} @embedding $vec]";
+        }
 
-        // Request the vector distance via __score and sort ascending (smaller distance is better)
         var args = new List<object?>
         {
             "idx:chunks",
-            filter,
-            "KNN", topK.ToString(), "@embedding", "$vec_blob",
-            "PARAMS","2","vec_blob", blob,
-            "SORTBY","__score",
-            "RETURN","1","__score",
+            query,
+            "PARAMS","2","vec", blob,
             "LIMIT","0", topK.ToString(),
             "DIALECT","2"
         };
@@ -163,27 +166,10 @@ public class VectorService : IVectorService
             {
                 var key = arr[i].ToString() ?? string.Empty;
                 string chunkId = key.StartsWith("chunk:") ? key.Substring("chunk:".Length) : key;
-                double distance = 0.0;
-
-                if (i + 1 < arr.Length && arr[i + 1].Resp2Type == StackExchange.Redis.ResultType.Array)
-                {
-                    var fields = (StackExchange.Redis.RedisResult[]?)arr[i + 1];
-                    if (fields != null)
-                    {
-                        for (int f = 0; f + 1 < fields.Length; f += 2)
-                        {
-                            var name = fields[f].ToString();
-                            if (string.Equals(name, "__score", StringComparison.Ordinal))
-                            {
-                                double.TryParse(fields[f + 1].ToString(), out distance);
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Convert cosine distance (0..2) to similarity (1 - distance), clamp to [0,1]
-                var similarity = Math.Max(0.0, Math.Min(1.0, 1.0 - distance));
+                
+                // Since we're not requesting score, just use a default similarity
+                // The results are already ordered by relevance from Redis
+                var similarity = 1.0 - (double)(i - 1) / (2.0 * arr.Length); // Decreasing similarity based on position
                 list.Add((chunkId, similarity));
             }
         }

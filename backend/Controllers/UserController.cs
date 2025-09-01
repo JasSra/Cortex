@@ -171,6 +171,85 @@ namespace CortexApi.Controllers
         }
 
         /// <summary>
+        /// Delete user's data (notes, files, etc.) but keep the user profile
+        /// </summary>
+        [HttpDelete("data")]
+        public async Task<ActionResult> DeleteUserData()
+        {
+            try
+            {
+                var userSubjectId = _userContext.UserSubjectId;
+                var userId = _userContext.UserId;
+
+                if (string.IsNullOrWhiteSpace(userSubjectId) && string.IsNullOrWhiteSpace(userId))
+                {
+                    return Unauthorized(new { message = "Unauthorized" });
+                }
+
+                var profile = await _context.UserProfiles
+                    .FirstOrDefaultAsync(p => p.SubjectId == userSubjectId);
+
+                if (profile == null)
+                {
+                    return NotFound(new { message = "User profile not found" });
+                }
+
+                // Perform data deletion in a single transaction to ensure consistency
+                using var tx = await _context.Database.BeginTransactionAsync();
+
+                // 1) Delete user Notes (and cascade to Chunks, Embeddings, Classifications, NoteTags, TextSpans)
+                var notes = await _context.Notes
+                    .IgnoreQueryFilters() // bypass per-user/soft-delete filters
+                    .Where(n => n.UserId == userId)
+                    .ToListAsync();
+                if (notes.Count > 0)
+                {
+                    _context.Notes.RemoveRange(notes);
+                }
+
+                // 2) Delete StoredFiles owned by the user
+                var files = await _context.StoredFiles
+                    .Where(f => f.UserId == userId)
+                    .ToListAsync();
+                if (files.Count > 0)
+                {
+                    _context.StoredFiles.RemoveRange(files);
+                }
+
+                // 3) Reset user stats but keep the profile
+                profile.TotalNotes = 0;
+                profile.TotalSearches = 0;
+                profile.ExperiencePoints = 0;
+                profile.Level = 1;
+                profile.LoginStreak = 0;
+                profile.LastStreakDate = null;
+                profile.TotalTimeSpentMinutes = 0;
+                profile.UpdatedAt = DateTime.UtcNow;
+
+                // 4) Delete user achievements
+                var achievements = await _context.UserAchievements
+                    .Where(a => a.UserProfileId == profile.Id)
+                    .ToListAsync();
+                if (achievements.Count > 0)
+                {
+                    _context.UserAchievements.RemoveRange(achievements);
+                }
+
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                _logger.LogInformation("Deleted user data but kept profile. SubjectId: {SubjectId}, UserId: {UserId}. NotesDeleted: {NotesCount}, FilesDeleted: {FilesCount}, AchievementsDeleted: {AchievementsCount}",
+                    userSubjectId, userId, notes.Count, files.Count, achievements.Count);
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting user data");
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+
+        /// <summary>
         /// Delete user profile and all associated data
         /// </summary>
         [HttpDelete("profile")]

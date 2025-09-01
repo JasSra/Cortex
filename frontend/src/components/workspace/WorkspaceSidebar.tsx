@@ -89,7 +89,7 @@ export default function WorkspaceSidebar({
     
     return notesToFilter.filter(note => 
       note.title.toLowerCase().includes(query) ||
-      note.tags.some(tag => tag.toLowerCase().includes(query)) ||
+      (Array.isArray(note.tags) && note.tags.some(tag => tag.toLowerCase().includes(query))) ||
       (note.content && note.content.toLowerCase().includes(query))
     )
   }, [allNotes, recentNotes, searchQuery, activeTab])
@@ -124,7 +124,9 @@ export default function WorkspaceSidebar({
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
     allNotes.forEach(note => {
-      note.tags.forEach(tag => tagSet.add(tag))
+      // Ensure tags is an array before iterating
+      const tags = Array.isArray(note.tags) ? note.tags : []
+      tags.forEach(tag => tagSet.add(tag))
     })
     return Array.from(tagSet).sort()
   }, [allNotes])
@@ -188,7 +190,7 @@ export default function WorkspaceSidebar({
       }
       
       // Tag suggestions based on content analysis
-      const untaggedNotes = allNotes.filter(note => note.tags.length === 0)
+      const untaggedNotes = allNotes.filter(note => !Array.isArray(note.tags) || note.tags.length === 0)
       if (untaggedNotes.length > 0) {
         suggestions.push({
           id: 'auto-tag',
@@ -254,7 +256,7 @@ export default function WorkspaceSidebar({
     if (!autoTaggingEnabled || tagGenerationProgress[noteId]) return
     
     const note = allNotes.find(n => n.id === noteId)
-    if (!note || note.tags.length > 0) return
+    if (!note || (Array.isArray(note.tags) && note.tags.length > 0)) return
     
     try {
       setTagGenerationProgress(prev => ({ ...prev, [noteId]: true }))
@@ -306,14 +308,34 @@ export default function WorkspaceSidebar({
       console.log('Notes response:', notesResponse)
       
       // Transform the API response to our Note interface
-      const notes: Note[] = (notesResponse || []).map((note: any) => ({
-        id: note.id || note.noteId || note.NoteId,
-        title: note.title || note.Title || 'Untitled Note',
-        content: note.content || note.Content || '',
-        tags: note.tags || note.Tags || [],
-        createdAt: note.createdAt || note.CreatedAt || new Date().toISOString(),
-        updatedAt: note.updatedAt || note.UpdatedAt || new Date().toISOString(),
-      }))
+      const notes: Note[] = (notesResponse || []).map((note: any) => {
+        // Handle tags - ensure they're always an array
+        let tags: string[] = []
+        if (note.tags || note.Tags) {
+          const rawTags = note.tags || note.Tags
+          if (Array.isArray(rawTags)) {
+            tags = rawTags
+          } else if (typeof rawTags === 'string') {
+            // Try to parse as JSON first, fall back to comma-separated
+            try {
+              const parsed = JSON.parse(rawTags)
+              tags = Array.isArray(parsed) ? parsed : []
+            } catch {
+              // Fall back to comma-separated
+              tags = rawTags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+            }
+          }
+        }
+        
+        return {
+          id: note.id || note.noteId || note.NoteId,
+          title: note.title || note.Title || 'Untitled Note',
+          content: note.content || note.Content || '',
+          tags,
+          createdAt: note.createdAt || note.CreatedAt || new Date().toISOString(),
+          updatedAt: note.updatedAt || note.UpdatedAt || new Date().toISOString(),
+        }
+      })
       
       setAllNotes(notes)
       
@@ -325,11 +347,31 @@ export default function WorkspaceSidebar({
         // Transform recent notes and match with full notes data
         const recentNotesData = (recentResponse || []).map((recentNote: any) => {
           const fullNote = notes.find(n => n.id === recentNote.id)
-          return fullNote || {
+          if (fullNote) {
+            return fullNote
+          }
+          
+          // Handle tags for recent notes that don't match full notes
+          let tags: string[] = []
+          if (recentNote.tags) {
+            const rawTags = recentNote.tags
+            if (Array.isArray(rawTags)) {
+              tags = rawTags
+            } else if (typeof rawTags === 'string') {
+              try {
+                const parsed = JSON.parse(rawTags)
+                tags = Array.isArray(parsed) ? parsed : []
+              } catch {
+                tags = rawTags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+              }
+            }
+          }
+          
+          return {
             id: recentNote.id,
             title: recentNote.title || 'Untitled Note',
             content: '',
-            tags: recentNote.tags || [],
+            tags,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             lastAccessed: recentNote.lastAccessed
@@ -746,6 +788,7 @@ export default function WorkspaceSidebar({
                                     onChange={() => toggleSelected(note.id)}
                                     className="absolute left-2 top-2"
                                     onClick={(e) => e.stopPropagation()}
+                                    aria-label={`Select note: ${note.title}`}
                                   />
                                 )}
                                 {/* Auto-tagging progress indicator */}

@@ -41,6 +41,8 @@ public class Note
     
     public int ChunkCount { get; set; }
     
+    public int WordCount { get; set; }
+    
     public string Tags { get; set; } = string.Empty; // JSON array
     
     public virtual ICollection<NoteChunk> Chunks { get; set; } = new List<NoteChunk>();
@@ -52,7 +54,9 @@ public class Note
 public class CreateNoteRequest
 {
     public string? Title { get; set; }
-    [Required]
+    /// <summary>
+    /// Note content. If empty, a default placeholder will be provided.
+    /// </summary>
     public string Content { get; set; } = string.Empty;
 }
 
@@ -1238,4 +1242,45 @@ public class ValidationWarning
     public string Key { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
+}
+
+// AI Suggestions and Processing Models
+public class AssistRequest
+{
+    public string? Prompt { get; set; }
+    public string? Context { get; set; }
+    public string? Mode { get; set; } // suggest, summarize, rewrite
+    public string? Provider { get; set; } // openai, ollama
+    public int? MaxTokens { get; set; }
+    public double? Temperature { get; set; }
+}
+
+public class AssistResponse
+{
+    public string Text { get; set; } = string.Empty;
+}
+
+public class SummaryRequest
+{
+    public string Content { get; set; } = string.Empty;
+    public int? MaxLength { get; set; }
+}
+
+public class SummaryResponse
+{
+    public string Summary { get; set; } = string.Empty;
+    public int WordCount { get; set; }
+}
+
+public class ClassificationRequest
+{
+    public string Content { get; set; } = string.Empty;
+    public string? NoteId { get; set; }
+}
+
+public class EntityInsights
+{
+    public List<string> TopEntities { get; set; } = new();
+    public List<string> RecentConnections { get; set; } = new();
+    public List<string> SuggestedExplorations { get; set; } = new();
 }

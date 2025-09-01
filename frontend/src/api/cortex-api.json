@@ -42,6 +42,30 @@
         }
       }
     },
+    "/api/Admin/indexing/audit": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Admin/indexing/repair-missing-chunks": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
     "/api/Admin/embed/reindex": {
       "post": {
         "tags": [
@@ -3329,6 +3353,150 @@
         }
       }
     },
+    "/api/Suggestions/assist": {
+      "post": {
+        "tags": [
+          "Suggestions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Suggestions/summary": {
+      "post": {
+        "tags": [
+          "Suggestions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummaryRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummaryRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummaryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Suggestions/classify": {
+      "post": {
+        "tags": [
+          "Suggestions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/Suggestions/digest/today": {
       "get": {
         "tags": [
@@ -3358,7 +3526,7 @@
         }
       }
     },
-    "/api/Suggestions/digest/{date}": {
+    "/api/Suggestions/daily-digest": {
       "get": {
         "tags": [
           "Suggestions"
@@ -3366,8 +3534,7 @@
         "parameters": [
           {
             "name": "date",
-            "in": "path",
-            "required": true,
+            "in": "query",
             "schema": {
               "type": "string",
               "format": "date-time"
@@ -3446,7 +3613,7 @@
         }
       }
     },
-    "/api/Suggestions/entities/insights": {
+    "/api/Suggestions/insights": {
       "get": {
         "tags": [
           "Suggestions"
@@ -3820,6 +3987,18 @@
           }
         }
       },
+      "delete": {
+        "tags": [
+          "User"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/User/data": {
       "delete": {
         "tags": [
           "User"
@@ -4570,6 +4749,30 @@
         },
         "additionalProperties": false
       },
+      "ActivitySummary": {
+        "type": "object",
+        "properties": {
+          "notesCreated": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "topCategories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryCount"
+            },
+            "nullable": true
+          },
+          "trendingEntities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityTrend"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "AdvancedSearchRequest": {
         "type": "object",
         "properties": {
@@ -4649,6 +4852,48 @@
             "nullable": true
           },
           "source": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AssistRequest": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "nullable": true
+          },
+          "context": {
+            "type": "string",
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "nullable": true
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxTokens": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "temperature": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AssistResponse": {
+        "type": "object",
+        "properties": {
+          "text": {
             "type": "string",
             "nullable": true
           }
@@ -4810,6 +5055,20 @@
         },
         "additionalProperties": false
       },
+      "CategoryCount": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "nullable": true
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "ChatToolsRequest": {
         "type": "object",
         "properties": {
@@ -4878,6 +5137,75 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ClassificationRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "nullable": true
+          },
+          "noteId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ClassificationResponse": {
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "nullable": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "sensitivity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sensitivityScore": {
+            "type": "number",
+            "format": "double"
+          },
+          "pii": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double"
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -5001,9 +5329,6 @@
         "additionalProperties": false
       },
       "CreateNoteRequest": {
-        "required": [
-          "content"
-        ],
         "type": "object",
         "properties": {
           "title": {
@@ -5011,8 +5336,8 @@
             "nullable": true
           },
           "content": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -5054,6 +5379,9 @@
             "type": "string",
             "nullable": true
           },
+          "recentActivity": {
+            "$ref": "#/components/schemas/ActivitySummary"
+          },
           "keyInsights": {
             "type": "array",
             "items": {
@@ -5061,16 +5389,23 @@
             },
             "nullable": true
           },
-          "recommendedActions": {
+          "proactiveSuggestions": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/ProactiveSuggestion"
             },
             "nullable": true
           },
-          "activityCount": {
-            "type": "integer",
-            "format": "int32"
+          "entityClusters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityCluster"
+            },
+            "nullable": true
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -5365,6 +5700,31 @@
         },
         "additionalProperties": false
       },
+      "EntityCluster": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "entityTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "strength": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "EntityExtraction": {
         "type": "object",
         "properties": {
@@ -5413,6 +5773,24 @@
             "items": {
               "type": "string"
             },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EntityTrend": {
+        "type": "object",
+        "properties": {
+          "entityType": {
+            "type": "string",
+            "nullable": true
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "trendDirection": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -6064,6 +6442,36 @@
         },
         "additionalProperties": false
       },
+      "ProactiveSuggestion": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "actionUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimatedTimeMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -6507,6 +6915,35 @@
       },
       "StringStringValueTuple": {
         "type": "object",
+        "additionalProperties": false
+      },
+      "SummaryRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxLength": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SummaryResponse": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "wordCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
         "additionalProperties": false
       },
       "Tag": {

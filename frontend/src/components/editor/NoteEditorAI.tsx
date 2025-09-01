@@ -11,10 +11,11 @@ export interface NoteEditorAIProps {
   placeholder?: string
   onChange?: (text: string) => void
   onSave?: (text: string) => void
+  onSelect?: (selectedText: string) => void
   className?: string
 }
 
-export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing your note…', onChange, onSave, className }: NoteEditorAIProps) {
+export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing your note…', onChange, onSave, onSelect, className }: NoteEditorAIProps) {
   const [text, setText] = useState(initialContent)
   const [suggestion, setSuggestion] = useState('')
   const [mode, setMode] = useState<Mode>('suggest')
@@ -165,7 +166,16 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
       >Rewrite</button>
       <div className="ml-auto flex items-center gap-2">
         <label className="text-xs text-gray-600 dark:text-gray-400">Debounce</label>
-        <input type="range" min={200} max={1200} step={50} value={debounceMs} onChange={e => setDebounceMs(parseInt(e.target.value))} />
+        <input 
+          type="range" 
+          min={200} 
+          max={1200} 
+          step={50} 
+          value={debounceMs} 
+          onChange={e => setDebounceMs(parseInt(e.target.value))}
+          title={`Debounce delay: ${debounceMs}ms`}
+          aria-label="AI suggestion debounce delay"
+        />
       </div>
     </div>
   ), [recording, stopVoice, startVoice, doSummarize, doRewrite, debounceMs])
@@ -180,6 +190,13 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
             placeholder={placeholder}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onSelect={(e) => {
+              const target = e.target as HTMLTextAreaElement
+              const start = target.selectionStart
+              const end = target.selectionEnd
+              const selectedText = text.substring(start, end).trim()
+              onSelect?.(selectedText)
+            }}
           />
           <div className="mt-3 flex gap-2">
             <button

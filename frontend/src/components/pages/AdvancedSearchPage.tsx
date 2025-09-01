@@ -222,7 +222,12 @@ const AdvancedSearchPage: React.FC = () => {
         tags: h.Tags || [],
         fileType: h.FileType,
         chunkIndex: h.ChunkIndex ?? 0,
-        wordCount: (h.Content || h.Snippet || '').split(/\s+/).length || 0,
+        wordCount: (() => {
+          const content = h.Content || h.Snippet || '';
+          if (!content.trim()) return 0;
+          const words = content.trim().split(/\s+/).filter((word: string) => word.length > 0);
+          return words.length;
+        })(),
       }
     }))
   }, [])

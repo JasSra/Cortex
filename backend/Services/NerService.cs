@@ -169,8 +169,19 @@ public class NerService : INerService
             var maxLen = 6000; // keep payload modest
             var sample = text.Length > maxLen ? text.Substring(0, maxLen) : text;
 
-            var system = "You extract entities from text. Return JSON only with an 'entities' array. Types: PERSON, ORG, LOCATION, PROJECT, ID, CONCEPT.";
-            var user = $"Text:\n{sample}\n\nReturn JSON: {{\"entities\":[{{\"type\":\"...\",\"value\":\"...\",\"start\":0,\"end\":0,\"confidence\":0.0}}]}}";
+            var system = @"You are an expert named entity recognition system. Extract entities from text with high precision.
+
+PERSON entities must be:
+- Full names of real people (first + last name, or well-known single names)
+- NOT technical terms, generic words, or common nouns
+- NOT words like: token, user, admin, client, server, system, etc.
+
+Return JSON only with this exact format:
+{""entities"":[{""type"":""PERSON"",""value"":""John Smith"",""start"":0,""end"":10,""confidence"":0.9}]}
+
+Valid types: PERSON, ORG, LOCATION, PROJECT, ID, CONCEPT";
+
+            var user = $"Extract entities from this text. Be precise - only extract clear, unambiguous entities:\n\n{sample}";
 
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
@@ -208,6 +219,14 @@ public class NerService : INerService
                     var type = el.TryGetProperty("type", out var t) ? (t.GetString() ?? "CONCEPT").ToUpperInvariant() : "CONCEPT";
                     var value = el.TryGetProperty("value", out var v) ? (v.GetString() ?? string.Empty).Trim() : string.Empty;
                     if (string.IsNullOrWhiteSpace(value)) continue;
+
+                    // Additional validation for PERSON entities
+                    if (type == "PERSON" && !IsValidPersonName(value))
+                    {
+                        _logger.LogDebug("Filtered invalid person entity: {Entity}", value);
+                        continue;
+                    }
+
                     var start = el.TryGetProperty("start", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.Number ? s.GetInt32() : 0;
                     var end = el.TryGetProperty("end", out var e) && e.ValueKind == System.Text.Json.JsonValueKind.Number ? e.GetInt32() : Math.Min(start + value.Length, sample.Length);
                     var conf = el.TryGetProperty("confidence", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.Number ? c.GetDouble() : 0.8;
@@ -221,6 +240,50 @@ public class NerService : INerService
             _logger.LogWarning(ex, "OpenAI NER error; falling back");
             return new List<EntityExtraction>();
         }
+    }
+
+    private bool IsValidPersonName(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.Length < 2)
+            return false;
+
+        // Common technical terms that should not be considered person names
+        var invalidTerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "token", "user", "admin", "client", "server", "system", "api", "key", "id", 
+            "value", "data", "config", "session", "request", "response", "endpoint",
+            "service", "provider", "handler", "controller", "manager", "helper",
+            "context", "model", "entity", "object", "item", "element", "component",
+            "interface", "class", "method", "function", "variable", "parameter",
+            "property", "field", "attribute", "namespace", "module", "package",
+            "library", "framework", "platform", "application", "software", "program",
+            "process", "thread", "task", "job", "queue", "cache", "database", "table",
+            "column", "row", "record", "document", "file", "folder", "directory",
+            "path", "url", "uri", "link", "address", "port", "host", "domain",
+            "network", "connection", "protocol", "schema", "format", "type", "kind",
+            "status", "state", "mode", "level", "priority", "category", "group",
+            "role", "permission", "access", "auth", "login", "logout", "signin",
+            "signup", "register", "account", "profile", "settings", "preferences",
+            "options", "configuration", "parameters", "arguments", "flags", "switches"
+        };
+
+        if (invalidTerms.Contains(text))
+            return false;
+
+        // Must contain at least one letter
+        if (!text.Any(char.IsLetter))
+            return false;
+
+        // Should not be all uppercase technical terms
+        if (text.All(c => char.IsUpper(c) || char.IsDigit(c) || c == '_'))
+            return false;
+
+        // Should not contain common technical patterns
+        if (text.Contains("_") || text.Contains("::") || text.Contains("->") || 
+            text.StartsWith("$") || text.StartsWith("#") || text.StartsWith("@"))
+            return false;
+
+        return true;
     }
 
     public async Task<Entity?> FindCanonicalEntityAsync(string type, string value)

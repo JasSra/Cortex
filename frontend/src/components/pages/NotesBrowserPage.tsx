@@ -108,6 +108,13 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
     return content.substring(0, maxLength) + '...'
   }
 
+  const formatTagForDisplay = (tag: string) => {
+    // Replace underscores with spaces and apply title case
+    return tag
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, l => l.toUpperCase())
+  }
+
   const IndexBadge = () => {
     const s = note.status
     if (!s) return null
@@ -131,15 +138,81 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
   const SensitiveBadges = () => {
     const s = note.status
     if (!s) return null
+    
+    // Parse PII and secret flags to show specific types detected
+    const parseFlagsToTypes = (flags: string) => {
+      if (!flags) return []
+      // PII/Secret flags might be comma-separated or JSON array strings
+      try {
+        // Try parsing as JSON first
+        if (flags.startsWith('[') && flags.endsWith(']')) {
+          const parsed = JSON.parse(flags)
+          return Array.isArray(parsed) ? parsed : []
+        }
+        // Otherwise split by comma
+        return flags.split(',').map(f => f.trim()).filter(Boolean)
+      } catch {
+        return flags.split(',').map(f => f.trim()).filter(Boolean)
+      }
+    }
+
+    const formatDetectionType = (type: string) => {
+      // Convert technical names to user-friendly labels
+      const typeMap: Record<string, string> = {
+        'EMAIL': 'Email',
+        'PHONE': 'Phone',
+        'AU_PHONE': 'Phone',
+        'AU_TFN': 'Tax File Number',
+        'AU_MEDICARE': 'Medicare',
+        'AU_ABN': 'ABN',
+        'CREDIT_CARD': 'Credit Card',
+        'US_SSN': 'SSN',
+        'IBAN': 'Bank Account',
+        'SWIFT_BIC': 'Bank Code',
+        'DRIVERS_LICENSE': 'License',
+        'PASSPORT': 'Passport',
+        'API_KEY': 'API Key',
+        'PASSWORD': 'Password',
+        'JWT_TOKEN': 'Token',
+        'AWS_ACCESS_KEY': 'AWS Key',
+        'GITHUB_TOKEN': 'GitHub Token',
+        'PRIVATE_KEY': 'Private Key'
+      }
+      return typeMap[type.toUpperCase()] || type.replace(/_/g, ' ')
+    }
+
+    // Get the actual PII and secret flag strings from the note
+    const piiFlags = (note as any).piiFlags || (note as any).PiiFlags || ''
+    const secretFlags = (note as any).secretFlags || (note as any).SecretFlags || ''
+    
+    const piiTypes = parseFlagsToTypes(piiFlags)
+    const secretTypes = parseFlagsToTypes(secretFlags)
+
     return (
       <div className="flex flex-wrap items-center gap-1">
         {s.redactionRequired && (
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">Sensitive</span>
         )}
-        {s.hasPii && (
+        {s.hasPii && piiTypes.length > 0 && (
+          <span 
+            className="px-2 py-0.5 rounded-full text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 cursor-help"
+            title={`PII Detected: ${piiTypes.map(formatDetectionType).join(', ')}`}
+          >
+            PII ({piiTypes.length})
+          </span>
+        )}
+        {s.hasPii && piiTypes.length === 0 && (
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">PII</span>
         )}
-        {s.hasSecrets && (
+        {s.hasSecrets && secretTypes.length > 0 && (
+          <span 
+            className="px-2 py-0.5 rounded-full text-[10px] bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 cursor-help"
+            title={`Secrets Detected: ${secretTypes.map(formatDetectionType).join(', ')}`}
+          >
+            Secrets ({secretTypes.length})
+          </span>
+        )}
+        {s.hasSecrets && secretTypes.length === 0 && (
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Secrets</span>
         )}
       </div>
@@ -200,7 +273,7 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
                 key={tag}
                 className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded-full"
               >
-                {tag}
+                {formatTagForDisplay(tag)}
               </span>
             ))}
             {(note.tags?.length || 0) > 3 && (
@@ -250,7 +323,7 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
                       key={tag}
                       className="px-2 py-1 bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs rounded"
                     >
-                      {tag}
+                      {formatTagForDisplay(tag)}
                     </span>
                   ))}
                   {/* Status badges (compact) */}
@@ -398,9 +471,12 @@ const NotesBrowserPage: React.FC = () => {
             chunkCount: note.chunkCount || note.ChunkCount || 0,
             // Use Preview field for word count when Content is empty (includeContent=false)
             wordCount: (() => {
-              const contentToCount = content || (note as any).preview || (note as any).Preview || '';
-              return typeof contentToCount === 'string' && contentToCount.trim() ? 
-                contentToCount.trim().split(/\s+/).length : 0;
+              // When includeContent=false, content will be empty string, so use Preview field
+              const contentToCount = (content && content.trim()) ? content : 
+                (note.Preview || note.preview || '');
+              if (!contentToCount || !contentToCount.trim()) return 0;
+              const words = contentToCount.trim().split(/\s+/).filter((word: string) => word.length > 0);
+              return words.length;
             })(),
           },
           status: {

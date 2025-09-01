@@ -118,6 +118,72 @@ export class CortexApiClient {
     }
 
     /**
+     * @return Success
+     */
+    audit(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Admin/indexing/audit";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processAudit(_response);
+        });
+    }
+
+    protected processAudit(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    repairMissingChunks(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Admin/indexing/repair-missing-chunks";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processRepairMissingChunks(_response);
+        });
+    }
+
+    protected processRepairMissingChunks(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * @param body (optional) 
      * @return Success
      */
@@ -3346,7 +3412,7 @@ export class CortexApiClient {
      * @param userId (optional) 
      * @return Success
      */
-    audit(fromDate: Date | undefined, toDate: Date | undefined, userId: string | undefined): Promise<AuditEntry[]> {
+    auditAll(fromDate: Date | undefined, toDate: Date | undefined, userId: string | undefined): Promise<AuditEntry[]> {
         let url_ = this.baseUrl + "/api/Security/audit?";
         if (fromDate === null)
             throw new Error("The parameter 'fromDate' cannot be null.");
@@ -3370,11 +3436,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processAudit(_response);
+            return this.processAuditAll(_response);
         });
     }
 
-    protected processAudit(response: Response): Promise<AuditEntry[]> {
+    protected processAuditAll(response: Response): Promise<AuditEntry[]> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -3404,7 +3470,7 @@ export class CortexApiClient {
      * @param toDate (optional) 
      * @return Success
      */
-    summary(fromDate: Date | undefined, toDate: Date | undefined): Promise<AuditSummary> {
+    summaryGET(fromDate: Date | undefined, toDate: Date | undefined): Promise<AuditSummary> {
         let url_ = this.baseUrl + "/api/Security/audit/summary?";
         if (fromDate === null)
             throw new Error("The parameter 'fromDate' cannot be null.");
@@ -3424,11 +3490,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processSummary(_response);
+            return this.processSummaryGET(_response);
         });
     }
 
-    protected processSummary(response: Response): Promise<AuditSummary> {
+    protected processSummaryGET(response: Response): Promise<AuditSummary> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -3790,6 +3856,132 @@ export class CortexApiClient {
     }
 
     /**
+     * @param body (optional) 
+     * @return Success
+     */
+    assist(body: AssistRequest | undefined): Promise<AssistResponse> {
+        let url_ = this.baseUrl + "/api/Suggestions/assist";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processAssist(_response);
+        });
+    }
+
+    protected processAssist(response: Response): Promise<AssistResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AssistResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AssistResponse>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    summaryPOST(body: SummaryRequest | undefined): Promise<SummaryResponse> {
+        let url_ = this.baseUrl + "/api/Suggestions/summary";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processSummaryPOST(_response);
+        });
+    }
+
+    protected processSummaryPOST(response: Response): Promise<SummaryResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SummaryResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SummaryResponse>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    classify(body: ClassificationRequest | undefined): Promise<ClassificationResponse> {
+        let url_ = this.baseUrl + "/api/Suggestions/classify";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processClassify(_response);
+        });
+    }
+
+    protected processClassify(response: Response): Promise<ClassificationResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = ClassificationResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ClassificationResponse>(null as any);
+    }
+
+    /**
      * @return Success
      */
     today(): Promise<DailyDigest> {
@@ -3827,13 +4019,15 @@ export class CortexApiClient {
     }
 
     /**
+     * @param date (optional) 
      * @return Success
      */
-    digest(date: Date): Promise<DailyDigest> {
-        let url_ = this.baseUrl + "/api/Suggestions/digest/{date}";
-        if (date === undefined || date === null)
-            throw new Error("The parameter 'date' must be defined.");
-        url_ = url_.replace("{date}", encodeURIComponent(date ? "" + date.toISOString() : "null"));
+    dailyDigest(date: Date | undefined): Promise<DailyDigest> {
+        let url_ = this.baseUrl + "/api/Suggestions/daily-digest?";
+        if (date === null)
+            throw new Error("The parameter 'date' cannot be null.");
+        else if (date !== undefined)
+            url_ += "date=" + encodeURIComponent(date ? "" + date.toISOString() : "") + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -3844,11 +4038,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processDigest(_response);
+            return this.processDailyDigest(_response);
         });
     }
 
-    protected processDigest(response: Response): Promise<DailyDigest> {
+    protected processDailyDigest(response: Response): Promise<DailyDigest> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -3913,7 +4107,7 @@ export class CortexApiClient {
      * @return Success
      */
     insights2(): Promise<EntityInsights> {
-        let url_ = this.baseUrl + "/api/Suggestions/entities/insights";
+        let url_ = this.baseUrl + "/api/Suggestions/insights";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -4334,6 +4528,39 @@ export class CortexApiClient {
     }
 
     protected processProfileDELETE(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    data(): Promise<void> {
+        let url_ = this.baseUrl + "/api/User/data";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processData(_response);
+        });
+    }
+
+    protected processData(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -5096,6 +5323,66 @@ export interface IAchievement {
     userAchievements?: UserAchievement[] | undefined;
 }
 
+export class ActivitySummary implements IActivitySummary {
+    notesCreated?: number;
+    topCategories?: CategoryCount[] | undefined;
+    trendingEntities?: EntityTrend[] | undefined;
+
+    constructor(data?: IActivitySummary) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.notesCreated = _data["notesCreated"];
+            if (Array.isArray(_data["topCategories"])) {
+                this.topCategories = [] as any;
+                for (let item of _data["topCategories"])
+                    this.topCategories!.push(CategoryCount.fromJS(item));
+            }
+            if (Array.isArray(_data["trendingEntities"])) {
+                this.trendingEntities = [] as any;
+                for (let item of _data["trendingEntities"])
+                    this.trendingEntities!.push(EntityTrend.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): ActivitySummary {
+        data = typeof data === 'object' ? data : {};
+        let result = new ActivitySummary();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["notesCreated"] = this.notesCreated;
+        if (Array.isArray(this.topCategories)) {
+            data["topCategories"] = [];
+            for (let item of this.topCategories)
+                data["topCategories"].push(item.toJSON());
+        }
+        if (Array.isArray(this.trendingEntities)) {
+            data["trendingEntities"] = [];
+            for (let item of this.trendingEntities)
+                data["trendingEntities"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface IActivitySummary {
+    notesCreated?: number;
+    topCategories?: CategoryCount[] | undefined;
+    trendingEntities?: EntityTrend[] | undefined;
+}
+
 export class AdvancedSearchRequest implements IAdvancedSearchRequest {
     q?: string | undefined;
     k?: number;
@@ -5230,6 +5517,98 @@ export interface IAdvancedSearchRequest {
     dateTo?: Date | undefined;
     fileTypes?: string[] | undefined;
     source?: string | undefined;
+}
+
+export class AssistRequest implements IAssistRequest {
+    prompt?: string | undefined;
+    context?: string | undefined;
+    mode?: string | undefined;
+    provider?: string | undefined;
+    maxTokens?: number | undefined;
+    temperature?: number | undefined;
+
+    constructor(data?: IAssistRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.prompt = _data["prompt"];
+            this.context = _data["context"];
+            this.mode = _data["mode"];
+            this.provider = _data["provider"];
+            this.maxTokens = _data["maxTokens"];
+            this.temperature = _data["temperature"];
+        }
+    }
+
+    static fromJS(data: any): AssistRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new AssistRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["prompt"] = this.prompt;
+        data["context"] = this.context;
+        data["mode"] = this.mode;
+        data["provider"] = this.provider;
+        data["maxTokens"] = this.maxTokens;
+        data["temperature"] = this.temperature;
+        return data;
+    }
+}
+
+export interface IAssistRequest {
+    prompt?: string | undefined;
+    context?: string | undefined;
+    mode?: string | undefined;
+    provider?: string | undefined;
+    maxTokens?: number | undefined;
+    temperature?: number | undefined;
+}
+
+export class AssistResponse implements IAssistResponse {
+    text?: string | undefined;
+
+    constructor(data?: IAssistResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.text = _data["text"];
+        }
+    }
+
+    static fromJS(data: any): AssistResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new AssistResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["text"] = this.text;
+        return data;
+    }
+}
+
+export interface IAssistResponse {
+    text?: string | undefined;
 }
 
 export class AuditEntry implements IAuditEntry {
@@ -5563,6 +5942,46 @@ export interface IBulkTagRequest {
     remove?: string[] | undefined;
 }
 
+export class CategoryCount implements ICategoryCount {
+    category?: string | undefined;
+    count?: number;
+
+    constructor(data?: ICategoryCount) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.category = _data["category"];
+            this.count = _data["count"];
+        }
+    }
+
+    static fromJS(data: any): CategoryCount {
+        data = typeof data === 'object' ? data : {};
+        let result = new CategoryCount();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["category"] = this.category;
+        data["count"] = this.count;
+        return data;
+    }
+}
+
+export interface ICategoryCount {
+    category?: string | undefined;
+    count?: number;
+}
+
 export class ChatToolsRequest implements IChatToolsRequest {
     query?: string | undefined;
     availableTools?: string[] | undefined;
@@ -5733,6 +6152,142 @@ export interface IClassification {
     score?: number;
     model?: string | undefined;
     createdAt?: Date;
+}
+
+export class ClassificationRequest implements IClassificationRequest {
+    content?: string | undefined;
+    noteId?: string | undefined;
+
+    constructor(data?: IClassificationRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.content = _data["content"];
+            this.noteId = _data["noteId"];
+        }
+    }
+
+    static fromJS(data: any): ClassificationRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new ClassificationRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["content"] = this.content;
+        data["noteId"] = this.noteId;
+        return data;
+    }
+}
+
+export interface IClassificationRequest {
+    content?: string | undefined;
+    noteId?: string | undefined;
+}
+
+export class ClassificationResponse implements IClassificationResponse {
+    noteId?: string | undefined;
+    tags?: string[] | undefined;
+    sensitivity?: number;
+    sensitivityScore?: number;
+    pii?: string[] | undefined;
+    secrets?: string[] | undefined;
+    summary?: string | undefined;
+    confidence?: number;
+    processedAt?: Date;
+    error?: string | undefined;
+
+    constructor(data?: IClassificationResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.noteId = _data["noteId"];
+            if (Array.isArray(_data["tags"])) {
+                this.tags = [] as any;
+                for (let item of _data["tags"])
+                    this.tags!.push(item);
+            }
+            this.sensitivity = _data["sensitivity"];
+            this.sensitivityScore = _data["sensitivityScore"];
+            if (Array.isArray(_data["pii"])) {
+                this.pii = [] as any;
+                for (let item of _data["pii"])
+                    this.pii!.push(item);
+            }
+            if (Array.isArray(_data["secrets"])) {
+                this.secrets = [] as any;
+                for (let item of _data["secrets"])
+                    this.secrets!.push(item);
+            }
+            this.summary = _data["summary"];
+            this.confidence = _data["confidence"];
+            this.processedAt = _data["processedAt"] ? new Date(_data["processedAt"].toString()) : <any>undefined;
+            this.error = _data["error"];
+        }
+    }
+
+    static fromJS(data: any): ClassificationResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new ClassificationResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["noteId"] = this.noteId;
+        if (Array.isArray(this.tags)) {
+            data["tags"] = [];
+            for (let item of this.tags)
+                data["tags"].push(item);
+        }
+        data["sensitivity"] = this.sensitivity;
+        data["sensitivityScore"] = this.sensitivityScore;
+        if (Array.isArray(this.pii)) {
+            data["pii"] = [];
+            for (let item of this.pii)
+                data["pii"].push(item);
+        }
+        if (Array.isArray(this.secrets)) {
+            data["secrets"] = [];
+            for (let item of this.secrets)
+                data["secrets"].push(item);
+        }
+        data["summary"] = this.summary;
+        data["confidence"] = this.confidence;
+        data["processedAt"] = this.processedAt ? this.processedAt.toISOString() : <any>undefined;
+        data["error"] = this.error;
+        return data;
+    }
+}
+
+export interface IClassificationResponse {
+    noteId?: string | undefined;
+    tags?: string[] | undefined;
+    sensitivity?: number;
+    sensitivityScore?: number;
+    pii?: string[] | undefined;
+    secrets?: string[] | undefined;
+    summary?: string | undefined;
+    confidence?: number;
+    processedAt?: Date;
+    error?: string | undefined;
 }
 
 export class ConfigurationSectionDto implements IConfigurationSectionDto {
@@ -5977,7 +6532,7 @@ export interface IConfigurationValidationResult {
 
 export class CreateNoteRequest implements ICreateNoteRequest {
     title?: string | undefined;
-    content!: string;
+    content?: string | undefined;
 
     constructor(data?: ICreateNoteRequest) {
         if (data) {
@@ -6012,7 +6567,7 @@ export class CreateNoteRequest implements ICreateNoteRequest {
 
 export interface ICreateNoteRequest {
     title?: string | undefined;
-    content: string;
+    content?: string | undefined;
 }
 
 export class CreateUserProfileRequest implements ICreateUserProfileRequest {
@@ -6070,9 +6625,11 @@ export interface ICreateUserProfileRequest {
 export class DailyDigest implements IDailyDigest {
     date?: Date;
     summary?: string | undefined;
+    recentActivity?: ActivitySummary;
     keyInsights?: string[] | undefined;
-    recommendedActions?: string[] | undefined;
-    activityCount?: number;
+    proactiveSuggestions?: ProactiveSuggestion[] | undefined;
+    entityClusters?: EntityCluster[] | undefined;
+    generatedAt?: Date;
 
     constructor(data?: IDailyDigest) {
         if (data) {
@@ -6087,17 +6644,23 @@ export class DailyDigest implements IDailyDigest {
         if (_data) {
             this.date = _data["date"] ? new Date(_data["date"].toString()) : <any>undefined;
             this.summary = _data["summary"];
+            this.recentActivity = _data["recentActivity"] ? ActivitySummary.fromJS(_data["recentActivity"]) : <any>undefined;
             if (Array.isArray(_data["keyInsights"])) {
                 this.keyInsights = [] as any;
                 for (let item of _data["keyInsights"])
                     this.keyInsights!.push(item);
             }
-            if (Array.isArray(_data["recommendedActions"])) {
-                this.recommendedActions = [] as any;
-                for (let item of _data["recommendedActions"])
-                    this.recommendedActions!.push(item);
+            if (Array.isArray(_data["proactiveSuggestions"])) {
+                this.proactiveSuggestions = [] as any;
+                for (let item of _data["proactiveSuggestions"])
+                    this.proactiveSuggestions!.push(ProactiveSuggestion.fromJS(item));
             }
-            this.activityCount = _data["activityCount"];
+            if (Array.isArray(_data["entityClusters"])) {
+                this.entityClusters = [] as any;
+                for (let item of _data["entityClusters"])
+                    this.entityClusters!.push(EntityCluster.fromJS(item));
+            }
+            this.generatedAt = _data["generatedAt"] ? new Date(_data["generatedAt"].toString()) : <any>undefined;
         }
     }
 
@@ -6112,17 +6675,23 @@ export class DailyDigest implements IDailyDigest {
         data = typeof data === 'object' ? data : {};
         data["date"] = this.date ? this.date.toISOString() : <any>undefined;
         data["summary"] = this.summary;
+        data["recentActivity"] = this.recentActivity ? this.recentActivity.toJSON() : <any>undefined;
         if (Array.isArray(this.keyInsights)) {
             data["keyInsights"] = [];
             for (let item of this.keyInsights)
                 data["keyInsights"].push(item);
         }
-        if (Array.isArray(this.recommendedActions)) {
-            data["recommendedActions"] = [];
-            for (let item of this.recommendedActions)
-                data["recommendedActions"].push(item);
+        if (Array.isArray(this.proactiveSuggestions)) {
+            data["proactiveSuggestions"] = [];
+            for (let item of this.proactiveSuggestions)
+                data["proactiveSuggestions"].push(item.toJSON());
         }
-        data["activityCount"] = this.activityCount;
+        if (Array.isArray(this.entityClusters)) {
+            data["entityClusters"] = [];
+            for (let item of this.entityClusters)
+                data["entityClusters"].push(item.toJSON());
+        }
+        data["generatedAt"] = this.generatedAt ? this.generatedAt.toISOString() : <any>undefined;
         return data;
     }
 }
@@ -6130,9 +6699,11 @@ export class DailyDigest implements IDailyDigest {
 export interface IDailyDigest {
     date?: Date;
     summary?: string | undefined;
+    recentActivity?: ActivitySummary;
     keyInsights?: string[] | undefined;
-    recommendedActions?: string[] | undefined;
-    activityCount?: number;
+    proactiveSuggestions?: ProactiveSuggestion[] | undefined;
+    entityClusters?: EntityCluster[] | undefined;
+    generatedAt?: Date;
 }
 
 export class DeviceRegistrationRequest implements IDeviceRegistrationRequest {
@@ -6667,6 +7238,62 @@ export interface IEntity {
     incomingEdges?: Edge[] | undefined;
 }
 
+export class EntityCluster implements IEntityCluster {
+    name?: string | undefined;
+    entityTypes?: string[] | undefined;
+    strength?: number;
+    description?: string | undefined;
+
+    constructor(data?: IEntityCluster) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.name = _data["name"];
+            if (Array.isArray(_data["entityTypes"])) {
+                this.entityTypes = [] as any;
+                for (let item of _data["entityTypes"])
+                    this.entityTypes!.push(item);
+            }
+            this.strength = _data["strength"];
+            this.description = _data["description"];
+        }
+    }
+
+    static fromJS(data: any): EntityCluster {
+        data = typeof data === 'object' ? data : {};
+        let result = new EntityCluster();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["name"] = this.name;
+        if (Array.isArray(this.entityTypes)) {
+            data["entityTypes"] = [];
+            for (let item of this.entityTypes)
+                data["entityTypes"].push(item);
+        }
+        data["strength"] = this.strength;
+        data["description"] = this.description;
+        return data;
+    }
+}
+
+export interface IEntityCluster {
+    name?: string | undefined;
+    entityTypes?: string[] | undefined;
+    strength?: number;
+    description?: string | undefined;
+}
+
 export class EntityExtraction implements IEntityExtraction {
     type?: string | undefined;
     value?: string | undefined;
@@ -6785,6 +7412,50 @@ export interface IEntityInsights {
     topEntities?: string[] | undefined;
     recentConnections?: string[] | undefined;
     suggestedExplorations?: string[] | undefined;
+}
+
+export class EntityTrend implements IEntityTrend {
+    entityType?: string | undefined;
+    count?: number;
+    trendDirection?: string | undefined;
+
+    constructor(data?: IEntityTrend) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.entityType = _data["entityType"];
+            this.count = _data["count"];
+            this.trendDirection = _data["trendDirection"];
+        }
+    }
+
+    static fromJS(data: any): EntityTrend {
+        data = typeof data === 'object' ? data : {};
+        let result = new EntityTrend();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["entityType"] = this.entityType;
+        data["count"] = this.count;
+        data["trendDirection"] = this.trendDirection;
+        return data;
+    }
+}
+
+export interface IEntityTrend {
+    entityType?: string | undefined;
+    count?: number;
+    trendDirection?: string | undefined;
 }
 
 export class FolderIngestRequest implements IFolderIngestRequest {
@@ -8039,6 +8710,62 @@ export interface IPdfUrlIngestRequest {
     title?: string | undefined;
 }
 
+export class ProactiveSuggestion implements IProactiveSuggestion {
+    type?: string | undefined;
+    title?: string | undefined;
+    description?: string | undefined;
+    actionUrl?: string | undefined;
+    priority?: string | undefined;
+    estimatedTimeMinutes?: number;
+
+    constructor(data?: IProactiveSuggestion) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.type = _data["type"];
+            this.title = _data["title"];
+            this.description = _data["description"];
+            this.actionUrl = _data["actionUrl"];
+            this.priority = _data["priority"];
+            this.estimatedTimeMinutes = _data["estimatedTimeMinutes"];
+        }
+    }
+
+    static fromJS(data: any): ProactiveSuggestion {
+        data = typeof data === 'object' ? data : {};
+        let result = new ProactiveSuggestion();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["type"] = this.type;
+        data["title"] = this.title;
+        data["description"] = this.description;
+        data["actionUrl"] = this.actionUrl;
+        data["priority"] = this.priority;
+        data["estimatedTimeMinutes"] = this.estimatedTimeMinutes;
+        return data;
+    }
+}
+
+export interface IProactiveSuggestion {
+    type?: string | undefined;
+    title?: string | undefined;
+    description?: string | undefined;
+    actionUrl?: string | undefined;
+    priority?: string | undefined;
+    estimatedTimeMinutes?: number;
+}
+
 export class ProblemDetails implements IProblemDetails {
     type?: string | undefined;
     title?: string | undefined;
@@ -9051,6 +9778,86 @@ export class StringStringValueTuple implements IStringStringValueTuple {
 }
 
 export interface IStringStringValueTuple {
+}
+
+export class SummaryRequest implements ISummaryRequest {
+    content?: string | undefined;
+    maxLength?: number | undefined;
+
+    constructor(data?: ISummaryRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.content = _data["content"];
+            this.maxLength = _data["maxLength"];
+        }
+    }
+
+    static fromJS(data: any): SummaryRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SummaryRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["content"] = this.content;
+        data["maxLength"] = this.maxLength;
+        return data;
+    }
+}
+
+export interface ISummaryRequest {
+    content?: string | undefined;
+    maxLength?: number | undefined;
+}
+
+export class SummaryResponse implements ISummaryResponse {
+    summary?: string | undefined;
+    wordCount?: number;
+
+    constructor(data?: ISummaryResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.summary = _data["summary"];
+            this.wordCount = _data["wordCount"];
+        }
+    }
+
+    static fromJS(data: any): SummaryResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new SummaryResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["summary"] = this.summary;
+        data["wordCount"] = this.wordCount;
+        return data;
+    }
+}
+
+export interface ISummaryResponse {
+    summary?: string | undefined;
+    wordCount?: number;
 }
 
 export class Tag implements ITag {

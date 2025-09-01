@@ -763,6 +763,7 @@ export function useUserApi() {
   const getProfile = useCallback(() => client.profileGET() as any, [client])
   const createOrUpdateProfile = useCallback((body: any) => client.profilePUT(body) as any, [client])
   const deleteProfile = useCallback(() => client.profileDELETE() as any, [client])
+  const deleteData = useCallback(() => client.data() as any, [client])
   const getSettings = useCallback(() => client.settingsGET() as any, [client])
   const updateSettings = useCallback((settings: any) => client.settingsPUT(settings) as any, [client])
 
@@ -770,12 +771,14 @@ export function useUserApi() {
     getProfile,
     createOrUpdateProfile,
     deleteProfile,
+    deleteData,
     getSettings,
     updateSettings,
   }), [
     getProfile,
     createOrUpdateProfile,
     deleteProfile,
+    deleteData,
     getSettings,
     updateSettings,
   ])
@@ -884,6 +887,25 @@ export function useAssistApi() {
   return {
     assist: (body: { prompt?: string; context?: string; mode?: 'suggest'|'summarize'|'rewrite'; provider?: 'openai'|'ollama'; maxTokens?: number; temperature?: number }) =>
       http.post<{ text: string }>(`/api/Suggestions/assist`, body).then(r => ({ text: (r as any)?.text ?? (r as any)?.Text ?? '' })),
+    
+    // AI Summary generation
+    generateSummary: (body: { content: string; maxLength?: number }) =>
+      http.post<{ summary: string; wordCount: number }>(`/api/Suggestions/summary`, body),
+    
+    // AI Classification
+    classifyContent: (body: { content: string; noteId?: string }) =>
+      http.post<{
+        noteId: string;
+        tags: string[];
+        sensitivity: number;
+        sensitivityScore: number;
+        pii: string[];
+        secrets: string[];
+        summary: string;
+        confidence: number;
+        processedAt: string;
+        error?: string;
+      }>(`/api/Suggestions/classify`, body),
   }
 }
 

@@ -175,12 +175,14 @@ public class NotesController : ControllerBase
     {
         try 
         {
-            if (string.IsNullOrWhiteSpace(request.Content))
-                return BadRequest("Content is required");
+            // Allow empty content for new notes by providing a default placeholder
+            var content = string.IsNullOrWhiteSpace(request.Content) 
+                ? "Start writing your note here..." 
+                : request.Content;
 
             _logger.LogInformation("Creating note from text for user {UserId}", _userContext.UserId ?? "dev-user");
 
-            var result = await _ingestService.IngestTextAsync(request.Title ?? string.Empty, request.Content);
+            var result = await _ingestService.IngestTextAsync(request.Title ?? string.Empty, content);
             
             if (result == null)
             {

@@ -159,6 +159,7 @@ public class IngestService : IIngestService
             UserId = _user.UserId ?? "dev-user",
             Title = finalTitle,
             Content = content,
+            WordCount = CalculateWordCount(content),
             OriginalPath = "text-input",
             FilePath = string.Empty,
             FileType = ".txt",
@@ -316,6 +317,7 @@ public class IngestService : IIngestService
             UserId = _user.UserId,
             Title = finalTitle,
             Content = content,
+            WordCount = CalculateWordCount(content),
             OriginalPath = file.FileName,
             FilePath = filePath,
             FileType = PathIO.GetExtension(file.FileName).ToLower(),
@@ -389,6 +391,7 @@ public class IngestService : IIngestService
             UserId = _user.UserId,
             Title = finalTitle,
             Content = content,
+            WordCount = CalculateWordCount(content),
             OriginalPath = filePath,
             FilePath = filePath,
             FileType = fileInfo.Extension.ToLower(),
@@ -1091,6 +1094,7 @@ public class IngestService : IIngestService
                 UserId = _user.UserId ?? "dev-user",
                 Title = finalTitle,
                 Content = content,
+                WordCount = CalculateWordCount(content),
                 OriginalPath = normalizedUrl, // Store normalized URL
                 FilePath = finalUrl ?? url, // Store final URL (after redirects) in FilePath
                 FileType = ".html", // Indicate this is web content
@@ -1202,5 +1206,21 @@ public class IngestService : IIngestService
         {
             return url; // Return original if normalization fails
         }
+    }
+
+    /// <summary>
+    /// Calculate accurate word count for text content
+    /// </summary>
+    private static int CalculateWordCount(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return 0;
+        
+        var words = content.Trim()
+            .Split(new char[0], StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => !string.IsNullOrWhiteSpace(word))
+            .ToArray();
+        
+        return words.Length;
     }
 }

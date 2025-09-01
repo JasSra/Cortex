@@ -98,7 +98,7 @@ const SettingsPage: React.FC = () => {
 
   const { speak, suggest, celebrate, think, idle } = useMascot()
   const { isAuthenticated, logout, user, getAccessToken, recentAuthEvent } = useAuth()
-  const { getProfile, createOrUpdateProfile, deleteProfile, getSettings, updateSettings } = useUserApi()
+  const { getProfile, createOrUpdateProfile, deleteProfile, deleteData, getSettings, updateSettings } = useUserApi()
   const { seedIfNeeded } = useSeedApi()
   const notificationsApi = useNotificationsApi()
   const voiceApi = useVoiceApi()
@@ -591,7 +591,17 @@ const SettingsPage: React.FC = () => {
     handleDangerousAction('delete your account data (keep account)', async () => {
       try {
         think()
-        speak('Account data deletion feature is not yet implemented.', 'responding')
+        speak('Deleting your data...', 'responding')
+        
+        // Call the new delete data API (keeps account but deletes all user data)
+        await deleteData()
+        
+        speak('Your data has been deleted successfully. Your account remains active but all notes, files, and settings have been cleared.', 'responding')
+        
+        // Trigger a refresh of the page to reflect the cleared state
+        if (typeof window !== 'undefined') {
+          window.location.reload()
+        }
       } catch (e) {
         console.error('Delete data failed', e)
         speak('Failed to delete your data. Please try again.', 'error')
@@ -599,7 +609,7 @@ const SettingsPage: React.FC = () => {
         idle()
       }
     })
-  }, [handleDangerousAction, idle, speak, think])
+  }, [handleDangerousAction, idle, speak, think, deleteData])
 
   const onDeleteAccount = useCallback(async () => {
     handleDangerousAction('delete your account permanently', async () => {

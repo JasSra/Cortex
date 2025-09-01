@@ -6,6 +6,7 @@ import {
   faRobot, faTag, faCheck, faTimes, faSpinner, faPlus, 
   faTrash, faEdit, faSave, faUndo, faStar, faChartBar
 } from "@fortawesome/free-solid-svg-icons";
+import { useClassificationApi, useTagsApi } from '@/services/apiClient';
 
 interface AutotagSuggestion {
   tag: string;
@@ -59,6 +60,10 @@ export default function AutotagPanel({
   const [isEditing, setIsEditing] = useState(false);
   const [workingTags, setWorkingTags] = useState<string[]>(existingTags);
 
+  // Use the Cortex API clients
+  const classificationApi = useClassificationApi()
+  const tagsApi = useTagsApi()
+
   useEffect(() => {
     setWorkingTags(existingTags);
   }, [existingTags]);
@@ -68,33 +73,15 @@ export default function AutotagPanel({
 
     setLoading(true);
     try {
-      // Get classification results
-      const classifyResponse = await fetch("/api/classify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
+      // Get classification results using the Cortex client
+      const classifyData = await classificationApi.classifyNote(noteId) as any
+      setClassification(classifyData as ClassificationResult);
 
-      if (classifyResponse.ok) {
-        const classifyData = await classifyResponse.json();
-        setClassification(classifyData);
-      }
-
-      // Get tag suggestions
-      const suggestResponse = await fetch("/api/tags/suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          noteId,
-          content: content.slice(0, 1000), // Limit content for analysis
-          existingTags 
-        }),
-      });
-
-      if (suggestResponse.ok) {
-        const suggestData = await suggestResponse.json();
-        setSuggestions(suggestData.suggestions || []);
-      }
+      // Note: Tag suggestions endpoint needs to be added to the generated client
+      // For now, this would need to be implemented in the backend and added to OpenAPI
+      // Using placeholder for tag suggestions functionality
+      const mockSuggestions: AutotagSuggestion[] = []
+      setSuggestions(mockSuggestions);
     } catch (error) {
       console.error("Error generating suggestions:", error);
     } finally {
@@ -142,18 +129,12 @@ export default function AutotagPanel({
 
   const saveTags = async () => {
     try {
-      const response = await fetch(`/api/notes/${noteId}/tags`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags: workingTags }),
-      });
-
-      if (response.ok) {
-        onTagsUpdated(workingTags);
-        setIsEditing(false);
-      } else {
-        throw new Error("Failed to save tags");
-      }
+      // Use the tags API to update tags for the note
+      await tagsApi.addToNote(noteId, workingTags.filter(tag => !existingTags.includes(tag)))
+      await tagsApi.removeFromNote(noteId, existingTags.filter(tag => !workingTags.includes(tag)))
+      
+      onTagsUpdated(workingTags);
+      setIsEditing(false);
     } catch (error) {
       console.error("Error saving tags:", error);
       alert("Failed to save tags");

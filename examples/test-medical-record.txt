@@ -1,0 +1,49 @@
+MEDICAL CONSULTATION REPORT
+
+Patient: Robert Thompson
+DOB: 05/14/1975  
+SSN: 789-12-3456
+MRN: MR-2024-5678
+Insurance: Aetna PPO - Policy #AET987654321
+
+Chief Complaint: Patient reports chronic back pain following work injury
+
+Medical History:
+- Previous surgery: L4-L5 fusion (2019)
+- Allergies: Morphine (causes severe nausea), Latex
+- Current medications: Oxycodone 15mg q6h PRN, Gabapentin 300mg TID
+- Family history: Father died of heart disease age 58, Mother has diabetes
+
+Social History:
+- Occupation: Construction supervisor 
+- Tobacco: 1 pack/day x 20 years (quit 2022)
+- Alcohol: Denies current use, history of alcohol abuse (sober 5 years)
+- Lives with wife Sarah and two children (ages 12 and 8)
+
+Physical Examination:
+- Height: 6'2", Weight: 210 lbs, BMI: 27
+- Vital signs: BP 145/92, HR 88, Temp 98.7°F
+- Neurological: Diminished sensation L5 distribution
+- Range of motion limited due to pain
+
+Assessment and Plan:
+1. Chronic lumbar radiculopathy - continue current pain management
+2. Hypertension - start Lisinopril 10mg daily
+3. Work restriction: No lifting >25 lbs
+4. Follow-up in 4 weeks
+
+Prescription Details:
+Rx: Oxycodone 15mg #60 tablets, Sig: 1 tablet q6h PRN severe pain
+DEA #: DR1234567
+Provider: Dr. Emily Watson, MD
+License #: CA-MD-567890
+
+CONFIDENTIAL PATIENT COMMUNICATION:
+Patient disclosed during private consultation that he's been selling some of his pain medication to coworkers to make ends meet financially. He's concerned about losing his job if his employer finds out about the extent of his pain issues. Recommended substance abuse counseling.
+
+---
+INSURANCE BILLING CODES:
+Primary Diagnosis: M54.16 (Radiculopathy, lumbar region)
+Secondary: I10 (Essential hypertension)  
+CPT Codes: 99214 (Office visit), 72148 (MRI lumbar spine)
+Facility: St. Mary's Medical Center, NPI: 1234567890

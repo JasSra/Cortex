@@ -73,8 +73,9 @@ export default function WorkspaceView({ activeView, onViewChange }: WorkspaceVie
     if (creating) return
     try {
       setCreating(true)
-  const created = await createNote('', 'Untitled Note')
-  const newId = created?.noteId
+      // Backend will handle empty content by providing default placeholder
+      const created = await createNote('', 'Untitled Note')
+      const newId = created?.noteId
       if (newId) {
         setSelectedNoteId(String(newId))
         // Ensure editor area is visible on mobile

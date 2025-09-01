@@ -17,17 +17,25 @@ import { useMascot } from '@/contexts/MascotContext'
 import { useSearchApi, useTagsApi } from '@/services/apiClient'
 
 interface SearchResult {
-  id: string
+  noteId: string
+  chunkId: string
   title: string
+  snippet: string
   content: string
+  highlight: string
+  offsets: number[]
+  snippetStart: number
+  chunkIndex: number
   score: number
-  metadata: {
-    source?: string
-    createdAt?: string
-    tags?: string[]
-    sensitivityLevel?: number
-  }
-  chunks?: SearchChunk[]
+  createdAt: string
+  source: string
+  fileType: string
+  sensitivityLevel: number
+  tags: string[]
+  hasPii: boolean
+  hasSecrets: boolean
+  piiTypes: string[]
+  secretTypes: string[]
 }
 
 interface SearchChunk {
@@ -152,16 +160,25 @@ const SearchEverythingPage: React.FC = () => {
         
         // Convert NoteMeta to SearchResult format
         const hits = tagSearchResult.items.map(item => ({
-          id: item.id,
+          noteId: item.id,
+          chunkId: '', // Tag search doesn't have chunks
           title: item.title,
+          snippet: '', // NoteMeta doesn't include content
           content: '', // NoteMeta doesn't include content
+          highlight: '',
+          offsets: [],
+          snippetStart: 0,
+          chunkIndex: 0,
           score: 1.0, // Tag matches are considered high confidence
-          metadata: {
-            source: item.fileType || '',
-            createdAt: item.createdAt,
-            tags: item.tags || [],
-            sensitivityLevel: item.sensitivityLevel || 0
-          }
+          createdAt: item.createdAt,
+          source: item.fileType || '',
+          fileType: item.fileType || '',
+          sensitivityLevel: item.sensitivityLevel || 0,
+          tags: item.tags || [],
+          hasPii: false,
+          hasSecrets: false,
+          piiTypes: [],
+          secretTypes: []
         }))
         
         response = {
@@ -170,8 +187,13 @@ const SearchEverythingPage: React.FC = () => {
           executionTime: Date.now() - startTime
         }
       } else {
-        // Regular text search
-        response = await searchGet(searchQuery, 20, 'hybrid', 0.6)
+        // Regular text search - properly handle SearchResponse format
+        const searchResponse = await searchGet(searchQuery, 20, 'hybrid', 0.6)
+        response = {
+          hits: searchResponse.hits || searchResponse.Hits || [], // Handle both casing
+          total: searchResponse.total || searchResponse.Total || 0,
+          executionTime: Date.now() - startTime
+        }
       }
       
       const executionTime = Date.now() - startTime
@@ -223,13 +245,23 @@ const SearchEverythingPage: React.FC = () => {
     speak("Filters cleared! Your search is now unrestricted.", 'idle')
   }
 
-  // Format result snippet with highlighting
-  const formatSnippet = (content: string, query: string) => {
-    if (!query) return content.substring(0, 200) + '...'
+  // Format result snippet with highlighting - now uses the backend highlighting
+  const formatSnippet = (result: SearchResult, query: string) => {
+    // Use backend-generated highlight if available, otherwise fallback to snippet
+    const contentToShow = result.highlight || result.snippet || result.content.substring(0, 300)
     
-    const regex = new RegExp(`(${query})`, 'gi')
-    const snippet = content.substring(0, 300)
-    return snippet.split(regex).map((part, index) => 
+    if (!contentToShow) return 'No preview available'
+    
+    // If the backend provided highlighting (contains <mark> tags), render as HTML
+    if (contentToShow.includes('<mark>')) {
+      return <span dangerouslySetInnerHTML={{ __html: contentToShow }} />
+    }
+    
+    // Fallback: manual highlighting for cases where backend didn't provide it
+    if (!query) return contentToShow + (contentToShow.length >= 300 ? '...' : '')
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+    return contentToShow.split(regex).map((part, index) => 
       regex.test(part) ? (
         <mark key={index} className="bg-yellow-200 dark:bg-yellow-800">{part}</mark>
       ) : part
@@ -611,7 +643,7 @@ const SearchEverythingPage: React.FC = () => {
             >
               {results.map((result, index) => (
                 <motion.div
-                  key={result.id}
+                  key={result.noteId || result.chunkId || index}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
@@ -619,52 +651,55 @@ const SearchEverythingPage: React.FC = () => {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer">
-                      {result.title}
+                      {result.title || 'Untitled'}
                     </h3>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
                         Score: {(result.score * 100).toFixed(1)}%
                       </span>
-                      {result.metadata.sensitivityLevel !== undefined && (
+                      {result.sensitivityLevel !== undefined && (
                         <span className={`text-xs px-2 py-1 rounded ${
-                          result.metadata.sensitivityLevel === 0 ? 'bg-green-100 text-green-800' :
-                          result.metadata.sensitivityLevel === 1 ? 'bg-yellow-100 text-yellow-800' :
-                          result.metadata.sensitivityLevel === 2 ? 'bg-orange-100 text-orange-800' :
-                          'bg-red-100 text-red-800'
+                          result.sensitivityLevel === 0 ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200' :
+                          result.sensitivityLevel === 1 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-200' :
+                          result.sensitivityLevel === 2 ? 'bg-orange-100 text-orange-800 dark:bg-orange-800 dark:text-orange-200' :
+                          'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200'
                         }`}>
-                          {['Public', 'Internal', 'Confidential', 'Secret'][result.metadata.sensitivityLevel]}
+                          {['Public', 'Internal', 'Confidential', 'Secret'][result.sensitivityLevel] || 'Unknown'}
                         </span>
                       )}
                     </div>
                   </div>
                   
-                  <p className="text-gray-700 dark:text-gray-300 mb-4 leading-relaxed">
-                    {formatSnippet(result.content, query)}
-                  </p>
+                  <div className="text-gray-700 dark:text-gray-300 mb-4 leading-relaxed">
+                    {formatSnippet(result, query)}
+                  </div>
                   
                   <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
                     <div className="flex items-center gap-4">
-                      {result.metadata.source && (
+                      {result.source && (
                         <span className="flex items-center">
                           <DocumentTextIcon className="w-4 h-4 mr-1" />
-                          {result.metadata.source}
+                          {result.source}
                         </span>
                       )}
-                      {result.metadata.createdAt && (
+                      {result.createdAt && (
                         <span>
-                          {new Date(result.metadata.createdAt).toLocaleDateString()}
+                          {new Date(result.createdAt).toLocaleDateString()}
                         </span>
                       )}
                     </div>
                     
-                    {result.metadata.tags && result.metadata.tags.length > 0 && (
+                    {result.tags && result.tags.length > 0 && (
                       <div className="flex items-center gap-1">
                         <TagIcon className="w-4 h-4" />
-                        {result.metadata.tags.slice(0, 3).map(tag => (
+                        {result.tags.slice(0, 3).map((tag: string) => (
                           <span key={tag} className="bg-purple-100 dark:bg-purple-800 text-purple-800 dark:text-purple-200 px-2 py-1 rounded text-xs">
                             {tag}
                           </span>
                         ))}
+                        {result.tags.length > 3 && (
+                          <span className="text-xs text-gray-400">+{result.tags.length - 3} more</span>
+                        )}
                       </div>
                     )}
                   </div>
