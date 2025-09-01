@@ -33,6 +33,7 @@ youtube_recommendations.csv
 
 # Browser history and analysis output (contains sensitive data)
 out/
+places_copy.sqlite
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
