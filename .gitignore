@@ -31,6 +31,9 @@ topics.json
 hn_recommendations.csv
 youtube_recommendations.csv
 
+# Browser history and analysis output (contains sensitive data)
+out/
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
