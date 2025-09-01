@@ -15,13 +15,6 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
   const { isAuthenticated, loading, recentAuthEvent, clearRecentAuthEvent } = useAuth()
   const [showWelcome, setShowWelcome] = useState(false)
   const [welcomeType, setWelcomeType] = useState<'signup' | 'login'>('login')
-  // Allow local/dev mode to bypass auth as well
-  const bypassAuth = (
-    process.env.NEXT_PUBLIC_BYPASS_AUTH === '1' ||
-    process.env.NEXT_PUBLIC_BYPASS_AUTH === 'true' ||
-    process.env.NEXT_PUBLIC_DEV_MODE === '1' ||
-    process.env.NEXT_PUBLIC_DEV_MODE === 'true'
-  )
 
   useEffect(() => {
     if (recentAuthEvent) {
@@ -30,7 +23,7 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
     }
   }, [recentAuthEvent])
 
-  if (!bypassAuth && loading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 dark:from-slate-950 dark:via-purple-950 dark:to-slate-950 flex items-center justify-center">
         <div className="text-center">
@@ -47,7 +40,7 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
     )
   }
 
-  if (!bypassAuth && !isAuthenticated) {
+  if (!isAuthenticated) {
     return <LoginPage />
   }
 
@@ -55,13 +48,11 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
     <>
       {children}
       <ConnectivityBackdrop />
-      {!bypassAuth && (
-        <WelcomeDialog 
-          open={showWelcome} 
-          type={welcomeType}
-          onClose={() => setShowWelcome(false)} 
-        />
-      )}
+      <WelcomeDialog 
+        open={showWelcome} 
+        type={welcomeType}
+        onClose={() => setShowWelcome(false)} 
+      />
     </>
   )
 }

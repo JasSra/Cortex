@@ -110,39 +110,81 @@ public class OpenAiEmbeddingProvider : IEmbeddingProvider
             dimensions = options?.Dimensions ?? EmbeddingDimension
         };
 
-        try
+        // Retry logic for network issues
+        const int maxRetries = 2;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            _httpClient.DefaultRequestHeaders.Authorization = 
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-
-            using var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
-            using var response = await _httpClient.PostAsync("https://api.openai.com/v1/embeddings", content, ct);
-            
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                var errorBody = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogError("OpenAI embedding failed: {Status} {Body}", response.StatusCode, errorBody);
-                return null;
+                // Create a timeout cancellation token to combine with the provided one
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(50)); // Conservative timeout
+                using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                
+                // Clear any existing authorization header and set fresh one
+                _httpClient.DefaultRequestHeaders.Authorization = null;
+                _httpClient.DefaultRequestHeaders.Authorization = 
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+                var jsonContent = JsonSerializer.Serialize(request);
+                using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                
+                // Use the combined cancellation token
+                using var response = await _httpClient.PostAsync("https://api.openai.com/v1/embeddings", content, combinedCts.Token);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(combinedCts.Token);
+                    _logger.LogError("OpenAI embedding failed: {Status} {Body}", response.StatusCode, errorBody);
+                    return null;
+                }
+
+                var responseBody = await response.Content.ReadAsStringAsync(combinedCts.Token);
+                using var doc = JsonDocument.Parse(responseBody);
+                
+                var data = doc.RootElement.GetProperty("data")[0].GetProperty("embedding");
+                var embedding = new float[data.GetArrayLength()];
+                var i = 0;
+                foreach (var value in data.EnumerateArray())
+                {
+                    embedding[i++] = value.GetSingle();
+                }
+
+                return embedding;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                _logger.LogWarning("OpenAI embedding request was cancelled by caller");
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("OpenAI embedding request timed out after 50 seconds (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+                if (attempt == maxRetries) return null;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "OpenAI embedding HTTP request failed (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+                if (attempt == maxRetries) return null;
+            }
+            catch (ObjectDisposedException ex)
+            {
+                _logger.LogWarning(ex, "OpenAI embedding request failed due to disposed connection (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+                if (attempt == maxRetries) return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "OpenAI embedding error (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+                if (attempt == maxRetries) return null;
             }
 
-            var responseBody = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(responseBody);
-            
-            var data = doc.RootElement.GetProperty("data")[0].GetProperty("embedding");
-            var embedding = new float[data.GetArrayLength()];
-            var i = 0;
-            foreach (var value in data.EnumerateArray())
+            // Wait a bit before retry
+            if (attempt < maxRetries)
             {
-                embedding[i++] = value.GetSingle();
+                await Task.Delay(500 * attempt, ct); // Exponential backoff: 500ms, 1000ms
             }
+        }
 
-            return embedding;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "OpenAI embedding error");
-            return null;
-        }
+        return null;
     }
 
     public async Task<List<float[]?>> GenerateEmbeddingsAsync(List<string> texts, EmbeddingOptions? options = null, CancellationToken ct = default)
@@ -162,20 +204,29 @@ public class OpenAiEmbeddingProvider : IEmbeddingProvider
 
         try
         {
+            // Create a timeout cancellation token to combine with the provided one
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(55)); // Longer timeout for batch requests
+            using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+            
+            // Clear any existing authorization header and set fresh one
+            _httpClient.DefaultRequestHeaders.Authorization = null;
             _httpClient.DefaultRequestHeaders.Authorization = 
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
-            using var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
-            using var response = await _httpClient.PostAsync("https://api.openai.com/v1/embeddings", content, ct);
+            var jsonContent = JsonSerializer.Serialize(request);
+            using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+            
+            // Use the combined cancellation token
+            using var response = await _httpClient.PostAsync("https://api.openai.com/v1/embeddings", content, combinedCts.Token);
             
             if (!response.IsSuccessStatusCode)
             {
-                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                var errorBody = await response.Content.ReadAsStringAsync(combinedCts.Token);
                 _logger.LogError("OpenAI batch embedding failed: {Status} {Body}", response.StatusCode, errorBody);
                 return texts.Select(_ => (float[]?)null).ToList();
             }
 
-            var responseBody = await response.Content.ReadAsStringAsync(ct);
+            var responseBody = await response.Content.ReadAsStringAsync(combinedCts.Token);
             using var doc = JsonDocument.Parse(responseBody);
             
             var embeddings = new List<float[]?>();
@@ -194,6 +245,26 @@ public class OpenAiEmbeddingProvider : IEmbeddingProvider
             }
 
             return embeddings;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("OpenAI batch embedding request was cancelled by caller");
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("OpenAI batch embedding request timed out after 55 seconds");
+            return texts.Select(_ => (float[]?)null).ToList();
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "OpenAI batch embedding HTTP request failed");
+            return texts.Select(_ => (float[]?)null).ToList();
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogError(ex, "OpenAI batch embedding request failed due to disposed connection");
+            return texts.Select(_ => (float[]?)null).ToList();
         }
         catch (Exception ex)
         {

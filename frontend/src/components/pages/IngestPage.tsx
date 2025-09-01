@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { useIngestApi } from '@/services/apiClient'
+import { useIngestApi, useAdvancedUrlIngestApi } from '@/services/apiClient'
 import { IngestResult } from '@/types/api'
 import { ArrowUpTrayIcon, FolderOpenIcon, XMarkIcon, DocumentIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -31,6 +31,7 @@ interface UrlProgress {
 const IngestPage: React.FC = () => {
   const { isAuthenticated } = useAuth()
   const { uploadFiles, ingestFolder, createNote, ingestUrlContent } = useIngestApi()
+  const { ingestPdfFromUrl, ingestUrlBatch } = useAdvancedUrlIngestApi()
 
   const [results, setResults] = useState<IngestResult[]>([])
   const [isUploading, setIsUploading] = useState(false)
@@ -229,29 +230,121 @@ const IngestPage: React.FC = () => {
           } : p
         ))
         
-        // Step 2: Send extracted content to backend for ingestion
-        const ingestResult = await ingestUrlContent({
-          url: item.url,
-          title: fetchResult.title,
-          content: fetchResult.textContent,
-          finalUrl: fetchResult.finalUrl,
-          siteName: fetchResult.siteName,
-          byline: fetchResult.byline,
-          publishedTime: fetchResult.publishedTime
-        })
-        
-        // Update status to success
-        setUrlProgress(prev => prev.map(p => 
-          p.id === item.id ? { 
-            ...p, 
-            status: 'success', 
-            progress: 100,
-            result: ingestResult
-          } : p
-        ))
-        
-        // Add to results
-        setResults(prev => [ingestResult, ...prev])
+        // Step 2: Process the result based on type
+        if (fetchResult.type === 'pdf') {
+          // Handle PDF: use backend PDF ingestion service
+          setUrlProgress(prev => prev.map(p => 
+            p.id === item.id ? { 
+              ...p, 
+              status: 'uploading', 
+              progress: 75
+            } : p
+          ))
+          
+          try {
+            const pdfResult = await ingestPdfFromUrl(item.url, fetchResult.title)
+            
+            // For now, we'll create a compatible result object
+            // TODO: Update backend to return actual IngestResult
+            const ingestResult = {
+              noteId: 'pending', // Backend doesn't return this yet
+              title: pdfResult.title || fetchResult.title || 'PDF Document',
+              chunkCount: 0, // Backend doesn't return this yet
+              status: 'success'
+            }
+            
+            setUrlProgress(prev => prev.map(p => 
+              p.id === item.id ? { 
+                ...p, 
+                status: 'success', 
+                progress: 100,
+                result: ingestResult
+              } : p
+            ))
+            
+            setResults(prev => [ingestResult, ...prev])
+            
+          } catch (pdfError: any) {
+            throw new Error(`PDF processing failed: ${pdfError.message}`)
+          }
+          
+        } else if (fetchResult.type === 'hackernews' && fetchResult.extractedLinks) {
+          // Handle Hacker News: process main content + queue extracted links
+          
+          // First, ingest the main page content
+          const mainIngestResult = await ingestUrlContent({
+            url: item.url,
+            title: fetchResult.title,
+            content: fetchResult.textContent,
+            finalUrl: fetchResult.finalUrl,
+            siteName: fetchResult.siteName,
+            byline: fetchResult.byline,
+            publishedTime: fetchResult.publishedTime
+          })
+          
+          setResults(prev => [mainIngestResult, ...prev])
+          
+            // Queue the extracted links for processing (limit to first 10)
+            const linksToProcess = fetchResult.extractedLinks.slice(0, 10)
+            
+            if (linksToProcess.length > 0) {
+              // Add the extracted URLs to our URL processing queue
+              const linkProgressItems: UrlProgress[] = linksToProcess.map((linkUrl: string) => ({
+                id: crypto.randomUUID(),
+                url: linkUrl,
+                status: 'pending' as const,
+                progress: 0
+              }))
+              
+              setUrlProgress(prev => [
+                ...prev.map(p => 
+                  p.id === item.id ? { 
+                    ...p, 
+                    status: 'success' as const, 
+                    progress: 100,
+                    result: mainIngestResult,
+                    title: `${fetchResult.title} + ${linksToProcess.length} links`
+                  } : p
+                ),
+                ...linkProgressItems
+              ])            // Note: The links will be processed in the next iteration of the loop
+            // since we added them to urlProgress
+          } else {
+            setUrlProgress(prev => prev.map(p => 
+              p.id === item.id ? { 
+                ...p, 
+                status: 'success', 
+                progress: 100,
+                result: mainIngestResult
+              } : p
+            ))
+          }
+          
+        } else {
+          // Handle regular HTML content (including GitHub, arXiv, etc.)
+          const ingestResult = await ingestUrlContent({
+            url: item.url,
+            title: fetchResult.title,
+            content: fetchResult.textContent,
+            finalUrl: fetchResult.finalUrl,
+            siteName: fetchResult.siteName,
+            byline: fetchResult.byline,
+            publishedTime: fetchResult.publishedTime
+          })
+          
+          // Update status to success
+          setUrlProgress(prev => prev.map(p => 
+            p.id === item.id ? { 
+              ...p, 
+              status: 'success', 
+              progress: 100,
+              result: ingestResult
+            } : p
+          ))
+          
+          // Add to results
+          setResults(prev => [ingestResult, ...prev])
+        }
         
       } catch (error: any) {
         console.error(`Error processing URL ${item.url}:`, error)
@@ -276,7 +369,7 @@ const IngestPage: React.FC = () => {
     }
     
     setIsProcessingUrls(false)
-  }, [urlText, urlProgress, ingestUrlContent])
+  }, [urlText, urlProgress, ingestUrlContent, ingestPdfFromUrl])
 
   const onFolderIngest = useCallback(async () => {
     if (!folderPath.trim()) return

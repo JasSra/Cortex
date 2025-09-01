@@ -266,6 +266,50 @@ public class ConfigurationService : IConfigurationService
                 }
             }
 
+            // Worker Configuration
+            settings.AddRange(new[]
+            {
+                new ConfigurationSetting
+                {
+                    Key = "Worker:EnableEmbeddingWorker",
+                    Value = "true",
+                    ValueType = "boolean",
+                    Section = "Worker",
+                    Description = "Enable the local embedding background worker",
+                    IsSensitive = false,
+                    RequiresRestart = true,
+                    DefaultValue = "true",
+                    ValidationRules = JsonSerializer.Serialize(new { type = "boolean" }),
+                    SortOrder = 1
+                },
+                new ConfigurationSetting
+                {
+                    Key = "Worker:EnableGraphWorker",
+                    Value = "true",
+                    ValueType = "boolean",
+                    Section = "Worker",
+                    Description = "Enable the knowledge graph background worker",
+                    IsSensitive = false,
+                    RequiresRestart = true,
+                    DefaultValue = "true",
+                    ValidationRules = JsonSerializer.Serialize(new { type = "boolean" }),
+                    SortOrder = 2
+                },
+                new ConfigurationSetting
+                {
+                    Key = "Worker:EnableClassificationWorker",
+                    Value = "true",
+                    ValueType = "boolean",
+                    Section = "Worker",
+                    Description = "Enable the content classification background worker",
+                    IsSensitive = false,
+                    RequiresRestart = true,
+                    DefaultValue = "true",
+                    ValidationRules = JsonSerializer.Serialize(new { type = "boolean" }),
+                    SortOrder = 3
+                }
+            });
+
             // Save all settings
             _context.ConfigurationSettings.AddRange(settings);
             await _context.SaveChangesAsync();
@@ -541,6 +585,7 @@ public class ConfigurationService : IConfigurationService
             "Redis" => "Redis Cache",
             "Voice" => "Voice Services",
             "Server" => "Server Settings",
+            "Worker" => "Background Workers",
             _ => section
         };
     }
@@ -554,6 +599,7 @@ public class ConfigurationService : IConfigurationService
             "Redis" => "Redis server configuration for caching and vector operations",
             "Voice" => "Text-to-speech and speech-to-text provider settings",
             "Server" => "Server configuration including ports and CORS settings",
+            "Worker" => "Background worker processes for embedding, classification, and knowledge graph tasks",
             _ => $"Configuration settings for {section}"
         };
     }

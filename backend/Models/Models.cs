@@ -465,6 +465,7 @@ public class IngestResult
     public string NoteId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public int CountChunks { get; set; }
+    public string Status { get; set; } = "success"; // "success", "augmented", "duplicate", "error"
 }
 
 public class ChatRequest

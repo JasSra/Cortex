@@ -3,7 +3,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useJobsApi, useGraphApi } from '@/services/apiClient'
-import { JobDetails } from '@/api/cortex-api-client'
+
+interface JobDetails {
+  id: string
+  type: string
+  stream?: string
+  enqueuedAt: string
+  payload?: any
+}
 
 interface StatSample {
   ts: number

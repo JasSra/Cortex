@@ -15,6 +15,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Hangfire;
+using Hangfire.SQLite;
 
 // Configure Serilog early to capture startup logs
 Log.Logger = new LoggerConfiguration()
@@ -52,16 +54,47 @@ builder.Services.AddDbContext<CortexDbContext>(options =>
 
 builder.Services.AddHttpClient();
 
-// Register LLM Providers
-builder.Services.AddHttpClient<OpenAiLlmProvider>();
-builder.Services.AddHttpClient<OllamaLlmProvider>();
+// Register LLM Providers with timeout configuration
+builder.Services.AddHttpClient<OpenAiLlmProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(120); // 2 minutes for LLM requests
+    client.DefaultRequestHeaders.Add("User-Agent", "Cortex/1.0");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
+{
+    // Configure connection pooling for better stability
+    MaxConnectionsPerServer = 10,
+    UseCookies = false
+});
+
+builder.Services.AddHttpClient<OllamaLlmProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(180); // 3 minutes for local LLM requests
+    client.DefaultRequestHeaders.Add("User-Agent", "Cortex/1.0");
+});
 builder.Services.AddScoped<OpenAiLlmProvider>();
 builder.Services.AddScoped<OllamaLlmProvider>();
 builder.Services.AddScoped<ILlmProviderFactory, LlmProviderFactory>();
 
-// Register Embedding Providers
-builder.Services.AddHttpClient<OpenAiEmbeddingProvider>();
-builder.Services.AddHttpClient<LocalEmbeddingProvider>();
+// Register Embedding Providers with timeout configuration
+builder.Services.AddHttpClient<OpenAiEmbeddingProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60); // 60 seconds for embedding requests (increased)
+    client.DefaultRequestHeaders.Add("User-Agent", "Cortex/1.0");
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
+{
+    // Configure connection pooling for better stability
+    MaxConnectionsPerServer = 10,
+    UseCookies = false
+});
+
+builder.Services.AddHttpClient<LocalEmbeddingProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60); // 1 minute for local embedding requests
+    client.DefaultRequestHeaders.Add("User-Agent", "Cortex/1.0");
+});
 builder.Services.AddScoped<OpenAiEmbeddingProvider>();
 builder.Services.AddScoped<LocalEmbeddingProvider>();
 builder.Services.AddScoped<IEmbeddingProviderFactory, EmbeddingProviderFactory>();
@@ -84,6 +117,7 @@ builder.Services.AddScoped<IEmbeddingProvider>(provider =>
 });
 
 builder.Services.AddScoped<IIngestService, IngestService>();
+builder.Services.AddScoped<IUrlIngestService, UrlIngestService>();
 builder.Services.AddScoped<ISearchService, SearchService>();
 builder.Services.AddScoped<IVoiceService, VoiceService>();
 builder.Services.AddScoped<IChatService, ChatService>();
@@ -93,10 +127,27 @@ builder.Services.AddSingleton<IVectorService, VectorService>();
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<INerService, NerService>();
 builder.Services.AddScoped<IGraphService, GraphService>();
-// Background job service temporarily disabled for testing
-builder.Services.AddSingleton<BackgroundJobService>();
-builder.Services.AddHostedService<BackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
-builder.Services.AddScoped<IBackgroundJobService>(provider => provider.GetRequiredService<BackgroundJobService>());
+
+// Add Hangfire services for background job processing
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseSQLiteStorage("Data Source=./data/cortex.hangfire.db;"));
+
+// Add the background job processor
+builder.Services.AddScoped<IBackgroundJobProcessor, BackgroundJobProcessor>();
+
+// Add the Hangfire-based background job service
+builder.Services.AddScoped<IBackgroundJobService, HangfireBackgroundJobService>();
+
+// Add the Hangfire server for job processing
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = 3; // Limit concurrent jobs for SQLite
+    options.ServerName = Environment.MachineName;
+    options.Queues = new[] { "default", "embedding", "classification", "pii", "digest", "graph" };
+});
 
 // Configure host options to prevent background service failures from stopping the host
 builder.Services.Configure<HostOptions>(hostOptions =>
@@ -128,8 +179,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         // Azure B2C configuration
-        options.Authority = builder.Configuration["Authentication:Authority"] ?? "https://cortexb2c.b2clogin.com/cortexb2c.onmicrosoft.com/B2C_1_cortex_signup_signin/v2.0";
-        options.Audience = builder.Configuration["Authentication:ClientId"] ?? "34fb7a0c-4038-4ceb-96c6-e56fdd2dd57e";
+        options.Authority = builder.Configuration["Authentication:Authority"] ?? "https://jsraauth.b2clogin.com/jsraauth.onmicrosoft.com/B2C_1_SIGNUP_SIGNIN/v2.0";
+        options.Audience = builder.Configuration["Authentication:ClientId"] ?? "c83c5908-2b64-4304-8c53-b964ace5a1ea";
         
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -549,6 +600,13 @@ app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Add Hangfire dashboard and background processing
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = new[] { new HangfireAuthorizationFilter() },
+    DisplayStorageConnectionString = false
+});
+
 app.UseWebSockets();
 // Inject per-request user context before endpoints
 app.UseMiddleware<UserContextMiddleware>();
@@ -576,6 +634,11 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<CortexDbContext>();
     try
     {
+        // Ensure database connection is working
+        Console.WriteLine("[DB] Testing database connection...");
+        await context.Database.CanConnectAsync();
+        Console.WriteLine("[DB] Database connection successful");
+        
         // Baseline fix: if the database already has the initial schema but the migration history is empty,
         // mark the initial migration as applied so later migrations can proceed.
         try
@@ -623,8 +686,30 @@ using (var scope = app.Services.CreateScope())
         }
 
         Console.WriteLine("[DB] Applying migrations...");
+        
+        // Get pending migrations for better visibility
+        var pendingMigrations = context.Database.GetPendingMigrations().ToList();
+        var appliedMigrations = context.Database.GetAppliedMigrations().ToList();
+        
+        Console.WriteLine($"[DB] Applied migrations: {appliedMigrations.Count}");
+        Console.WriteLine($"[DB] Pending migrations: {pendingMigrations.Count}");
+        
+        if (pendingMigrations.Any())
+        {
+            Console.WriteLine("[DB] Pending migrations to apply:");
+            foreach (var migration in pendingMigrations)
+            {
+                Console.WriteLine($"[DB]   - {migration}");
+            }
+        }
+        
+        // Apply all pending migrations
         context.Database.Migrate();
         Console.WriteLine("[DB] Migrations applied successfully");
+        
+        // Verify migration state after completion
+        var finalAppliedMigrations = context.Database.GetAppliedMigrations().ToList();
+        Console.WriteLine($"[DB] Final applied migrations count: {finalAppliedMigrations.Count}");
 
         // Post-migration sanity check & self-heal for known drift cases (SQLite only)
         try
@@ -642,7 +727,13 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[DB] Initialization failed: {ex.Message}");
+        Console.WriteLine($"[DB] Initialization failed: {ex.GetType().Name}: {ex.Message}");
+        if (ex.InnerException != null)
+        {
+            Console.WriteLine($"[DB] Inner exception: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+        }
+        Console.WriteLine($"[DB] Stack trace: {ex.StackTrace}");
+        throw; // Re-throw to prevent startup with broken database
     }
 
     // Ensure vector index exists
