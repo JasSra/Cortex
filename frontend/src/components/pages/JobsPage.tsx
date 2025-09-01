@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { useJobsApi, useGraphApi } from '@/services/apiClient'
+import { useJobsApi, useGraphApi, useAdminApi } from '@/services/apiClient'
 
 interface JobDetails {
   id: string
@@ -24,12 +24,14 @@ interface StatSample {
 const JobsPage: React.FC = () => {
   const { getStatus, getPendingJobs, statusStreamUrl, enqueueGraphEnrich } = useJobsApi()
   const { discoverAll } = useGraphApi()
+  const { getSystemStats } = useAdminApi()
   const [samples, setSamples] = useState<StatSample[]>([])
   const [current, setCurrent] = useState<any | null>(null)
   const [pendingJobs, setPendingJobs] = useState<JobDetails[]>([])
   const [showDetails, setShowDetails] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [noteId, setNoteId] = useState('')
+  const [reembedding, setReembedding] = useState(false)
   const esRef = useRef<EventSource | null>(null)
 
   // Connect to SSE and also fetch an initial status snapshot
@@ -71,6 +73,23 @@ const JobsPage: React.FC = () => {
     }
   }, [showDetails, getPendingJobs])
 
+  // Custom reembed function with required confirmation header
+  const triggerReembed = async () => {
+    const response = await fetch('/api/admin/reembed', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Confirm-Delete': 'true'
+      }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Re-embed failed: ${response.statusText}`)
+    }
+    
+    return response.json()
+  }
+
   const last5 = useMemo(() => samples.slice(-50).reverse(), [samples])
 
   return (
@@ -82,11 +101,12 @@ const JobsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard label="Pending" value={current?.pending ?? 0} />
         <StatCard label="Processed (10m)" value={current?.processed ?? 0} />
         <StatCard label="Failed" value={current?.failed ?? 0} />
         <StatCard label="Avg ms" value={current?.avgMs ?? 0} />
+        <StatCard label="Redis Connected" value={current?.redisConnected ? "Yes" : "No"} />
       </div>
 
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
@@ -125,28 +145,85 @@ const JobsPage: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
-        <h2 className="font-semibold text-gray-900 dark:text-white">Actions</h2>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => discoverAll().catch(() => {})}
-            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm"
-          >
-            Discover Relationships (All Notes)
-          </button>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={noteId}
-              onChange={(e) => setNoteId(e.target.value)}
-              placeholder="Note ID"
-              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
-            />
-            <button
-              onClick={() => enqueueGraphEnrich(noteId || undefined).catch(() => {})}
-              className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm"
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+        <h2 className="font-semibold text-gray-900 dark:text-white">Job Management</h2>
+        
+        {/* Hangfire Dashboard Link */}
+        <div className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 p-4 rounded-lg border border-orange-200 dark:border-orange-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-medium text-gray-900 dark:text-white mb-1">Hangfire Dashboard</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Access the full Hangfire dashboard for detailed job monitoring, scheduling, and management
+              </p>
+            </div>
+            <a
+              href="/api/hangfire"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              Enqueue Graph Enrich
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Open Dashboard
+            </a>
+          </div>
+        </div>
+        
+        {/* Job Actions */}
+        <div>
+          <h3 className="font-medium text-gray-900 dark:text-white mb-3">Job Actions</h3>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => discoverAll().catch(() => {})}
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm"
+            >
+              Discover Relationships (All Notes)
+            </button>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={noteId}
+                onChange={(e) => setNoteId(e.target.value)}
+                placeholder="Note ID"
+                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
+              />
+              <button
+                onClick={() => enqueueGraphEnrich(noteId || undefined).catch(() => {})}
+                className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm"
+              >
+                Enqueue Graph Enrich
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Fix Indexing Section */}
+        <div>
+          <h3 className="font-medium text-gray-900 dark:text-white mb-3">Fix Indexing Issues</h3>
+          <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800 mb-3">
+            <p className="text-sm text-amber-800 dark:text-amber-200 mb-2">
+              If you see notes showing &ldquo;Not indexed&rdquo; status, this will regenerate embeddings for all chunks that are missing them.
+            </p>
+            <button
+              onClick={async () => {
+                if (reembedding) return
+                setReembedding(true)
+                try {
+                  // Add confirmation header as required by the endpoint
+                  await triggerReembed()
+                  alert('Re-embedding started! Check the job status above for progress.')
+                } catch (error: any) {
+                  alert(`Re-embedding failed: ${error?.message || 'Unknown error'}`)
+                } finally {
+                  setReembedding(false)
+                }
+              }}
+              disabled={reembedding}
+              className="px-3 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white rounded-lg text-sm font-medium"
+            >
+              {reembedding ? 'Re-embedding...' : 'Fix &ldquo;Not Indexed&rdquo; Notes'}
             </button>
           </div>
         </div>
@@ -170,7 +247,7 @@ const JobsPage: React.FC = () => {
   )
 }
 
-const StatCard: React.FC<{ label: string; value: number }> = ({ label, value }) => (
+const StatCard: React.FC<{ label: string; value: number | string }> = ({ label, value }) => (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}

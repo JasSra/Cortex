@@ -348,7 +348,7 @@ const SystemPage: React.FC = () => {
 
           {/* Background Jobs */}
           <StatusCard
-            title="Background Jobs"
+            title="Background Jobs (Hangfire)"
             icon={<BoltIcon className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />}
             status={
               !healthData.jobs.redisConnected ? 'error' :
@@ -377,6 +377,21 @@ const SystemPage: React.FC = () => {
                   status={healthData.jobs.pendingBacklog > 100 ? 'degraded' : 'ok'}
                 />
                 <DetailRow label="Processed (10m)" value={healthData.jobs.processedRecently} />
+                
+                {/* Hangfire Dashboard Link */}
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-slate-600">
+                  <a
+                    href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'}/hangfire`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    Open Hangfire Dashboard
+                  </a>
+                </div>
               </>
             }
           />

@@ -1,70 +1,63 @@
 'use client'
 
-import { createContext, useContext, ReactNode, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState } from 'react'
 
-type Theme = 'light' | 'dark'
+type Theme = 'light' | 'dark' | 'cybertron'
 
 interface ThemeContextType {
   theme: Theme
-  toggleTheme: () => void
   setTheme: (theme: Theme) => void
+  toggleTheme: () => void
+  isCybertron: boolean
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-interface ThemeProviderProps {
-  children: ReactNode
-}
-
-export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>('dark') // Default to dark mode
-
-  useEffect(() => {
-    // Check for saved theme preference or default to dark
-    const savedTheme = localStorage.getItem('theme') as Theme
-    if (savedTheme) {
-      setThemeState(savedTheme)
-    } else {
-      // Set default dark theme and save it
-      localStorage.setItem('theme', 'dark')
-    }
-  }, [])
-
-  useEffect(() => {
-    // Apply theme to document
-    const root = document.documentElement
-    root.classList.remove('light', 'dark')
-    root.classList.add(theme)
-    
-    // Update localStorage
-    localStorage.setItem('theme', theme)
-  }, [theme])
-
-  const toggleTheme = () => {
-    setThemeState(prevTheme => prevTheme === 'light' ? 'dark' : 'light')
-  }
-
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme)
-  }
-
-  const value: ThemeContextType = {
-    theme,
-    toggleTheme,
-    setTheme
-  }
-
-  return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
-  )
-}
-
-export function useTheme(): ThemeContextType {
+export const useTheme = () => {
   const context = useContext(ThemeContext)
   if (context === undefined) {
     throw new Error('useTheme must be used within a ThemeProvider')
   }
   return context
+}
+
+export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [theme, setTheme] = useState<Theme>('light')
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') as Theme
+    if (savedTheme && ['light', 'dark', 'cybertron'].includes(savedTheme)) {
+      setTheme(savedTheme)
+    } else {
+      // Check system preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      setTheme(prefersDark ? 'dark' : 'light')
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme)
+    
+    // Update document class
+    document.documentElement.classList.remove('light', 'dark', 'cybertron')
+    document.documentElement.classList.add(theme)
+    
+    // Add data attribute for additional styling
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    const themes: Theme[] = ['light', 'dark', 'cybertron']
+    const currentIndex = themes.indexOf(theme)
+    const nextIndex = (currentIndex + 1) % themes.length
+    setTheme(themes[nextIndex])
+  }
+
+  const isCybertron = theme === 'cybertron'
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme, isCybertron }}>
+      {children}
+    </ThemeContext.Provider>
+  )
 }

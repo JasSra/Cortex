@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTheme } from '@/contexts/ThemeContext'
 import { useConfigurationApi } from '@/services/apiClient'
 import {
   ConfigurationSection,
@@ -29,6 +30,7 @@ import {
 
 export default function ConfigurationPage() {
   const { isAuthenticated, user } = useAuth()
+  const { isCybertron } = useTheme()
   const configApi = useConfigurationApi()
   
   const [sections, setSections] = useState<ConfigurationSection[]>([])
@@ -364,7 +366,11 @@ export default function ConfigurationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
+    <div className={`min-h-screen ${
+      isCybertron 
+        ? 'bg-black' 
+        : 'bg-gray-50 dark:bg-slate-900'
+    }`}>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-8">
           <div className="flex items-center space-x-3">

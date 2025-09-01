@@ -64,7 +64,7 @@ export default function ModernLayout({
   onSidebarToggle 
 }: ModernLayoutProps) {
   const { user, isAuthenticated } = useAuth()
-  const { theme, toggleTheme } = useTheme()
+  const { theme, toggleTheme, isCybertron } = useTheme()
   const searchApi = useSearchApi()
   
   // Global search state
@@ -226,7 +226,11 @@ export default function ModernLayout({
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+    <div className={`min-h-screen ${
+      isCybertron 
+        ? 'bg-black' 
+        : 'bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900'
+    }`}>
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <motion.div
@@ -243,15 +247,31 @@ export default function ModernLayout({
         initial={{ x: sidebarOpen ? 0 : -320 }}
         animate={{ x: sidebarOpen ? 0 : -320 }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className={`fixed inset-y-0 z-50 flex w-80 flex-col bg-white/80 dark:bg-slate-800/90 backdrop-blur-xl border-r border-gray-200/50 dark:border-slate-700/50 shadow-xl`}
+        className={`fixed inset-y-0 z-50 flex w-80 flex-col ${
+          isCybertron 
+            ? 'cybertron-bg-elevated cybertron-border' 
+            : 'bg-white/80 dark:bg-slate-800/90 border-r border-gray-200/50 dark:border-slate-700/50'
+        } backdrop-blur-xl shadow-xl`}
       >
         {/* Sidebar header */}
-        <div className="flex h-16 shrink-0 items-center justify-between px-6 border-b border-gray-200/50 dark:border-slate-700/50">
+        <div className={`flex h-16 shrink-0 items-center justify-between px-6 ${
+          isCybertron 
+            ? 'cybertron-border border-b' 
+            : 'border-b border-gray-200/50 dark:border-slate-700/50'
+        }`}>
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+              isCybertron 
+                ? 'bg-gradient-to-br from-cyan-400 to-orange-500 cybertron-glow' 
+                : 'bg-gradient-to-br from-blue-600 to-indigo-600'
+            }`}>
               <span className="text-white font-bold text-sm">C</span>
             </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            <span className={`text-xl font-bold ${
+              isCybertron 
+                ? 'cybertron-text-primary animate-cybertron-flicker' 
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent'
+            }`}>
               Cortex
             </span>
           </div>
@@ -272,16 +292,26 @@ export default function ModernLayout({
               onClick={() => onViewChange(item.href)}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-        data-testid={`nav-${item.href}`}
+              data-testid={`nav-${item.href}`}
               className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
                 activeView === item.href
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
-                  : 'text-gray-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70 hover:text-gray-900 dark:hover:text-slate-100 hover:shadow-sm'
+                  ? isCybertron
+                    ? 'cybertron-btn-primary cybertron-glow'
+                    : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
+                  : isCybertron
+                    ? 'cybertron-text-primary hover:cybertron-bg hover:cybertron-border-bright'
+                    : 'text-gray-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70 hover:text-gray-900 dark:hover:text-slate-100 hover:shadow-sm'
               }`}
             >
               <item.icon 
                 className={`h-5 w-5 ${
-                  activeView === item.href ? 'text-white' : 'text-gray-400 dark:text-slate-400'
+                  activeView === item.href 
+                    ? isCybertron 
+                      ? 'cybertron-text-primary' 
+                      : 'text-white' 
+                    : isCybertron 
+                      ? 'cybertron-text-accent' 
+                      : 'text-gray-400 dark:text-slate-400'
                 }`} 
               />
               <span>{item.name}</span>
@@ -297,7 +327,11 @@ export default function ModernLayout({
         )}
 
         {/* User profile */}
-        <div className="p-4 border-t border-gray-200/50 dark:border-slate-700/50">
+        <div className={`p-4 ${
+          isCybertron 
+            ? 'cybertron-border border-t' 
+            : 'border-t border-gray-200/50 dark:border-slate-700/50'
+        }`}>
           <UserProfileDropdown onNavigate={onViewChange} />
         </div>
       </motion.div>
@@ -308,7 +342,11 @@ export default function ModernLayout({
         <motion.header 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-slate-700/50 px-6 shadow-sm dark:shadow-slate-900/20"
+          className={`sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between ${
+            isCybertron 
+              ? 'cybertron-bg-elevated cybertron-border border-b' 
+              : 'bg-white/80 dark:bg-slate-900/80 border-b border-gray-200/50 dark:border-slate-700/50'
+          } backdrop-blur-xl px-6 shadow-sm dark:shadow-slate-900/20`}
         >
           <div className="flex items-center space-x-4">
             <div className="flex items-center gap-2">
@@ -334,7 +372,11 @@ export default function ModernLayout({
             </div>
             
             <div className="hidden lg:block">
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-slate-100 capitalize">
+              <h1 className={`text-xl font-semibold capitalize ${
+                isCybertron 
+                  ? 'cybertron-text-primary animate-cybertron-flicker' 
+                  : 'text-gray-900 dark:text-slate-100'
+              }`}>
                 {activeView.replace('-', ' ')}
               </h1>
             </div>
@@ -355,7 +397,11 @@ export default function ModernLayout({
                   onChange={handleSearchInputChange}
                   placeholder="Search everything... (Ctrl+K)"
                   data-testid="global-search-input"
-                  className="w-64 pl-10 pr-4 py-2 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-slate-900 dark:text-slate-100"
+                  className={`w-64 pl-10 pr-4 py-2 rounded-xl border focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
+                    isCybertron
+                      ? 'cybertron-bg cybertron-border cybertron-text-primary focus:cybertron-border-bright focus:cybertron-glow placeholder-cyan-400/50'
+                      : 'bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-600 focus:ring-blue-500 focus:border-transparent text-slate-900 dark:text-slate-100'
+                  }`}
                   onFocus={() => {
                     setHasFocus(true)
                     setShowSearchResults(true)
@@ -375,7 +421,11 @@ export default function ModernLayout({
               {/* Search Results Dropdown (always mounted to avoid flicker) */}
               <div
                 ref={searchResultsRef}
-                className={`absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-600 shadow-lg z-50 max-h-96 overflow-y-auto transition-all duration-150 ${
+                className={`absolute top-full left-0 right-0 mt-2 rounded-xl border shadow-lg z-50 max-h-96 overflow-y-auto transition-all duration-150 ${
+                  isCybertron
+                    ? 'cybertron-bg-elevated cybertron-border'
+                    : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600'
+                } ${
                   showSearchResults && hasFocus ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
                 }`}
               >
@@ -439,11 +489,17 @@ export default function ModernLayout({
               onClick={toggleTheme}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
-              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              className={`p-2 rounded-xl transition-colors ${
+                isCybertron
+                  ? 'hover:cybertron-bg cybertron-border'
+                  : 'hover:bg-gray-100 dark:hover:bg-slate-700'
+              }`}
+              title={`Switch to ${theme === 'dark' ? 'light' : theme === 'cybertron' ? 'light' : 'dark'} mode`}
             >
               {theme === 'dark' ? (
                 <SunIcon className="h-5 w-5 text-yellow-500" />
+              ) : theme === 'cybertron' ? (
+                <div className="w-5 h-5 bg-gradient-to-br from-cyan-400 to-orange-500 rounded animate-cybertron-pulse" />
               ) : (
                 <MoonIcon className="h-5 w-5 text-slate-600 dark:text-slate-400" />
               )}
