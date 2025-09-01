@@ -15,15 +15,15 @@ public interface IVectorService
 
 public class VectorService : IVectorService
 {
-    private readonly IConfigurationService _configurationService;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<VectorService> _logger;
     private ConnectionMultiplexer? _redis;
     private IDatabase? _db;
     private bool _connected;
 
-    public VectorService(IConfigurationService configurationService, ILogger<VectorService> logger)
+    public VectorService(IServiceScopeFactory serviceScopeFactory, ILogger<VectorService> logger)
     {
-        _configurationService = configurationService;
+        _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
 
         _connected = false;
@@ -32,7 +32,11 @@ public class VectorService : IVectorService
     private void EnsureConnected()
     {
         if (_connected) return;
-        var config = _configurationService.GetConfiguration();
+
+        using var scope = _serviceScopeFactory.CreateScope();
+        var configurationService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
+        var config = configurationService.GetConfiguration();
+        
         var conn = config["REDIS_CONNECTION"] ?? config["Redis:Connection"];
         if (string.IsNullOrWhiteSpace(conn))
         {

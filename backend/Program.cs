@@ -14,8 +14,22 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
 using Microsoft.Extensions.Hosting;
+using Serilog;
+
+// Configure Serilog early to capture startup logs
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console(outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateBootstrapLogger();
+
+Log.Information("Starting Cortex API...");
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Serilog
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext());
 
 // Enable legacy code page encodings for libraries like iTextSharp (e.g., MacRoman CP10000)
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -35,8 +49,6 @@ builder.Services.AddDbContext<CortexDbContext>(options =>
         .UseSqlite(absoluteSqliteConnectionString)
         .EnableSensitiveDataLogging(false)
         .EnableDetailedErrors(false));
-// Reduce EF Core info-level command logging noise
-builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
 
 builder.Services.AddHttpClient();
 
@@ -683,7 +695,19 @@ app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
 //app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
 //.WithName("HealthCheck");
 
-app.Run();
+try
+{
+    Log.Information("Starting Cortex API on {Urls}", app.Urls);
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 // Request models
 public record FolderIngestRequest(string Path);
