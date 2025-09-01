@@ -20,7 +20,6 @@ public class ChatToolsService : IChatToolsService
     private readonly IClassificationService _classificationService;
     private readonly IGraphService _graphService;
     private readonly ILogger<ChatToolsService> _logger;
-    private readonly IConfiguration _config;
     private readonly IRedactionService _redactionService;
 
     private readonly Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> _tools;
@@ -31,7 +30,6 @@ public class ChatToolsService : IChatToolsService
         IClassificationService classificationService,
         IGraphService graphService,
     ILogger<ChatToolsService> logger,
-    IConfiguration config,
     IRedactionService redactionService)
     {
         _context = context;
@@ -39,7 +37,6 @@ public class ChatToolsService : IChatToolsService
         _classificationService = classificationService;
         _graphService = graphService;
         _logger = logger;
-        _config = config;
     _redactionService = redactionService;
 
         // Initialize tool registry

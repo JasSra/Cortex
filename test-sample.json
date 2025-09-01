@@ -1,0 +1,35 @@
+{
+  "title": "Sample Data Structure",
+  "description": "This is a test JSON file to validate the enhanced ingestion system with duplicate detection and content augmentation.",
+  "metadata": {
+    "version": "1.0",
+    "author": "Test User",
+    "created": "2024-01-15",
+    "tags": ["test", "json", "ingestion", "sample"]
+  },
+  "content": {
+    "sections": [
+      {
+        "heading": "Introduction",
+        "text": "This JSON file contains structured data that should be properly parsed and made searchable by the Cortex ingestion system."
+      },
+      {
+        "heading": "Features",
+        "text": "The enhanced system should detect duplicates, augment existing content, and apply appropriate tags based on the file type and content."
+      },
+      {
+        "heading": "Testing",
+        "text": "We'll upload this file multiple times to test the duplicate detection and content augmentation features."
+      }
+    ],
+    "data": {
+      "numbers": [1, 2, 3, 4, 5],
+      "flags": {
+        "is_test": true,
+        "has_content": true,
+        "supports_json": true
+      }
+    }
+  },
+  "notes": "This file should be processed by ExtractJsonTextAsync and properly tagged with filetype_json, data, and structured_data tags."
+}

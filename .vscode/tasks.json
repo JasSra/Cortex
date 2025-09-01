@@ -163,6 +163,13 @@
 			"label": "frontend-build-once",
 			"type": "shell",
 			"command": "npm run --silent build"
+		},
+		{
+			"label": "run-backend-8081-dev-serilog",
+			"type": "shell",
+			"command": "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:8081 dotnet run --project ./backend/CortexApi.csproj",
+			"isBackground": true,
+			"group": "dev"
 		}
 	]
 }

@@ -14,6 +14,27 @@ backend/appsettings.Development.json
 .next/
 node_modules/
 
+# Logging files and directories
+*.log
+logs/
+backend/logs/
+frontend/logs/
+backend_run.log
+
+# Local Python virtual environment
+.venv/
+
+# Generated artifacts from Flavour.py
+history_unique.csv
+storage_origins.csv
+topics.json
+hn_recommendations.csv
+youtube_recommendations.csv
+
+# Browser history and analysis output (contains sensitive data)
+out/
+places_copy.sqlite
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 

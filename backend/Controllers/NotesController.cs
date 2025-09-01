@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
@@ -11,29 +12,27 @@ namespace CortexApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class NotesController : ControllerBase
 {
     private readonly IIngestService _ingestService;
     private readonly IUserContextAccessor _userContext;
     private readonly ILogger<NotesController> _logger;
     private readonly IGamificationService _gamificationService;
-    private readonly IConfiguration _configuration;
     private readonly CortexApi.Data.CortexDbContext _db;
 
     public NotesController(
         IIngestService ingestService,
         IUserContextAccessor userContext,
         ILogger<NotesController> logger,
-    IGamificationService gamificationService,
-    IConfiguration configuration,
-    CortexApi.Data.CortexDbContext db)
+        IGamificationService gamificationService,
+        CortexApi.Data.CortexDbContext db)
     {
         _ingestService = ingestService;
         _userContext = userContext;
         _logger = logger;
         _gamificationService = gamificationService;
-        _configuration = configuration;
-    _db = db;
+        _db = db;
     }
 
     private static string GetIndexingStatus(int chunkCount, int embeddingCount)
@@ -176,14 +175,6 @@ public class NotesController : ControllerBase
     {
         try 
         {
-            // In development mode, allow requests without authentication
-            var isDevelopment = _configuration.GetValue<bool>("IsDevelopment", false) || 
-                               Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
-            
-            // Require authentication in non-development environments (no specific role needed)
-            if (!isDevelopment && !_userContext.IsAuthenticated)
-                return StatusCode(403, "Authentication required");
-
             if (string.IsNullOrWhiteSpace(request.Content))
                 return BadRequest("Content is required");
 

@@ -31,7 +31,7 @@ public interface IIngestService
 public class IngestService : IIngestService
 {
     private readonly CortexDbContext _context;
-    private readonly IConfiguration _configuration;
+    private readonly IConfigurationService _configurationService;
     private readonly ILogger<IngestService> _logger;
     private readonly string _dataDir;
     private readonly IVectorService _vectorService;
@@ -43,7 +43,7 @@ public class IngestService : IIngestService
 
     public IngestService(
         CortexDbContext context, 
-        IConfiguration configuration, 
+        IConfigurationService configurationService, 
         ILogger<IngestService> logger, 
         IVectorService vectorService, 
         IUserContextAccessor user,
@@ -53,9 +53,10 @@ public class IngestService : IIngestService
         ISuggestionsService suggestionsService)
     {
         _context = context;
-        _configuration = configuration;
+        _configurationService = configurationService;
         _logger = logger;
-        _dataDir = _configuration["DATA_DIR"] ?? "./data";
+        var config = _configurationService.GetConfiguration();
+        _dataDir = config["DATA_DIR"] ?? "./data";
         _vectorService = vectorService;
         _user = user;
         _piiDetectionService = piiDetectionService;
@@ -87,7 +88,8 @@ public class IngestService : IIngestService
 
     public async Task<List<IngestResult>> IngestFolderAsync(string folderPath)
     {
-        if (!_configuration.GetValue<bool>("ALLOW_LOCAL_SCAN", false))
+        var config = _configurationService.GetConfiguration();
+        if (!config.GetValue<bool>("ALLOW_LOCAL_SCAN", false))
         {
             throw new UnauthorizedAccessException("Local folder scanning is disabled");
         }
@@ -285,27 +287,24 @@ public class IngestService : IIngestService
 
         // Content-based SHA for dedupe (normalized)
         var contentHash = CalculateSha256FromText(NormalizeForHash(content));
+        var baseFileName = PathIO.GetFileNameWithoutExtension(file.FileName);
 
-        // Check if an identical note content already exists
-        var existingByContent = await _context.Notes.FirstOrDefaultAsync(n => n.Sha256Hash == contentHash);
-        if (existingByContent != null)
+        // Enhanced duplicate detection: check by content hash, filename, and similarity
+        var existingNote = await FindExistingNoteAsync(contentHash, baseFileName, file.FileName);
+        
+        if (existingNote != null)
         {
-            _logger.LogInformation("Duplicate content detected for {FileName}, reusing note {NoteId}", file.FileName, existingByContent.Id);
-            return new IngestResult
-            {
-                NoteId = existingByContent.Id,
-                Title = existingByContent.Title,
-                CountChunks = existingByContent.ChunkCount
-            };
+            _logger.LogInformation("Found existing note for {FileName}, augmenting content for note {NoteId}", file.FileName, existingNote.Id);
+            return await AugmentExistingNoteAsync(existingNote, content, file.FileName);
         }
 
         // Suggest a better title than the file name
         var suggestedTitle = await _suggestionsService.SuggestNoteTitleAsync(content, file.FileName);
         var finalTitle = string.IsNullOrWhiteSpace(suggestedTitle)
-            ? PathIO.GetFileNameWithoutExtension(file.FileName)
+            ? baseFileName
             : suggestedTitle.Trim();
 
-        // Create note and chunks
+        // Create note and chunks with enhanced tagging
         var note = new Note
         {
             UserId = _user.UserId,
@@ -316,6 +315,7 @@ public class IngestService : IIngestService
             FileType = PathIO.GetExtension(file.FileName).ToLower(),
             Sha256Hash = contentHash,
             FileSizeBytes = file.Length,
+            Source = "file_upload",
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -324,7 +324,9 @@ public class IngestService : IIngestService
         note.ChunkCount = chunks.Count;
         note.Chunks = chunks;
 
+        // Enhanced auto-classification and tagging
         await PerformAutoClassificationAsync(note, content);
+        await ApplySourceBasedTagsAsync(note, file.FileName, "file_upload");
 
         _context.Notes.Add(note);
         await _context.SaveChangesAsync();
@@ -463,6 +465,8 @@ public class IngestService : IIngestService
                 return await ExtractPdfTextAsync(filePath);
             case ".docx":
                 return await ExtractDocxTextAsync(filePath);
+            case ".json":
+                return await ExtractJsonTextAsync(filePath);
             default:
                 if (IsLikelyTextFile(filePath, out var enc))
                 {
@@ -477,6 +481,244 @@ public class IngestService : IIngestService
                 }
                 return string.Empty;
         }
+    }
+
+    private async Task<string> ExtractJsonTextAsync(string filePath)
+    {
+        try
+        {
+            var jsonContent = await File.ReadAllTextAsync(filePath, Encoding.UTF8);
+            
+            // Try to parse and format JSON for better readability
+            using var document = JsonDocument.Parse(jsonContent);
+            var formatted = JsonSerializer.Serialize(document, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+
+            // Extract meaningful text for search/analysis
+            var extractedText = new StringBuilder();
+            extractedText.AppendLine("JSON Document Content:");
+            extractedText.AppendLine();
+            
+            // Add formatted JSON
+            extractedText.AppendLine("Structured Data:");
+            extractedText.AppendLine(formatted);
+            extractedText.AppendLine();
+            
+            // Extract text values for better searchability
+            extractedText.AppendLine("Extracted Text Values:");
+            ExtractJsonTextValues(document.RootElement, extractedText, 0);
+            
+            return extractedText.ToString();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse JSON file {FilePath}, treating as plain text", filePath);
+            return await File.ReadAllTextAsync(filePath, Encoding.UTF8);
+        }
+    }
+
+    private void ExtractJsonTextValues(JsonElement element, StringBuilder sb, int depth)
+    {
+        if (depth > 5) return; // Prevent infinite recursion
+        
+        var indent = new string(' ', depth * 2);
+        
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.Value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(property.Value.GetString()))
+                    {
+                        sb.AppendLine($"{indent}{property.Name}: {property.Value.GetString()}");
+                    }
+                    else if (property.Value.ValueKind == JsonValueKind.Object || property.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        sb.AppendLine($"{indent}{property.Name}:");
+                        ExtractJsonTextValues(property.Value, sb, depth + 1);
+                    }
+                }
+                break;
+                
+            case JsonValueKind.Array:
+                var index = 0;
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                    {
+                        sb.AppendLine($"{indent}[{index}]: {item.GetString()}");
+                    }
+                    else if (item.ValueKind == JsonValueKind.Object || item.ValueKind == JsonValueKind.Array)
+                    {
+                        sb.AppendLine($"{indent}[{index}]:");
+                        ExtractJsonTextValues(item, sb, depth + 1);
+                    }
+                    index++;
+                }
+                break;
+                
+            case JsonValueKind.String:
+                var stringValue = element.GetString();
+                if (!string.IsNullOrWhiteSpace(stringValue))
+                {
+                    sb.AppendLine($"{indent}{stringValue}");
+                }
+                break;
+        }
+    }
+
+    private async Task<Note?> FindExistingNoteAsync(string contentHash, string baseFileName, string fullFileName)
+    {
+        // First check by exact content hash
+        var existingByContent = await _context.Notes.FirstOrDefaultAsync(n => n.Sha256Hash == contentHash);
+        if (existingByContent != null)
+        {
+            return existingByContent;
+        }
+
+        // Check by filename (case-insensitive)
+        var existingByFilename = await _context.Notes
+            .Where(n => n.OriginalPath.ToLower() == fullFileName.ToLower() || 
+                       n.Title.ToLower() == baseFileName.ToLower())
+            .FirstOrDefaultAsync();
+        
+        if (existingByFilename != null)
+        {
+            // Additional check: ensure content is not identical to avoid false positives
+            var existingContentHash = CalculateSha256FromText(NormalizeForHash(existingByFilename.Content));
+            if (existingContentHash != contentHash)
+            {
+                return existingByFilename; // Different content, same filename - candidate for augmentation
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<IngestResult> AugmentExistingNoteAsync(Note existingNote, string newContent, string sourceFileName)
+    {
+        _logger.LogInformation("Augmenting existing note {NoteId} with new content from {SourceFile}", 
+            existingNote.Id, sourceFileName);
+
+        var now = DateTime.UtcNow;
+        
+        // Create augmentation separator
+        var separator = $"\n\n--- Updated from {sourceFileName} on {now:yyyy-MM-dd HH:mm:ss} ---\n\n";
+        
+        // Append new content to existing content
+        var augmentedContent = existingNote.Content + separator + newContent;
+        
+        // Update note with augmented content
+        existingNote.Content = augmentedContent;
+        existingNote.UpdatedAt = now;
+        existingNote.Sha256Hash = CalculateSha256FromText(NormalizeForHash(augmentedContent));
+        existingNote.FileSizeBytes = Encoding.UTF8.GetByteCount(augmentedContent);
+        
+        // Update title if it seems generic
+        if (existingNote.Title.StartsWith("Note ") || existingNote.Title == PathIO.GetFileNameWithoutExtension(sourceFileName))
+        {
+            var suggestedTitle = await _suggestionsService.SuggestNoteTitleAsync(augmentedContent, existingNote.Title);
+            if (!string.IsNullOrWhiteSpace(suggestedTitle))
+            {
+                existingNote.Title = suggestedTitle.Trim();
+            }
+        }
+
+        // Remove existing chunks and create new ones with augmented content
+        var existingChunks = await _context.NoteChunks.Where(c => c.NoteId == existingNote.Id).ToListAsync();
+        if (existingChunks.Count > 0)
+        {
+            _context.NoteChunks.RemoveRange(existingChunks);
+        }
+
+        var newChunks = ChunkText(augmentedContent, existingNote.Id);
+        existingNote.ChunkCount = newChunks.Count;
+        existingNote.Chunks = newChunks;
+
+        // Re-run classification on augmented content
+        await PerformAutoClassificationAsync(existingNote, augmentedContent);
+        await ApplySourceBasedTagsAsync(existingNote, sourceFileName, "file_augmentation");
+
+        await _context.SaveChangesAsync();
+
+        // Enqueue new chunks for embedding
+        foreach (var chunk in newChunks)
+        {
+            await _vectorService.EnqueueEmbedAsync(existingNote, chunk);
+        }
+
+        return new IngestResult
+        {
+            NoteId = existingNote.Id,
+            Title = existingNote.Title,
+            CountChunks = existingNote.ChunkCount,
+            Status = "augmented"
+        };
+    }
+
+    private Task ApplySourceBasedTagsAsync(Note note, string fileName, string sourceType)
+    {
+        var tags = new List<string>();
+        
+        // Add source type tag
+        tags.Add(sourceType);
+        
+        // Add file extension tag
+        var extension = PathIO.GetExtension(fileName).ToLower().TrimStart('.');
+        if (!string.IsNullOrEmpty(extension))
+        {
+            tags.Add($"filetype_{extension}");
+        }
+        
+        // Add content-based tags
+        if (extension == "pdf")
+        {
+            tags.Add("document");
+            tags.Add("pdf_content");
+        }
+        else if (extension == "json")
+        {
+            tags.Add("data");
+            tags.Add("structured_data");
+        }
+        else if (new[] { "txt", "md" }.Contains(extension))
+        {
+            tags.Add("text_document");
+        }
+        else if (new[] { "docx", "doc" }.Contains(extension))
+        {
+            tags.Add("office_document");
+            tags.Add("word_document");
+        }
+
+        // Add size-based tags
+        if (note.FileSizeBytes > 1024 * 1024) // > 1MB
+        {
+            tags.Add("large_file");
+        }
+        else if (note.FileSizeBytes < 1024) // < 1KB
+        {
+            tags.Add("small_file");
+        }
+
+        // Add date-based tags
+        var now = DateTime.UtcNow;
+        tags.Add($"uploaded_{now:yyyy}");
+        tags.Add($"uploaded_{now:yyyy_MM}");
+
+        // Merge with existing tags
+        var existingTags = string.IsNullOrEmpty(note.Tags) 
+            ? new List<string>() 
+            : JsonSerializer.Deserialize<List<string>>(note.Tags) ?? new List<string>();
+        
+        existingTags.AddRange(tags.Where(t => !existingTags.Contains(t, StringComparer.OrdinalIgnoreCase)));
+        
+        note.Tags = JsonSerializer.Serialize(existingTags);
+        
+        return Task.CompletedTask;
     }
 
     private async Task<string> ExtractMarkdownAsync(string filePath)
@@ -763,17 +1005,22 @@ public class IngestService : IIngestService
 
         try
         {
-            // Check for duplicate URLs by normalizing and hashing
+            // Calculate content hash for duplicate detection
+            var contentHash = CalculateSha256FromText(content);
+            
+            // Check for existing note by content hash or URL
             var normalizedUrl = NormalizeUrl(url);
             var urlHash = CalculateSha256FromText(normalizedUrl);
             
-            // Check if URL already exists by looking for notes with this URL hash in OriginalPath
-            var existingNote = await _context.Notes
-                .FirstOrDefaultAsync(n => n.OriginalPath == normalizedUrl || n.Sha256Hash == urlHash);
+            var existingNote = await FindExistingNoteAsync(contentHash, url, title);
             
             if (existingNote != null)
             {
-                _logger.LogInformation("URL already exists with ID {NoteId}: {Url}", existingNote.Id, url);
+                _logger.LogInformation("Found existing note {NoteId} for URL: {Url}", existingNote.Id, url);
+                
+                // Augment existing note with new URL data
+                var augmentResult = await AugmentExistingNoteAsync(existingNote, content, $"URL: {url}");
+                
                 return new UrlIngestResult
                 {
                     NoteId = existingNote.Id,
@@ -781,7 +1028,7 @@ public class IngestService : IIngestService
                     CountChunks = existingNote.ChunkCount,
                     OriginalUrl = url,
                     FinalUrl = finalUrl,
-                    Status = "duplicate",
+                    Status = "augmented",
                     SiteName = siteName,
                     Byline = byline,
                     PublishedTime = publishedTime
@@ -819,6 +1066,9 @@ public class IngestService : IIngestService
             var chunks = ChunkText(content, note.Id);
             note.ChunkCount = chunks.Count;
             note.Chunks = chunks;
+
+            // Apply source-based tags for URL content
+            await ApplySourceBasedTagsAsync(note, new Uri(url).Host + ".html", "url_content");
 
             // Perform auto-classification on the content
             await PerformAutoClassificationAsync(note, content);

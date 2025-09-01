@@ -1,8 +1,7 @@
 using CortexApi.Models;
 using CortexApi.Data;
 using Microsoft.EntityFrameworkCore;
-using System.Text;
-using System.Text.Json;
+using CortexApi.Services.Providers;
 
 namespace CortexApi.Services;
 
@@ -24,8 +23,7 @@ public class SuggestionsService : ISuggestionsService
     private readonly IGraphService _graphService;
     private readonly INerService _nerService;
     private readonly ILogger<SuggestionsService> _logger;
-    private readonly IConfiguration _config;
-    private readonly HttpClient _http;
+    private readonly ILlmProvider _llmProvider;
 
     public SuggestionsService(
         CortexDbContext context,
@@ -33,16 +31,14 @@ public class SuggestionsService : ISuggestionsService
         IGraphService graphService,
         INerService nerService,
         ILogger<SuggestionsService> logger,
-        IConfiguration config,
-        HttpClient http)
+        ILlmProvider llmProvider)
     {
         _context = context;
         _searchService = searchService;
         _graphService = graphService;
         _nerService = nerService;
         _logger = logger;
-        _config = config;
-        _http = http;
+        _llmProvider = llmProvider;
     }
 
     public async Task<DailyDigest> GenerateDailyDigestAsync(DateTime? date = null)
@@ -79,7 +75,7 @@ public class SuggestionsService : ISuggestionsService
             .ToListAsync();
 
         // Generate insights and suggestions
-        var insights = await GenerateInsightsAsync(todaysNotes, todaysClassifications.Select(c => c.Category).ToList());
+        var insights = GenerateInsightsAsync(todaysNotes, todaysClassifications.Select(c => c.Category).ToList());
         var suggestions = await GetProactiveSuggestionsAsync(5);
 
         // Get connected entity clusters
@@ -245,10 +241,6 @@ public class SuggestionsService : ISuggestionsService
     {
         try
         {
-            var apiKey = _config["OpenAI:ApiKey"] ?? _config["OPENAI_API_KEY"];
-            if (string.IsNullOrWhiteSpace(apiKey)) return null;
-            var model = _config["OPENAI_MODEL"] ?? _config["OpenAI:Model"] ?? "gpt-4o-mini";
-
             // Trim content to avoid long prompts
             var maxChars = 4000;
             var snippet = content.Length > maxChars ? content.Substring(0, maxChars) : content;
@@ -266,35 +258,36 @@ Content snippet:
 ---
 Return ONLY the title as plain text.";
 
-            var req = new
+            var messages = new List<ChatMessage>
             {
-                model,
-                messages = new object[]
-                {
-                    new { role = "system", content = "You generate only a concise title as plain text." },
-                    new { role = "user", content = prompt }
+                new ChatMessage 
+                { 
+                    Role = "system", 
+                    Content = "You generate only a concise title as plain text." 
                 },
-                temperature = 0.2
+                new ChatMessage 
+                { 
+                    Role = "user", 
+                    Content = prompt 
+                }
             };
 
-            using var contentJson = new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json");
-            _http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-            using var resp = await _http.PostAsync("https://api.openai.com/v1/chat/completions", contentJson, ct);
-            if (!resp.IsSuccessStatusCode)
+            var response = await _llmProvider.GenerateChatCompletionAsync(messages, new LlmCompletionOptions
             {
-                var body = await resp.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning("OpenAI title suggestion failed: {Status} {Body}", (int)resp.StatusCode, body);
+                Temperature = 0.2,
+                MaxTokens = 20
+            }, ct);
+
+            if (string.IsNullOrWhiteSpace(response))
                 return null;
-            }
 
-            var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            var title = json.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-            title = (title ?? string.Empty).Trim().Trim('"');
-            if (string.IsNullOrWhiteSpace(title)) return null;
-
+            var title = response.Trim().Trim('"');
+            
             // Enforce 8-word limit softly
             var words = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length > 8) title = string.Join(' ', words.Take(8));
+            if (words.Length > 8) 
+                title = string.Join(' ', words.Take(8));
+                
             return title;
         }
         catch (Exception ex)
@@ -304,7 +297,7 @@ Return ONLY the title as plain text.";
         }
     }
 
-    private async Task<List<string>> GenerateInsightsAsync(List<Note> todaysNotes, List<string> topCategories)
+    private List<string> GenerateInsightsAsync(List<Note> todaysNotes, List<string> topCategories)
     {
         var insights = new List<string>();
 

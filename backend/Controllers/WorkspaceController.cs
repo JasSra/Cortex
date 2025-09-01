@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using CortexApi.Data;
 using CortexApi.Models;
@@ -12,6 +13,7 @@ namespace CortexApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class WorkspaceController : ControllerBase
 {
     private readonly CortexDbContext _context;
@@ -243,7 +245,7 @@ public class WorkspaceController : ControllerBase
     /// <summary>
     /// Get all unique tags used by the user (for tag suggestions)
     /// </summary>
-    [HttpGet("tags")]
+    [HttpGet("tags", Name = "GetWorkspaceTags")]
     public async Task<ActionResult<List<string>>> GetAllTags()
     {
         var userId = _userContext.UserId;

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
@@ -7,6 +8,7 @@ namespace CortexApi.Controllers;
 
 [ApiController]
 [Route("api/chat")]
+[Authorize]
 public class ChatToolsController : ControllerBase
 {
     private readonly IChatToolsService _chatToolsService;

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Data;
 using CortexApi.Models;
 using CortexApi.Security;
@@ -11,6 +12,7 @@ namespace CortexApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class CardsController : ControllerBase
 {
     private readonly CortexDbContext _db;

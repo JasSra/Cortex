@@ -26,7 +26,7 @@ export class VoiceService {
     wakeWord?: string
   }): Promise<void> {
     const request = new VoiceConfigRequest(config)
-    return await this.client.config(request)
+    return await this.client.configPOST2(request)
   }
 
   async generateTts(text: string): Promise<void> {
@@ -36,7 +36,7 @@ export class VoiceService {
 
   async testTts(text?: string): Promise<void> {
     const request = new VoiceTestRequest({ text })
-    return await this.client.test2(request)
+    return await this.client.test4(request)
   }
 
   // Helper methods for voice configuration

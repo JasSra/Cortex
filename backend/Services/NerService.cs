@@ -20,7 +20,7 @@ public class NerService : INerService
 {
     private readonly CortexDbContext _context;
     private readonly ILogger<NerService> _logger;
-    private readonly IConfiguration _config;
+    private readonly IConfigurationService _configurationService;
     private readonly JaroWinkler _jaroWinkler;
     
     // NER model paths and configuration
@@ -58,16 +58,17 @@ public class NerService : INerService
         }
     };
 
-    public NerService(CortexDbContext context, ILogger<NerService> logger, IConfiguration config)
+    public NerService(CortexDbContext context, ILogger<NerService> logger, IConfigurationService configurationService)
     {
         _context = context;
         _logger = logger;
-        _config = config;
+        _configurationService = configurationService;
         _jaroWinkler = new JaroWinkler();
         
-        _useRuleBased = _config.GetValue<bool>("NER:UseRuleBased", true);
-        _modelPath = _config.GetValue<string>("NER:ModelPath", "");
-        _provider = _config.GetValue<string>("NER:Provider", string.Empty).ToLowerInvariant();
+        var config = _configurationService.GetConfiguration();
+        _useRuleBased = config.GetValue<bool>("NER:UseRuleBased", true);
+        _modelPath = config.GetValue<string>("NER:ModelPath", "");
+        _provider = (config.GetValue<string>("NER:Provider", string.Empty) ?? string.Empty).ToLowerInvariant();
         
         _logger.LogInformation("NER Service initialized. Provider={Provider}, RuleBased={UseRuleBased}", string.IsNullOrEmpty(_provider) ? "(default)" : _provider, _useRuleBased);
     }
@@ -155,7 +156,8 @@ public class NerService : INerService
     {
         try
         {
-            var apiKey = _config["OpenAI:ApiKey"] ?? _config["OPENAI_API_KEY"];
+            var config = _configurationService.GetConfiguration();
+            var apiKey = config["OpenAI:ApiKey"] ?? config["OPENAI_API_KEY"];
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 _logger.LogWarning("OpenAI API key not configured for NER");
@@ -163,7 +165,7 @@ public class NerService : INerService
             }
 
             // Keep prompt short; request JSON structured entities
-            var model = _config["OpenAI:NerModel"] ?? _config["OPENAI_NER_MODEL"] ?? _config["OpenAI:Model"] ?? _config["OPENAI_MODEL"] ?? "gpt-4o-mini";
+            var model = config["OpenAI:NerModel"] ?? config["OPENAI_NER_MODEL"] ?? config["OpenAI:Model"] ?? config["OPENAI_MODEL"] ?? "gpt-4o-mini";
             var maxLen = 6000; // keep payload modest
             var sample = text.Length > maxLen ? text.Substring(0, maxLen) : text;
 

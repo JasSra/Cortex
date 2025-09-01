@@ -1,7 +1,7 @@
 "use client"
 
 import { useAppAuth } from '@/hooks/useAppAuth'
-import { CortexApiClient } from '@/api/cortex-api-client'
+import { CortexApiClient, PdfUrlIngestRequest, BatchUrlIngestRequest } from '@/api/cortex-api-client'
 import { useCallback, useMemo } from 'react'
 import type {
   NotificationPreferences as NotificationPreferencesModel,
@@ -11,8 +11,23 @@ import type {
   TestNotificationRequest,
   TestNotificationResponse,
 } from './types/notifications'
+
+interface JobDetails {
+  id: string
+  type: string
+  stream?: string
+  enqueuedAt: string
+  payload?: any
+}
 import type { VoiceConfigRequest, VoiceConfigValidationResult } from './types/voice'
 import type { MascotProfileDto, UpdateMascotProfileRequest } from './types/mascot'
+import type {
+  ConfigurationSection,
+  ConfigurationUpdateItem,
+  ConfigurationValidationResult,
+  ProviderTest,
+  ConfigurationTestResult
+} from './types/configuration'
 
 function createAuthedFetch(
   getAccessToken: () => Promise<string | null>,
@@ -344,6 +359,40 @@ export function useIngestApi() {
   return useMemo(() => ({ uploadFiles, ingestFolder, createNote, ingestUrlContent }), [uploadFiles, ingestFolder, createNote, ingestUrlContent])
 }
 
+// Advanced URL ingest operations - PDFs, batch processing, etc.
+export function useAdvancedUrlIngestApi() {
+  const client = useCortexApiClient()
+  
+  const ingestPdfFromUrl = useCallback(async (url: string, title?: string) => {
+    try {
+      const request = new PdfUrlIngestRequest({ url, title })
+      await client.pdf(request)
+      // Since the backend returns void, we'll return a simple success indicator
+      return { success: true, url, title }
+    } catch (error) {
+      console.error('PDF ingestion failed:', error)
+      throw error
+    }
+  }, [client])
+  
+  const ingestUrlBatch = useCallback(async (urls: string[], maxConcurrent: number = 3) => {
+    try {
+      const request = new BatchUrlIngestRequest({ urls, maxConcurrent })
+      await client.batch(request)
+      // Since the backend returns void, we'll return a simple success indicator
+      return { success: true, processedCount: urls.length }
+    } catch (error) {
+      console.error('Batch URL ingestion failed:', error)
+      throw error
+    }
+  }, [client])
+  
+  return useMemo(() => ({ 
+    ingestPdfFromUrl, 
+    ingestUrlBatch 
+  }), [ingestPdfFromUrl, ingestUrlBatch])
+}
+
 // Tags - now using the generated client with proper types
 export function useTagsApi() {
   const client = useCortexApiClient()
@@ -511,9 +560,9 @@ export function useJobsApi() {
     }
   }, [http])
 
-  const getPendingJobs = useCallback(async () => {
-    return await client.pending()
-  }, [client])
+  const getPendingJobs = useCallback(async (): Promise<JobDetails[]> => {
+    return await http.get<JobDetails[]>(`/api/Jobs/pending`)
+  }, [http])
 
   const getJobDetails = useCallback(async () => {
     const res = await http.get<any>(`/api/Jobs/details`)
@@ -1070,5 +1119,60 @@ export function useWorkspaceApi() {
     trackNoteAccess,
     getNotesByTags,
     getAllTags,
+  ])
+}
+
+// Configuration API - System configuration management
+export function useConfigurationApi() {
+  const http = useAuthedFetch()
+  
+  const getAllConfiguration = useCallback(() => {
+    return http.get<ConfigurationSection[]>('/api/Configuration')
+  }, [http])
+  
+  const getConfigurationSection = useCallback((section: string) => {
+    return http.get<ConfigurationSection>(`/api/Configuration/${encodeURIComponent(section)}`)
+  }, [http])
+  
+  const updateConfiguration = useCallback(async (updates: ConfigurationUpdateItem[]) => {
+    const request = { Settings: updates }
+    return await http.post<any>('/api/Configuration', request)
+  }, [http])
+  
+  const validateConfiguration = useCallback(async (settings: ConfigurationUpdateItem[]) => {
+    const request = { Settings: settings }
+    return await http.post<ConfigurationValidationResult>('/api/Configuration/validate', request)
+  }, [http])
+  
+  const getConfigurationValue = useCallback((key: string) => {
+    return http.get<{key: string, value: string}>(`/api/Configuration/value/${encodeURIComponent(key)}`)
+  }, [http])
+  
+  const setConfigurationValue = useCallback(async (key: string, value: string) => {
+    const request = { Value: value }
+    return await http.post<any>(`/api/Configuration/value/${encodeURIComponent(key)}`, request)
+  }, [http])
+  
+  const testConfiguration = useCallback(async (tests: ProviderTest[]) => {
+    const request = { Tests: tests }
+    return await http.post<ConfigurationTestResult>('/api/Configuration/test', request)
+  }, [http])
+  
+  return useMemo(() => ({
+    getAllConfiguration,
+    getConfigurationSection,
+    updateConfiguration,
+    validateConfiguration,
+    getConfigurationValue,
+    setConfigurationValue,
+    testConfiguration,
+  }), [
+    getAllConfiguration,
+    getConfigurationSection,
+    updateConfiguration,
+    validateConfiguration,
+    getConfigurationValue,
+    setConfigurationValue,
+    testConfiguration,
   ])
 }

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Security;
@@ -11,6 +12,7 @@ namespace CortexApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class SearchController : ControllerBase
 {
     private readonly ISearchService _searchService;

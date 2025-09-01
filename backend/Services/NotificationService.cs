@@ -24,18 +24,15 @@ public class NotificationService : INotificationService
 {
     private readonly CortexDbContext _context;
     private readonly ILogger<NotificationService> _logger;
-    private readonly IConfiguration _configuration;
     private readonly HttpClient _httpClient;
 
     public NotificationService(
         CortexDbContext context,
         ILogger<NotificationService> logger,
-        IConfiguration configuration,
         HttpClient httpClient)
     {
         _context = context;
         _logger = logger;
-        _configuration = configuration;
         _httpClient = httpClient;
     }
 

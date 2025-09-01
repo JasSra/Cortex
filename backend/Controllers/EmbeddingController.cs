@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using CortexApi.Data;
 using CortexApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -8,6 +9,7 @@ namespace CortexApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class EmbeddingController : ControllerBase
 {
     private readonly IEmbeddingService _embedding;

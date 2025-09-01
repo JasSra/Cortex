@@ -508,6 +508,361 @@ export class CortexApiClient {
     /**
      * @return Success
      */
+    configurationAll(): Promise<ConfigurationSectionDto[]> {
+        let url_ = this.baseUrl + "/api/Configuration";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processConfigurationAll(_response);
+        });
+    }
+
+    protected processConfigurationAll(response: Response): Promise<ConfigurationSectionDto[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(ConfigurationSectionDto.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ConfigurationSectionDto[]>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    configurationPOST(body: UpdateConfigurationRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Configuration";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processConfigurationPOST(_response);
+        });
+    }
+
+    protected processConfigurationPOST(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    configurationGET(section: string): Promise<ConfigurationSectionDto> {
+        let url_ = this.baseUrl + "/api/Configuration/{section}";
+        if (section === undefined || section === null)
+            throw new Error("The parameter 'section' must be defined.");
+        url_ = url_.replace("{section}", encodeURIComponent("" + section));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processConfigurationGET(_response);
+        });
+    }
+
+    protected processConfigurationGET(response: Response): Promise<ConfigurationSectionDto> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = ConfigurationSectionDto.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ConfigurationSectionDto>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    validate(body: ValidateConfigurationRequest | undefined): Promise<ConfigurationValidationResult> {
+        let url_ = this.baseUrl + "/api/Configuration/validate";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processValidate(_response);
+        });
+    }
+
+    protected processValidate(response: Response): Promise<ConfigurationValidationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = ConfigurationValidationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ConfigurationValidationResult>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    valueGET(key: string): Promise<string> {
+        let url_ = this.baseUrl + "/api/Configuration/value/{key}";
+        if (key === undefined || key === null)
+            throw new Error("The parameter 'key' must be defined.");
+        url_ = url_.replace("{key}", encodeURIComponent("" + key));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processValueGET(_response);
+        });
+    }
+
+    protected processValueGET(response: Response): Promise<string> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+                result200 = resultData200 !== undefined ? resultData200 : <any>null;
+    
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<string>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    valuePOST(key: string, body: SetConfigurationValueRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Configuration/value/{key}";
+        if (key === undefined || key === null)
+            throw new Error("The parameter 'key' must be defined.");
+        url_ = url_.replace("{key}", encodeURIComponent("" + key));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processValuePOST(_response);
+        });
+    }
+
+    protected processValuePOST(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    test(body: TestConfigurationRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Configuration/test";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processTest(_response);
+        });
+    }
+
+    protected processTest(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    test2(body: any | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Embedding/test";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processTest2(_response);
+        });
+    }
+
+    protected processTest2(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    requeueMissing(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Embedding/requeue-missing";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processRequeueMissing(_response);
+        });
+    }
+
+    protected processRequeueMissing(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
     achievements(): Promise<void> {
         let url_ = this.baseUrl + "/api/Gamification/achievements";
         url_ = url_.replace(/[?&]$/, "");
@@ -1310,6 +1665,44 @@ export class CortexApiClient {
      * @param body (optional) 
      * @return Success
      */
+    urlContent(body: UrlContentIngestRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Ingest/url-content";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processUrlContent(_response);
+        });
+    }
+
+    protected processUrlContent(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
     graphEnrich(body: GraphEnrichJobPayload | undefined): Promise<void> {
         let url_ = this.baseUrl + "/api/Jobs/graph-enrich";
         url_ = url_.replace(/[?&]$/, "");
@@ -1383,50 +1776,6 @@ export class CortexApiClient {
     /**
      * @return Success
      */
-    pending(): Promise<JobDetails[]> {
-        let url_ = this.baseUrl + "/api/Jobs/pending";
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "GET",
-            headers: {
-                "Accept": "text/plain"
-            }
-        };
-
-        return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processPending(_response);
-        });
-    }
-
-    protected processPending(response: Response): Promise<JobDetails[]> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            let result200: any = null;
-            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            if (Array.isArray(resultData200)) {
-                result200 = [] as any;
-                for (let item of resultData200)
-                    result200!.push(JobDetails.fromJS(item));
-            }
-            else {
-                result200 = <any>null;
-            }
-            return result200;
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<JobDetails[]>(null as any);
-    }
-
-    /**
-     * @return Success
-     */
     status(): Promise<void> {
         let url_ = this.baseUrl + "/api/Jobs/status";
         url_ = url_.replace(/[?&]$/, "");
@@ -1443,6 +1792,72 @@ export class CortexApiClient {
     }
 
     protected processStatus(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    details(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Jobs/details";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processDetails(_response);
+        });
+    }
+
+    protected processDetails(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    pending(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Jobs/pending";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processPending(_response);
+        });
+    }
+
+    protected processPending(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -1883,7 +2298,7 @@ export class CortexApiClient {
      * @param body (optional) 
      * @return Success
      */
-    test(body: TestNotificationRequest | undefined): Promise<TestNotificationResponse> {
+    test3(body: TestNotificationRequest | undefined): Promise<TestNotificationResponse> {
         let url_ = this.baseUrl + "/api/Notifications/test";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -1899,11 +2314,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processTest(_response);
+            return this.processTest3(_response);
         });
     }
 
-    protected processTest(response: Response): Promise<TestNotificationResponse> {
+    protected processTest3(response: Response): Promise<TestNotificationResponse> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -2127,6 +2542,339 @@ export class CortexApiClient {
             let resultData404 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
             result404 = ProblemDetails.fromJS(resultData404);
             return throwException("Not Found", status, _responseText, _headers, result404);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    llm(): Promise<string[]> {
+        let url_ = this.baseUrl + "/api/Providers/llm";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processLlm(_response);
+        });
+    }
+
+    protected processLlm(response: Response): Promise<string[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(item);
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<string[]>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    embedding(): Promise<string[]> {
+        let url_ = this.baseUrl + "/api/Providers/embedding";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processEmbedding(_response);
+        });
+    }
+
+    protected processEmbedding(response: Response): Promise<string[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(item);
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<string[]>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    validate2(providerName: string): Promise<ProviderValidationResult> {
+        let url_ = this.baseUrl + "/api/Providers/llm/{providerName}/validate";
+        if (providerName === undefined || providerName === null)
+            throw new Error("The parameter 'providerName' must be defined.");
+        url_ = url_.replace("{providerName}", encodeURIComponent("" + providerName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processValidate2(_response);
+        });
+    }
+
+    protected processValidate2(response: Response): Promise<ProviderValidationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = ProviderValidationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ProviderValidationResult>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    validate3(providerName: string): Promise<ProviderValidationResult> {
+        let url_ = this.baseUrl + "/api/Providers/embedding/{providerName}/validate";
+        if (providerName === undefined || providerName === null)
+            throw new Error("The parameter 'providerName' must be defined.");
+        url_ = url_.replace("{providerName}", encodeURIComponent("" + providerName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processValidate3(_response);
+        });
+    }
+
+    protected processValidate3(response: Response): Promise<ProviderValidationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = ProviderValidationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ProviderValidationResult>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    models(providerName: string): Promise<string[]> {
+        let url_ = this.baseUrl + "/api/Providers/llm/{providerName}/models";
+        if (providerName === undefined || providerName === null)
+            throw new Error("The parameter 'providerName' must be defined.");
+        url_ = url_.replace("{providerName}", encodeURIComponent("" + providerName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processModels(_response);
+        });
+    }
+
+    protected processModels(response: Response): Promise<string[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(item);
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<string[]>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    models2(providerName: string): Promise<string[]> {
+        let url_ = this.baseUrl + "/api/Providers/embedding/{providerName}/models";
+        if (providerName === undefined || providerName === null)
+            throw new Error("The parameter 'providerName' must be defined.");
+        url_ = url_.replace("{providerName}", encodeURIComponent("" + providerName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processModels2(_response);
+        });
+    }
+
+    protected processModels2(response: Response): Promise<string[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(item);
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<string[]>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    configGET(): Promise<void> {
+        let url_ = this.baseUrl + "/api/Providers/config";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processConfigGET(_response);
+        });
+    }
+
+    protected processConfigGET(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    configPOST(body: UpdateProviderConfigRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Providers/config";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processConfigPOST(_response);
+        });
+    }
+
+    protected processConfigPOST(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -3119,163 +3867,11 @@ export class CortexApiClient {
     }
 
     /**
-     * @param limit (optional) 
-     * @return Success
-     */
-    proactive(limit: number | undefined): Promise<ProactiveSuggestion[]> {
-        let url_ = this.baseUrl + "/api/Suggestions/proactive?";
-        if (limit === null)
-            throw new Error("The parameter 'limit' cannot be null.");
-        else if (limit !== undefined)
-            url_ += "limit=" + encodeURIComponent("" + limit) + "&";
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "GET",
-            headers: {
-                "Accept": "text/plain"
-            }
-        };
-
-        return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processProactive(_response);
-        });
-    }
-
-    protected processProactive(response: Response): Promise<ProactiveSuggestion[]> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            let result200: any = null;
-            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            if (Array.isArray(resultData200)) {
-                result200 = [] as any;
-                for (let item of resultData200)
-                    result200!.push(ProactiveSuggestion.fromJS(item));
-            }
-            else {
-                result200 = <any>null;
-            }
-            return result200;
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<ProactiveSuggestion[]>(null as any);
-    }
-
-    /**
-     * @param days (optional) 
-     * @param limit (optional) 
-     * @return Success
-     */
-    trending(days: number | undefined, limit: number | undefined): Promise<string[]> {
-        let url_ = this.baseUrl + "/api/Suggestions/trending?";
-        if (days === null)
-            throw new Error("The parameter 'days' cannot be null.");
-        else if (days !== undefined)
-            url_ += "days=" + encodeURIComponent("" + days) + "&";
-        if (limit === null)
-            throw new Error("The parameter 'limit' cannot be null.");
-        else if (limit !== undefined)
-            url_ += "limit=" + encodeURIComponent("" + limit) + "&";
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "GET",
-            headers: {
-                "Accept": "text/plain"
-            }
-        };
-
-        return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processTrending(_response);
-        });
-    }
-
-    protected processTrending(response: Response): Promise<string[]> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            let result200: any = null;
-            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            if (Array.isArray(resultData200)) {
-                result200 = [] as any;
-                for (let item of resultData200)
-                    result200!.push(item);
-            }
-            else {
-                result200 = <any>null;
-            }
-            return result200;
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<string[]>(null as any);
-    }
-
-    /**
-     * @param entityType (optional) 
-     * @return Success
-     */
-    insightsAll(entityType: string | undefined): Promise<EntityInsight[]> {
-        let url_ = this.baseUrl + "/api/Suggestions/entities/insights?";
-        if (entityType === null)
-            throw new Error("The parameter 'entityType' cannot be null.");
-        else if (entityType !== undefined)
-            url_ += "entityType=" + encodeURIComponent("" + entityType) + "&";
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "GET",
-            headers: {
-                "Accept": "text/plain"
-            }
-        };
-
-        return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processInsightsAll(_response);
-        });
-    }
-
-    protected processInsightsAll(response: Response): Promise<EntityInsight[]> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            let result200: any = null;
-            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            if (Array.isArray(resultData200)) {
-                result200 = [] as any;
-                for (let item of resultData200)
-                    result200!.push(EntityInsight.fromJS(item));
-            }
-            else {
-                result200 = <any>null;
-            }
-            return result200;
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<EntityInsight[]>(null as any);
-    }
-
-    /**
      * @param body (optional) 
      * @return Success
      */
-    assist(body: SuggestionRequest | undefined): Promise<SuggestionResponse> {
-        let url_ = this.baseUrl + "/api/Suggestions/assist";
+    noteTitle(body: NoteTitleRequest | undefined): Promise<string> {
+        let url_ = this.baseUrl + "/api/Suggestions/note-title";
         url_ = url_.replace(/[?&]$/, "");
 
         const content_ = JSON.stringify(body);
@@ -3290,18 +3886,19 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processAssist(_response);
+            return this.processNoteTitle(_response);
         });
     }
 
-    protected processAssist(response: Response): Promise<SuggestionResponse> {
+    protected processNoteTitle(response: Response): Promise<string> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
             let result200: any = null;
             let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            result200 = SuggestionResponse.fromJS(resultData200);
+                result200 = resultData200 !== undefined ? resultData200 : <any>null;
+    
             return result200;
             });
         } else if (status !== 200 && status !== 204) {
@@ -3309,7 +3906,44 @@ export class CortexApiClient {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<SuggestionResponse>(null as any);
+        return Promise.resolve<string>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    insights2(): Promise<EntityInsights> {
+        let url_ = this.baseUrl + "/api/Suggestions/entities/insights";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processInsights2(_response);
+        });
+    }
+
+    protected processInsights2(response: Response): Promise<EntityInsights> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = EntityInsights.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<EntityInsights>(null as any);
     }
 
     /**
@@ -3482,6 +4116,82 @@ export class CortexApiClient {
             });
         }
         return Promise.resolve<TagSearchResponse>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    pdf(body: PdfUrlIngestRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/UrlIngest/pdf";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processPdf(_response);
+        });
+    }
+
+    protected processPdf(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    batch(body: BatchUrlIngestRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/UrlIngest/batch";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processBatch(_response);
+        });
+    }
+
+    protected processBatch(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
     }
 
     /**
@@ -3970,7 +4680,7 @@ export class CortexApiClient {
      * @param body (optional) 
      * @return Success
      */
-    test2(body: VoiceTestRequest | undefined): Promise<void> {
+    test4(body: VoiceTestRequest | undefined): Promise<void> {
         let url_ = this.baseUrl + "/api/Voice/test";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -3985,11 +4695,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processTest2(_response);
+            return this.processTest4(_response);
         });
     }
 
-    protected processTest2(response: Response): Promise<void> {
+    protected processTest4(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -4008,7 +4718,7 @@ export class CortexApiClient {
      * @param body (optional) 
      * @return Success
      */
-    config(body: VoiceConfigRequest | undefined): Promise<void> {
+    configPOST2(body: VoiceConfigRequest | undefined): Promise<void> {
         let url_ = this.baseUrl + "/api/Voice/config";
         url_ = url_.replace(/[?&]$/, "");
 
@@ -4023,11 +4733,11 @@ export class CortexApiClient {
         };
 
         return this.http.fetch(url_, options_).then((_response: Response) => {
-            return this.processConfig(_response);
+            return this.processConfigPOST2(_response);
         });
     }
 
-    protected processConfig(response: Response): Promise<void> {
+    protected processConfigPOST2(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -4040,6 +4750,265 @@ export class CortexApiClient {
             });
         }
         return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    workspaceGET(): Promise<UserWorkspace> {
+        let url_ = this.baseUrl + "/api/Workspace";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processWorkspaceGET(_response);
+        });
+    }
+
+    protected processWorkspaceGET(response: Response): Promise<UserWorkspace> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = UserWorkspace.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<UserWorkspace>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    workspacePUT(body: UpdateWorkspaceRequest | undefined): Promise<UserWorkspace> {
+        let url_ = this.baseUrl + "/api/Workspace";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processWorkspacePUT(_response);
+        });
+    }
+
+    protected processWorkspacePUT(response: Response): Promise<UserWorkspace> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = UserWorkspace.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<UserWorkspace>(null as any);
+    }
+
+    /**
+     * @param limit (optional) 
+     * @return Success
+     */
+    recentNotes(limit: number | undefined): Promise<NoteMeta[]> {
+        let url_ = this.baseUrl + "/api/Workspace/recent-notes?";
+        if (limit === null)
+            throw new Error("The parameter 'limit' cannot be null.");
+        else if (limit !== undefined)
+            url_ += "limit=" + encodeURIComponent("" + limit) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processRecentNotes(_response);
+        });
+    }
+
+    protected processRecentNotes(response: Response): Promise<NoteMeta[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(NoteMeta.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<NoteMeta[]>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    trackAccess(body: TrackAccessRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Workspace/track-access";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processTrackAccess(_response);
+        });
+    }
+
+    protected processTrackAccess(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param tags (optional) 
+     * @return Success
+     */
+    notesByTags(tags: string | undefined): Promise<NoteMeta[]> {
+        let url_ = this.baseUrl + "/api/Workspace/notes-by-tags?";
+        if (tags === null)
+            throw new Error("The parameter 'tags' cannot be null.");
+        else if (tags !== undefined)
+            url_ += "tags=" + encodeURIComponent("" + tags) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processNotesByTags(_response);
+        });
+    }
+
+    protected processNotesByTags(response: Response): Promise<NoteMeta[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(NoteMeta.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<NoteMeta[]>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    getWorkspaceTags(): Promise<string[]> {
+        let url_ = this.baseUrl + "/api/Workspace/tags";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processGetWorkspaceTags(_response);
+        });
+    }
+
+    protected processGetWorkspaceTags(response: Response): Promise<string[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(item);
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<string[]>(null as any);
     }
 }
 
@@ -4125,66 +5094,6 @@ export interface IAchievement {
     criteria?: string | undefined;
     createdAt?: Date;
     userAchievements?: UserAchievement[] | undefined;
-}
-
-export class ActivitySummary implements IActivitySummary {
-    notesCreated?: number;
-    topCategories?: CategoryCount[] | undefined;
-    trendingEntities?: EntityTrend[] | undefined;
-
-    constructor(data?: IActivitySummary) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (<any>this)[property] = (<any>data)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            this.notesCreated = _data["notesCreated"];
-            if (Array.isArray(_data["topCategories"])) {
-                this.topCategories = [] as any;
-                for (let item of _data["topCategories"])
-                    this.topCategories!.push(CategoryCount.fromJS(item));
-            }
-            if (Array.isArray(_data["trendingEntities"])) {
-                this.trendingEntities = [] as any;
-                for (let item of _data["trendingEntities"])
-                    this.trendingEntities!.push(EntityTrend.fromJS(item));
-            }
-        }
-    }
-
-    static fromJS(data: any): ActivitySummary {
-        data = typeof data === 'object' ? data : {};
-        let result = new ActivitySummary();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        data["notesCreated"] = this.notesCreated;
-        if (Array.isArray(this.topCategories)) {
-            data["topCategories"] = [];
-            for (let item of this.topCategories)
-                data["topCategories"].push(item.toJSON());
-        }
-        if (Array.isArray(this.trendingEntities)) {
-            data["trendingEntities"] = [];
-            for (let item of this.trendingEntities)
-                data["trendingEntities"].push(item.toJSON());
-        }
-        return data;
-    }
-}
-
-export interface IActivitySummary {
-    notesCreated?: number;
-    topCategories?: CategoryCount[] | undefined;
-    trendingEntities?: EntityTrend[] | undefined;
 }
 
 export class AdvancedSearchRequest implements IAdvancedSearchRequest {
@@ -4491,6 +5400,57 @@ export interface IAuditSummary {
     generatedAt?: Date;
 }
 
+export class BatchUrlIngestRequest implements IBatchUrlIngestRequest {
+    urls!: string[];
+    maxConcurrent?: number | undefined;
+
+    constructor(data?: IBatchUrlIngestRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+        if (!data) {
+            this.urls = [];
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            if (Array.isArray(_data["urls"])) {
+                this.urls = [] as any;
+                for (let item of _data["urls"])
+                    this.urls!.push(item);
+            }
+            this.maxConcurrent = _data["maxConcurrent"];
+        }
+    }
+
+    static fromJS(data: any): BatchUrlIngestRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new BatchUrlIngestRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        if (Array.isArray(this.urls)) {
+            data["urls"] = [];
+            for (let item of this.urls)
+                data["urls"].push(item);
+        }
+        data["maxConcurrent"] = this.maxConcurrent;
+        return data;
+    }
+}
+
+export interface IBatchUrlIngestRequest {
+    urls: string[];
+    maxConcurrent?: number | undefined;
+}
+
 export class BulkClassificationRequest implements IBulkClassificationRequest {
     noteIds?: string[] | undefined;
 
@@ -4601,46 +5561,6 @@ export interface IBulkTagRequest {
     noteIds?: string[] | undefined;
     add?: string[] | undefined;
     remove?: string[] | undefined;
-}
-
-export class CategoryCount implements ICategoryCount {
-    category?: string | undefined;
-    count?: number;
-
-    constructor(data?: ICategoryCount) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (<any>this)[property] = (<any>data)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            this.category = _data["category"];
-            this.count = _data["count"];
-        }
-    }
-
-    static fromJS(data: any): CategoryCount {
-        data = typeof data === 'object' ? data : {};
-        let result = new CategoryCount();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        data["category"] = this.category;
-        data["count"] = this.count;
-        return data;
-    }
-}
-
-export interface ICategoryCount {
-    category?: string | undefined;
-    count?: number;
 }
 
 export class ChatToolsRequest implements IChatToolsRequest {
@@ -4766,7 +5686,6 @@ export class Classification implements IClassification {
     score?: number;
     model?: string | undefined;
     createdAt?: Date;
-    note?: Note;
 
     constructor(data?: IClassification) {
         if (data) {
@@ -4785,7 +5704,6 @@ export class Classification implements IClassification {
             this.score = _data["score"];
             this.model = _data["model"];
             this.createdAt = _data["createdAt"] ? new Date(_data["createdAt"].toString()) : <any>undefined;
-            this.note = _data["note"] ? Note.fromJS(_data["note"]) : <any>undefined;
         }
     }
 
@@ -4804,7 +5722,6 @@ export class Classification implements IClassification {
         data["score"] = this.score;
         data["model"] = this.model;
         data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : <any>undefined;
-        data["note"] = this.note ? this.note.toJSON() : <any>undefined;
         return data;
     }
 }
@@ -4816,7 +5733,246 @@ export interface IClassification {
     score?: number;
     model?: string | undefined;
     createdAt?: Date;
-    note?: Note;
+}
+
+export class ConfigurationSectionDto implements IConfigurationSectionDto {
+    name?: string | undefined;
+    displayName?: string | undefined;
+    description?: string | undefined;
+    settings?: ConfigurationSettingDto[] | undefined;
+
+    constructor(data?: IConfigurationSectionDto) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.name = _data["name"];
+            this.displayName = _data["displayName"];
+            this.description = _data["description"];
+            if (Array.isArray(_data["settings"])) {
+                this.settings = [] as any;
+                for (let item of _data["settings"])
+                    this.settings!.push(ConfigurationSettingDto.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): ConfigurationSectionDto {
+        data = typeof data === 'object' ? data : {};
+        let result = new ConfigurationSectionDto();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["name"] = this.name;
+        data["displayName"] = this.displayName;
+        data["description"] = this.description;
+        if (Array.isArray(this.settings)) {
+            data["settings"] = [];
+            for (let item of this.settings)
+                data["settings"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface IConfigurationSectionDto {
+    name?: string | undefined;
+    displayName?: string | undefined;
+    description?: string | undefined;
+    settings?: ConfigurationSettingDto[] | undefined;
+}
+
+export class ConfigurationSettingDto implements IConfigurationSettingDto {
+    id?: string | undefined;
+    key?: string | undefined;
+    value?: string | undefined;
+    valueType?: string | undefined;
+    section?: string | undefined;
+    description?: string | undefined;
+    isSensitive?: boolean;
+    requiresRestart?: boolean;
+    defaultValue?: string | undefined;
+    validationRules?: string | undefined;
+    sortOrder?: number;
+    updatedAt?: Date;
+
+    constructor(data?: IConfigurationSettingDto) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.id = _data["id"];
+            this.key = _data["key"];
+            this.value = _data["value"];
+            this.valueType = _data["valueType"];
+            this.section = _data["section"];
+            this.description = _data["description"];
+            this.isSensitive = _data["isSensitive"];
+            this.requiresRestart = _data["requiresRestart"];
+            this.defaultValue = _data["defaultValue"];
+            this.validationRules = _data["validationRules"];
+            this.sortOrder = _data["sortOrder"];
+            this.updatedAt = _data["updatedAt"] ? new Date(_data["updatedAt"].toString()) : <any>undefined;
+        }
+    }
+
+    static fromJS(data: any): ConfigurationSettingDto {
+        data = typeof data === 'object' ? data : {};
+        let result = new ConfigurationSettingDto();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["id"] = this.id;
+        data["key"] = this.key;
+        data["value"] = this.value;
+        data["valueType"] = this.valueType;
+        data["section"] = this.section;
+        data["description"] = this.description;
+        data["isSensitive"] = this.isSensitive;
+        data["requiresRestart"] = this.requiresRestart;
+        data["defaultValue"] = this.defaultValue;
+        data["validationRules"] = this.validationRules;
+        data["sortOrder"] = this.sortOrder;
+        data["updatedAt"] = this.updatedAt ? this.updatedAt.toISOString() : <any>undefined;
+        return data;
+    }
+}
+
+export interface IConfigurationSettingDto {
+    id?: string | undefined;
+    key?: string | undefined;
+    value?: string | undefined;
+    valueType?: string | undefined;
+    section?: string | undefined;
+    description?: string | undefined;
+    isSensitive?: boolean;
+    requiresRestart?: boolean;
+    defaultValue?: string | undefined;
+    validationRules?: string | undefined;
+    sortOrder?: number;
+    updatedAt?: Date;
+}
+
+export class ConfigurationUpdateItem implements IConfigurationUpdateItem {
+    key?: string | undefined;
+    value?: string | undefined;
+
+    constructor(data?: IConfigurationUpdateItem) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.key = _data["key"];
+            this.value = _data["value"];
+        }
+    }
+
+    static fromJS(data: any): ConfigurationUpdateItem {
+        data = typeof data === 'object' ? data : {};
+        let result = new ConfigurationUpdateItem();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["key"] = this.key;
+        data["value"] = this.value;
+        return data;
+    }
+}
+
+export interface IConfigurationUpdateItem {
+    key?: string | undefined;
+    value?: string | undefined;
+}
+
+export class ConfigurationValidationResult implements IConfigurationValidationResult {
+    isValid?: boolean;
+    errors?: ValidationError[] | undefined;
+    warnings?: ValidationWarning[] | undefined;
+    message?: string | undefined;
+
+    constructor(data?: IConfigurationValidationResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.isValid = _data["isValid"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(ValidationError.fromJS(item));
+            }
+            if (Array.isArray(_data["warnings"])) {
+                this.warnings = [] as any;
+                for (let item of _data["warnings"])
+                    this.warnings!.push(ValidationWarning.fromJS(item));
+            }
+            this.message = _data["message"];
+        }
+    }
+
+    static fromJS(data: any): ConfigurationValidationResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new ConfigurationValidationResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["isValid"] = this.isValid;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item.toJSON());
+        }
+        if (Array.isArray(this.warnings)) {
+            data["warnings"] = [];
+            for (let item of this.warnings)
+                data["warnings"].push(item.toJSON());
+        }
+        data["message"] = this.message;
+        return data;
+    }
+}
+
+export interface IConfigurationValidationResult {
+    isValid?: boolean;
+    errors?: ValidationError[] | undefined;
+    warnings?: ValidationWarning[] | undefined;
+    message?: string | undefined;
 }
 
 export class CreateNoteRequest implements ICreateNoteRequest {
@@ -4914,11 +6070,9 @@ export interface ICreateUserProfileRequest {
 export class DailyDigest implements IDailyDigest {
     date?: Date;
     summary?: string | undefined;
-    recentActivity?: ActivitySummary;
     keyInsights?: string[] | undefined;
-    proactiveSuggestions?: ProactiveSuggestion[] | undefined;
-    entityClusters?: EntityCluster[] | undefined;
-    generatedAt?: Date;
+    recommendedActions?: string[] | undefined;
+    activityCount?: number;
 
     constructor(data?: IDailyDigest) {
         if (data) {
@@ -4933,23 +6087,17 @@ export class DailyDigest implements IDailyDigest {
         if (_data) {
             this.date = _data["date"] ? new Date(_data["date"].toString()) : <any>undefined;
             this.summary = _data["summary"];
-            this.recentActivity = _data["recentActivity"] ? ActivitySummary.fromJS(_data["recentActivity"]) : <any>undefined;
             if (Array.isArray(_data["keyInsights"])) {
                 this.keyInsights = [] as any;
                 for (let item of _data["keyInsights"])
                     this.keyInsights!.push(item);
             }
-            if (Array.isArray(_data["proactiveSuggestions"])) {
-                this.proactiveSuggestions = [] as any;
-                for (let item of _data["proactiveSuggestions"])
-                    this.proactiveSuggestions!.push(ProactiveSuggestion.fromJS(item));
+            if (Array.isArray(_data["recommendedActions"])) {
+                this.recommendedActions = [] as any;
+                for (let item of _data["recommendedActions"])
+                    this.recommendedActions!.push(item);
             }
-            if (Array.isArray(_data["entityClusters"])) {
-                this.entityClusters = [] as any;
-                for (let item of _data["entityClusters"])
-                    this.entityClusters!.push(EntityCluster.fromJS(item));
-            }
-            this.generatedAt = _data["generatedAt"] ? new Date(_data["generatedAt"].toString()) : <any>undefined;
+            this.activityCount = _data["activityCount"];
         }
     }
 
@@ -4964,23 +6112,17 @@ export class DailyDigest implements IDailyDigest {
         data = typeof data === 'object' ? data : {};
         data["date"] = this.date ? this.date.toISOString() : <any>undefined;
         data["summary"] = this.summary;
-        data["recentActivity"] = this.recentActivity ? this.recentActivity.toJSON() : <any>undefined;
         if (Array.isArray(this.keyInsights)) {
             data["keyInsights"] = [];
             for (let item of this.keyInsights)
                 data["keyInsights"].push(item);
         }
-        if (Array.isArray(this.proactiveSuggestions)) {
-            data["proactiveSuggestions"] = [];
-            for (let item of this.proactiveSuggestions)
-                data["proactiveSuggestions"].push(item.toJSON());
+        if (Array.isArray(this.recommendedActions)) {
+            data["recommendedActions"] = [];
+            for (let item of this.recommendedActions)
+                data["recommendedActions"].push(item);
         }
-        if (Array.isArray(this.entityClusters)) {
-            data["entityClusters"] = [];
-            for (let item of this.entityClusters)
-                data["entityClusters"].push(item.toJSON());
-        }
-        data["generatedAt"] = this.generatedAt ? this.generatedAt.toISOString() : <any>undefined;
+        data["activityCount"] = this.activityCount;
         return data;
     }
 }
@@ -4988,11 +6130,9 @@ export class DailyDigest implements IDailyDigest {
 export interface IDailyDigest {
     date?: Date;
     summary?: string | undefined;
-    recentActivity?: ActivitySummary;
     keyInsights?: string[] | undefined;
-    proactiveSuggestions?: ProactiveSuggestion[] | undefined;
-    entityClusters?: EntityCluster[] | undefined;
-    generatedAt?: Date;
+    recommendedActions?: string[] | undefined;
+    activityCount?: number;
 }
 
 export class DeviceRegistrationRequest implements IDeviceRegistrationRequest {
@@ -5527,62 +6667,6 @@ export interface IEntity {
     incomingEdges?: Edge[] | undefined;
 }
 
-export class EntityCluster implements IEntityCluster {
-    name?: string | undefined;
-    entityTypes?: string[] | undefined;
-    strength?: number;
-    description?: string | undefined;
-
-    constructor(data?: IEntityCluster) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (<any>this)[property] = (<any>data)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            this.name = _data["name"];
-            if (Array.isArray(_data["entityTypes"])) {
-                this.entityTypes = [] as any;
-                for (let item of _data["entityTypes"])
-                    this.entityTypes!.push(item);
-            }
-            this.strength = _data["strength"];
-            this.description = _data["description"];
-        }
-    }
-
-    static fromJS(data: any): EntityCluster {
-        data = typeof data === 'object' ? data : {};
-        let result = new EntityCluster();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        data["name"] = this.name;
-        if (Array.isArray(this.entityTypes)) {
-            data["entityTypes"] = [];
-            for (let item of this.entityTypes)
-                data["entityTypes"].push(item);
-        }
-        data["strength"] = this.strength;
-        data["description"] = this.description;
-        return data;
-    }
-}
-
-export interface IEntityCluster {
-    name?: string | undefined;
-    entityTypes?: string[] | undefined;
-    strength?: number;
-    description?: string | undefined;
-}
-
 export class EntityExtraction implements IEntityExtraction {
     type?: string | undefined;
     value?: string | undefined;
@@ -5635,14 +6719,12 @@ export interface IEntityExtraction {
     confidence?: number;
 }
 
-export class EntityInsight implements IEntityInsight {
-    entityType?: string | undefined;
-    entityValue?: string | undefined;
-    frequency?: number;
-    lastSeen?: Date;
-    confidence?: number;
+export class EntityInsights implements IEntityInsights {
+    topEntities?: string[] | undefined;
+    recentConnections?: string[] | undefined;
+    suggestedExplorations?: string[] | undefined;
 
-    constructor(data?: IEntityInsight) {
+    constructor(data?: IEntityInsights) {
         if (data) {
             for (var property in data) {
                 if (data.hasOwnProperty(property))
@@ -5653,82 +6735,56 @@ export class EntityInsight implements IEntityInsight {
 
     init(_data?: any) {
         if (_data) {
-            this.entityType = _data["entityType"];
-            this.entityValue = _data["entityValue"];
-            this.frequency = _data["frequency"];
-            this.lastSeen = _data["lastSeen"] ? new Date(_data["lastSeen"].toString()) : <any>undefined;
-            this.confidence = _data["confidence"];
-        }
-    }
-
-    static fromJS(data: any): EntityInsight {
-        data = typeof data === 'object' ? data : {};
-        let result = new EntityInsight();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        data["entityType"] = this.entityType;
-        data["entityValue"] = this.entityValue;
-        data["frequency"] = this.frequency;
-        data["lastSeen"] = this.lastSeen ? this.lastSeen.toISOString() : <any>undefined;
-        data["confidence"] = this.confidence;
-        return data;
-    }
-}
-
-export interface IEntityInsight {
-    entityType?: string | undefined;
-    entityValue?: string | undefined;
-    frequency?: number;
-    lastSeen?: Date;
-    confidence?: number;
-}
-
-export class EntityTrend implements IEntityTrend {
-    entityType?: string | undefined;
-    count?: number;
-    trendDirection?: string | undefined;
-
-    constructor(data?: IEntityTrend) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (<any>this)[property] = (<any>data)[property];
+            if (Array.isArray(_data["topEntities"])) {
+                this.topEntities = [] as any;
+                for (let item of _data["topEntities"])
+                    this.topEntities!.push(item);
+            }
+            if (Array.isArray(_data["recentConnections"])) {
+                this.recentConnections = [] as any;
+                for (let item of _data["recentConnections"])
+                    this.recentConnections!.push(item);
+            }
+            if (Array.isArray(_data["suggestedExplorations"])) {
+                this.suggestedExplorations = [] as any;
+                for (let item of _data["suggestedExplorations"])
+                    this.suggestedExplorations!.push(item);
             }
         }
     }
 
-    init(_data?: any) {
-        if (_data) {
-            this.entityType = _data["entityType"];
-            this.count = _data["count"];
-            this.trendDirection = _data["trendDirection"];
-        }
-    }
-
-    static fromJS(data: any): EntityTrend {
+    static fromJS(data: any): EntityInsights {
         data = typeof data === 'object' ? data : {};
-        let result = new EntityTrend();
+        let result = new EntityInsights();
         result.init(data);
         return result;
     }
 
     toJSON(data?: any) {
         data = typeof data === 'object' ? data : {};
-        data["entityType"] = this.entityType;
-        data["count"] = this.count;
-        data["trendDirection"] = this.trendDirection;
+        if (Array.isArray(this.topEntities)) {
+            data["topEntities"] = [];
+            for (let item of this.topEntities)
+                data["topEntities"].push(item);
+        }
+        if (Array.isArray(this.recentConnections)) {
+            data["recentConnections"] = [];
+            for (let item of this.recentConnections)
+                data["recentConnections"].push(item);
+        }
+        if (Array.isArray(this.suggestedExplorations)) {
+            data["suggestedExplorations"] = [];
+            for (let item of this.suggestedExplorations)
+                data["suggestedExplorations"].push(item);
+        }
         return data;
     }
 }
 
-export interface IEntityTrend {
-    entityType?: string | undefined;
-    count?: number;
-    trendDirection?: string | undefined;
+export interface IEntityInsights {
+    topEntities?: string[] | undefined;
+    recentConnections?: string[] | undefined;
+    suggestedExplorations?: string[] | undefined;
 }
 
 export class FolderIngestRequest implements IFolderIngestRequest {
@@ -6103,70 +7159,6 @@ export interface IGraphResponse {
     totalEdges?: number;
 }
 
-export class JobDetails implements IJobDetails {
-    id?: string | undefined;
-    type?: string | undefined;
-    stream?: string | undefined;
-    enqueuedAt?: Date;
-    payload?: { [key: string]: any; } | undefined;
-
-    constructor(data?: IJobDetails) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (<any>this)[property] = (<any>data)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            this.id = _data["id"];
-            this.type = _data["type"];
-            this.stream = _data["stream"];
-            this.enqueuedAt = _data["enqueuedAt"] ? new Date(_data["enqueuedAt"].toString()) : <any>undefined;
-            if (_data["payload"]) {
-                this.payload = {} as any;
-                for (let key in _data["payload"]) {
-                    if (_data["payload"].hasOwnProperty(key))
-                        (<any>this.payload)![key] = _data["payload"][key];
-                }
-            }
-        }
-    }
-
-    static fromJS(data: any): JobDetails {
-        data = typeof data === 'object' ? data : {};
-        let result = new JobDetails();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        data["id"] = this.id;
-        data["type"] = this.type;
-        data["stream"] = this.stream;
-        data["enqueuedAt"] = this.enqueuedAt ? this.enqueuedAt.toISOString() : <any>undefined;
-        if (this.payload) {
-            data["payload"] = {};
-            for (let key in this.payload) {
-                if (this.payload.hasOwnProperty(key))
-                    (<any>data["payload"])[key] = (<any>this.payload)[key];
-            }
-        }
-        return data;
-    }
-}
-
-export interface IJobDetails {
-    id?: string | undefined;
-    type?: string | undefined;
-    stream?: string | undefined;
-    enqueuedAt?: Date;
-    payload?: { [key: string]: any; } | undefined;
-}
-
 export class MascotInteraction implements IMascotInteraction {
     id?: string | undefined;
     type?: string | undefined;
@@ -6501,7 +7493,6 @@ export class NoteChunk implements INoteChunk {
     secretFlags?: string | undefined;
     summary?: string | undefined;
     createdAt?: Date;
-    note?: Note;
     embeddings?: Embedding[] | undefined;
 
     constructor(data?: INoteChunk) {
@@ -6528,7 +7519,6 @@ export class NoteChunk implements INoteChunk {
             this.secretFlags = _data["secretFlags"];
             this.summary = _data["summary"];
             this.createdAt = _data["createdAt"] ? new Date(_data["createdAt"].toString()) : <any>undefined;
-            this.note = _data["note"] ? Note.fromJS(_data["note"]) : <any>undefined;
             if (Array.isArray(_data["embeddings"])) {
                 this.embeddings = [] as any;
                 for (let item of _data["embeddings"])
@@ -6559,7 +7549,6 @@ export class NoteChunk implements INoteChunk {
         data["secretFlags"] = this.secretFlags;
         data["summary"] = this.summary;
         data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : <any>undefined;
-        data["note"] = this.note ? this.note.toJSON() : <any>undefined;
         if (Array.isArray(this.embeddings)) {
             data["embeddings"] = [];
             for (let item of this.embeddings)
@@ -6583,7 +7572,6 @@ export interface INoteChunk {
     secretFlags?: string | undefined;
     summary?: string | undefined;
     createdAt?: Date;
-    note?: Note;
     embeddings?: Embedding[] | undefined;
 }
 
@@ -6662,7 +7650,6 @@ export interface INoteMeta {
 export class NoteTag implements INoteTag {
     noteId?: string | undefined;
     tagId?: number;
-    note?: Note;
     tag?: Tag;
 
     constructor(data?: INoteTag) {
@@ -6678,7 +7665,6 @@ export class NoteTag implements INoteTag {
         if (_data) {
             this.noteId = _data["noteId"];
             this.tagId = _data["tagId"];
-            this.note = _data["note"] ? Note.fromJS(_data["note"]) : <any>undefined;
             this.tag = _data["tag"] ? Tag.fromJS(_data["tag"]) : <any>undefined;
         }
     }
@@ -6694,7 +7680,6 @@ export class NoteTag implements INoteTag {
         data = typeof data === 'object' ? data : {};
         data["noteId"] = this.noteId;
         data["tagId"] = this.tagId;
-        data["note"] = this.note ? this.note.toJSON() : <any>undefined;
         data["tag"] = this.tag ? this.tag.toJSON() : <any>undefined;
         return data;
     }
@@ -6703,7 +7688,6 @@ export class NoteTag implements INoteTag {
 export interface INoteTag {
     noteId?: string | undefined;
     tagId?: number;
-    note?: Note;
     tag?: Tag;
 }
 
@@ -6753,6 +7737,42 @@ export class NoteTagsResponse implements INoteTagsResponse {
 export interface INoteTagsResponse {
     noteId?: string | undefined;
     tags?: string[] | undefined;
+}
+
+export class NoteTitleRequest implements INoteTitleRequest {
+    content?: string | undefined;
+
+    constructor(data?: INoteTitleRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.content = _data["content"];
+        }
+    }
+
+    static fromJS(data: any): NoteTitleRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new NoteTitleRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["content"] = this.content;
+        return data;
+    }
+}
+
+export interface INoteTitleRequest {
+    content?: string | undefined;
 }
 
 export class NotificationHistoryEntry implements INotificationHistoryEntry {
@@ -6979,15 +7999,11 @@ export interface INotificationPreferences {
     pushTypes?: string[] | undefined;
 }
 
-export class ProactiveSuggestion implements IProactiveSuggestion {
-    type?: string | undefined;
+export class PdfUrlIngestRequest implements IPdfUrlIngestRequest {
+    url!: string;
     title?: string | undefined;
-    description?: string | undefined;
-    actionUrl?: string | undefined;
-    priority?: string | undefined;
-    estimatedTimeMinutes?: number;
 
-    constructor(data?: IProactiveSuggestion) {
+    constructor(data?: IPdfUrlIngestRequest) {
         if (data) {
             for (var property in data) {
                 if (data.hasOwnProperty(property))
@@ -6998,41 +8014,29 @@ export class ProactiveSuggestion implements IProactiveSuggestion {
 
     init(_data?: any) {
         if (_data) {
-            this.type = _data["type"];
+            this.url = _data["url"];
             this.title = _data["title"];
-            this.description = _data["description"];
-            this.actionUrl = _data["actionUrl"];
-            this.priority = _data["priority"];
-            this.estimatedTimeMinutes = _data["estimatedTimeMinutes"];
         }
     }
 
-    static fromJS(data: any): ProactiveSuggestion {
+    static fromJS(data: any): PdfUrlIngestRequest {
         data = typeof data === 'object' ? data : {};
-        let result = new ProactiveSuggestion();
+        let result = new PdfUrlIngestRequest();
         result.init(data);
         return result;
     }
 
     toJSON(data?: any) {
         data = typeof data === 'object' ? data : {};
-        data["type"] = this.type;
+        data["url"] = this.url;
         data["title"] = this.title;
-        data["description"] = this.description;
-        data["actionUrl"] = this.actionUrl;
-        data["priority"] = this.priority;
-        data["estimatedTimeMinutes"] = this.estimatedTimeMinutes;
         return data;
     }
 }
 
-export interface IProactiveSuggestion {
-    type?: string | undefined;
+export interface IPdfUrlIngestRequest {
+    url: string;
     title?: string | undefined;
-    description?: string | undefined;
-    actionUrl?: string | undefined;
-    priority?: string | undefined;
-    estimatedTimeMinutes?: number;
 }
 
 export class ProblemDetails implements IProblemDetails {
@@ -7097,6 +8101,134 @@ export interface IProblemDetails {
     instance?: string | undefined;
 
     [key: string]: any;
+}
+
+export class ProviderTest implements IProviderTest {
+    provider?: string | undefined;
+    settings?: { [key: string]: string; } | undefined;
+
+    constructor(data?: IProviderTest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.provider = _data["provider"];
+            if (_data["settings"]) {
+                this.settings = {} as any;
+                for (let key in _data["settings"]) {
+                    if (_data["settings"].hasOwnProperty(key))
+                        (<any>this.settings)![key] = _data["settings"][key];
+                }
+            }
+        }
+    }
+
+    static fromJS(data: any): ProviderTest {
+        data = typeof data === 'object' ? data : {};
+        let result = new ProviderTest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["provider"] = this.provider;
+        if (this.settings) {
+            data["settings"] = {};
+            for (let key in this.settings) {
+                if (this.settings.hasOwnProperty(key))
+                    (<any>data["settings"])[key] = (<any>this.settings)[key];
+            }
+        }
+        return data;
+    }
+}
+
+export interface IProviderTest {
+    provider?: string | undefined;
+    settings?: { [key: string]: string; } | undefined;
+}
+
+export class ProviderValidationResult implements IProviderValidationResult {
+    isValid?: boolean;
+    errors?: string[] | undefined;
+    warnings?: string[] | undefined;
+    metadata?: { [key: string]: any; } | undefined;
+
+    constructor(data?: IProviderValidationResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.isValid = _data["isValid"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+            if (Array.isArray(_data["warnings"])) {
+                this.warnings = [] as any;
+                for (let item of _data["warnings"])
+                    this.warnings!.push(item);
+            }
+            if (_data["metadata"]) {
+                this.metadata = {} as any;
+                for (let key in _data["metadata"]) {
+                    if (_data["metadata"].hasOwnProperty(key))
+                        (<any>this.metadata)![key] = _data["metadata"][key];
+                }
+            }
+        }
+    }
+
+    static fromJS(data: any): ProviderValidationResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new ProviderValidationResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["isValid"] = this.isValid;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        if (Array.isArray(this.warnings)) {
+            data["warnings"] = [];
+            for (let item of this.warnings)
+                data["warnings"].push(item);
+        }
+        if (this.metadata) {
+            data["metadata"] = {};
+            for (let key in this.metadata) {
+                if (this.metadata.hasOwnProperty(key))
+                    (<any>data["metadata"])[key] = (<any>this.metadata)[key];
+            }
+        }
+        return data;
+    }
+}
+
+export interface IProviderValidationResult {
+    isValid?: boolean;
+    errors?: string[] | undefined;
+    warnings?: string[] | undefined;
+    metadata?: { [key: string]: any; } | undefined;
 }
 
 export class RagAnswer implements IRagAnswer {
@@ -7739,6 +8871,42 @@ export interface ISearchResponse {
     k?: number;
 }
 
+export class SetConfigurationValueRequest implements ISetConfigurationValueRequest {
+    value?: string | undefined;
+
+    constructor(data?: ISetConfigurationValueRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.value = _data["value"];
+        }
+    }
+
+    static fromJS(data: any): SetConfigurationValueRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SetConfigurationValueRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["value"] = this.value;
+        return data;
+    }
+}
+
+export interface ISetConfigurationValueRequest {
+    value?: string | undefined;
+}
+
 export class StorageListResponse implements IStorageListResponse {
     total?: number;
     items?: StoredFileResponse[] | undefined;
@@ -7883,98 +9051,6 @@ export class StringStringValueTuple implements IStringStringValueTuple {
 }
 
 export interface IStringStringValueTuple {
-}
-
-export class SuggestionRequest implements ISuggestionRequest {
-    prompt?: string | undefined;
-    context?: string | undefined;
-    mode?: string | undefined;
-    provider?: string | undefined;
-    maxTokens?: number | undefined;
-    temperature?: number | undefined;
-
-    constructor(data?: ISuggestionRequest) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (<any>this)[property] = (<any>data)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            this.prompt = _data["prompt"];
-            this.context = _data["context"];
-            this.mode = _data["mode"];
-            this.provider = _data["provider"];
-            this.maxTokens = _data["maxTokens"];
-            this.temperature = _data["temperature"];
-        }
-    }
-
-    static fromJS(data: any): SuggestionRequest {
-        data = typeof data === 'object' ? data : {};
-        let result = new SuggestionRequest();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        data["prompt"] = this.prompt;
-        data["context"] = this.context;
-        data["mode"] = this.mode;
-        data["provider"] = this.provider;
-        data["maxTokens"] = this.maxTokens;
-        data["temperature"] = this.temperature;
-        return data;
-    }
-}
-
-export interface ISuggestionRequest {
-    prompt?: string | undefined;
-    context?: string | undefined;
-    mode?: string | undefined;
-    provider?: string | undefined;
-    maxTokens?: number | undefined;
-    temperature?: number | undefined;
-}
-
-export class SuggestionResponse implements ISuggestionResponse {
-    text?: string | undefined;
-
-    constructor(data?: ISuggestionResponse) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (<any>this)[property] = (<any>data)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            this.text = _data["text"];
-        }
-    }
-
-    static fromJS(data: any): SuggestionResponse {
-        data = typeof data === 'object' ? data : {};
-        let result = new SuggestionResponse();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        data["text"] = this.text;
-        return data;
-    }
-}
-
-export interface ISuggestionResponse {
-    text?: string | undefined;
 }
 
 export class Tag implements ITag {
@@ -8169,6 +9245,50 @@ export interface ITagsResponse {
     tags?: TagInfo[] | undefined;
 }
 
+export class TestConfigurationRequest implements ITestConfigurationRequest {
+    tests?: ProviderTest[] | undefined;
+
+    constructor(data?: ITestConfigurationRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            if (Array.isArray(_data["tests"])) {
+                this.tests = [] as any;
+                for (let item of _data["tests"])
+                    this.tests!.push(ProviderTest.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): TestConfigurationRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new TestConfigurationRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        if (Array.isArray(this.tests)) {
+            data["tests"] = [];
+            for (let item of this.tests)
+                data["tests"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface ITestConfigurationRequest {
+    tests?: ProviderTest[] | undefined;
+}
+
 export class TestNotificationRequest implements ITestNotificationRequest {
     title?: string | undefined;
     message?: string | undefined;
@@ -8294,7 +9414,6 @@ export class TextSpan implements ITextSpan {
     entityId?: string | undefined;
     confidence?: number;
     createdAt?: Date;
-    note?: Note;
     entity?: Entity;
 
     constructor(data?: ITextSpan) {
@@ -8316,7 +9435,6 @@ export class TextSpan implements ITextSpan {
             this.entityId = _data["entityId"];
             this.confidence = _data["confidence"];
             this.createdAt = _data["createdAt"] ? new Date(_data["createdAt"].toString()) : <any>undefined;
-            this.note = _data["note"] ? Note.fromJS(_data["note"]) : <any>undefined;
             this.entity = _data["entity"] ? Entity.fromJS(_data["entity"]) : <any>undefined;
         }
     }
@@ -8338,7 +9456,6 @@ export class TextSpan implements ITextSpan {
         data["entityId"] = this.entityId;
         data["confidence"] = this.confidence;
         data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : <any>undefined;
-        data["note"] = this.note ? this.note.toJSON() : <any>undefined;
         data["entity"] = this.entity ? this.entity.toJSON() : <any>undefined;
         return data;
     }
@@ -8353,7 +9470,6 @@ export interface ITextSpan {
     entityId?: string | undefined;
     confidence?: number;
     createdAt?: Date;
-    note?: Note;
     entity?: Entity;
 }
 
@@ -8465,6 +9581,98 @@ export interface IToolResult {
     executedAt?: Date;
 }
 
+export class TrackAccessRequest implements ITrackAccessRequest {
+    noteId?: string | undefined;
+    accessType?: string | undefined;
+    durationSeconds?: number;
+    editorStateSnapshot?: string | undefined;
+
+    constructor(data?: ITrackAccessRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.noteId = _data["noteId"];
+            this.accessType = _data["accessType"];
+            this.durationSeconds = _data["durationSeconds"];
+            this.editorStateSnapshot = _data["editorStateSnapshot"];
+        }
+    }
+
+    static fromJS(data: any): TrackAccessRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new TrackAccessRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["noteId"] = this.noteId;
+        data["accessType"] = this.accessType;
+        data["durationSeconds"] = this.durationSeconds;
+        data["editorStateSnapshot"] = this.editorStateSnapshot;
+        return data;
+    }
+}
+
+export interface ITrackAccessRequest {
+    noteId?: string | undefined;
+    accessType?: string | undefined;
+    durationSeconds?: number;
+    editorStateSnapshot?: string | undefined;
+}
+
+export class UpdateConfigurationRequest implements IUpdateConfigurationRequest {
+    settings?: ConfigurationUpdateItem[] | undefined;
+
+    constructor(data?: IUpdateConfigurationRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            if (Array.isArray(_data["settings"])) {
+                this.settings = [] as any;
+                for (let item of _data["settings"])
+                    this.settings!.push(ConfigurationUpdateItem.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): UpdateConfigurationRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new UpdateConfigurationRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        if (Array.isArray(this.settings)) {
+            data["settings"] = [];
+            for (let item of this.settings)
+                data["settings"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface IUpdateConfigurationRequest {
+    settings?: ConfigurationUpdateItem[] | undefined;
+}
+
 export class UpdateMascotProfileRequest implements IUpdateMascotProfileRequest {
     enabled?: boolean | undefined;
     personality?: string | undefined;
@@ -8520,6 +9728,7 @@ export interface IUpdateMascotProfileRequest {
 export class UpdateNoteRequest implements IUpdateNoteRequest {
     title?: string | undefined;
     content?: string | undefined;
+    skipProcessing?: boolean;
 
     constructor(data?: IUpdateNoteRequest) {
         if (data) {
@@ -8534,6 +9743,7 @@ export class UpdateNoteRequest implements IUpdateNoteRequest {
         if (_data) {
             this.title = _data["title"];
             this.content = _data["content"];
+            this.skipProcessing = _data["skipProcessing"];
         }
     }
 
@@ -8548,6 +9758,7 @@ export class UpdateNoteRequest implements IUpdateNoteRequest {
         data = typeof data === 'object' ? data : {};
         data["title"] = this.title;
         data["content"] = this.content;
+        data["skipProcessing"] = this.skipProcessing;
         return data;
     }
 }
@@ -8555,6 +9766,59 @@ export class UpdateNoteRequest implements IUpdateNoteRequest {
 export interface IUpdateNoteRequest {
     title?: string | undefined;
     content?: string | undefined;
+    skipProcessing?: boolean;
+}
+
+export class UpdateProviderConfigRequest implements IUpdateProviderConfigRequest {
+    llmProvider?: string | undefined;
+    llmModel?: string | undefined;
+    embeddingProvider?: string | undefined;
+    embeddingModel?: string | undefined;
+    embeddingDimension?: string | undefined;
+
+    constructor(data?: IUpdateProviderConfigRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.llmProvider = _data["llmProvider"];
+            this.llmModel = _data["llmModel"];
+            this.embeddingProvider = _data["embeddingProvider"];
+            this.embeddingModel = _data["embeddingModel"];
+            this.embeddingDimension = _data["embeddingDimension"];
+        }
+    }
+
+    static fromJS(data: any): UpdateProviderConfigRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new UpdateProviderConfigRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["llmProvider"] = this.llmProvider;
+        data["llmModel"] = this.llmModel;
+        data["embeddingProvider"] = this.embeddingProvider;
+        data["embeddingModel"] = this.embeddingModel;
+        data["embeddingDimension"] = this.embeddingDimension;
+        return data;
+    }
+}
+
+export interface IUpdateProviderConfigRequest {
+    llmProvider?: string | undefined;
+    llmModel?: string | undefined;
+    embeddingProvider?: string | undefined;
+    embeddingModel?: string | undefined;
+    embeddingDimension?: string | undefined;
 }
 
 export class UpdateUserProfileRequest implements IUpdateUserProfileRequest {
@@ -8605,6 +9869,58 @@ export interface IUpdateUserProfileRequest {
     avatar?: string | undefined;
 }
 
+export class UpdateWorkspaceRequest implements IUpdateWorkspaceRequest {
+    activeNoteId?: string | undefined;
+    recentNoteIds?: string | undefined;
+    editorState?: string | undefined;
+    pinnedTags?: string | undefined;
+    layoutPreferences?: string | undefined;
+
+    constructor(data?: IUpdateWorkspaceRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.activeNoteId = _data["activeNoteId"];
+            this.recentNoteIds = _data["recentNoteIds"];
+            this.editorState = _data["editorState"];
+            this.pinnedTags = _data["pinnedTags"];
+            this.layoutPreferences = _data["layoutPreferences"];
+        }
+    }
+
+    static fromJS(data: any): UpdateWorkspaceRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new UpdateWorkspaceRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["activeNoteId"] = this.activeNoteId;
+        data["recentNoteIds"] = this.recentNoteIds;
+        data["editorState"] = this.editorState;
+        data["pinnedTags"] = this.pinnedTags;
+        data["layoutPreferences"] = this.layoutPreferences;
+        return data;
+    }
+}
+
+export interface IUpdateWorkspaceRequest {
+    activeNoteId?: string | undefined;
+    recentNoteIds?: string | undefined;
+    editorState?: string | undefined;
+    pinnedTags?: string | undefined;
+    layoutPreferences?: string | undefined;
+}
+
 export class UploadFilesResponse implements IUploadFilesResponse {
     files?: StoredFileResponse[] | undefined;
 
@@ -8647,6 +9963,66 @@ export class UploadFilesResponse implements IUploadFilesResponse {
 
 export interface IUploadFilesResponse {
     files?: StoredFileResponse[] | undefined;
+}
+
+export class UrlContentIngestRequest implements IUrlContentIngestRequest {
+    url!: string;
+    title?: string | undefined;
+    content!: string;
+    finalUrl?: string | undefined;
+    siteName?: string | undefined;
+    byline?: string | undefined;
+    publishedTime?: string | undefined;
+
+    constructor(data?: IUrlContentIngestRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.url = _data["url"];
+            this.title = _data["title"];
+            this.content = _data["content"];
+            this.finalUrl = _data["finalUrl"];
+            this.siteName = _data["siteName"];
+            this.byline = _data["byline"];
+            this.publishedTime = _data["publishedTime"];
+        }
+    }
+
+    static fromJS(data: any): UrlContentIngestRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new UrlContentIngestRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["url"] = this.url;
+        data["title"] = this.title;
+        data["content"] = this.content;
+        data["finalUrl"] = this.finalUrl;
+        data["siteName"] = this.siteName;
+        data["byline"] = this.byline;
+        data["publishedTime"] = this.publishedTime;
+        return data;
+    }
+}
+
+export interface IUrlContentIngestRequest {
+    url: string;
+    title?: string | undefined;
+    content: string;
+    finalUrl?: string | undefined;
+    siteName?: string | undefined;
+    byline?: string | undefined;
+    publishedTime?: string | undefined;
 }
 
 export class UserAchievement implements IUserAchievement {
@@ -9035,6 +10411,210 @@ export interface IUserSettingsDto {
     loginAlerts?: boolean;
     sessionTimeout?: number;
     dataEncryption?: boolean;
+}
+
+export class UserWorkspace implements IUserWorkspace {
+    id?: string | undefined;
+    userId?: string | undefined;
+    activeNoteId?: string | undefined;
+    recentNoteIds?: string | undefined;
+    editorState?: string | undefined;
+    pinnedTags?: string | undefined;
+    layoutPreferences?: string | undefined;
+    createdAt?: Date;
+    updatedAt?: Date;
+    activeNote?: Note;
+
+    constructor(data?: IUserWorkspace) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.id = _data["id"];
+            this.userId = _data["userId"];
+            this.activeNoteId = _data["activeNoteId"];
+            this.recentNoteIds = _data["recentNoteIds"];
+            this.editorState = _data["editorState"];
+            this.pinnedTags = _data["pinnedTags"];
+            this.layoutPreferences = _data["layoutPreferences"];
+            this.createdAt = _data["createdAt"] ? new Date(_data["createdAt"].toString()) : <any>undefined;
+            this.updatedAt = _data["updatedAt"] ? new Date(_data["updatedAt"].toString()) : <any>undefined;
+            this.activeNote = _data["activeNote"] ? Note.fromJS(_data["activeNote"]) : <any>undefined;
+        }
+    }
+
+    static fromJS(data: any): UserWorkspace {
+        data = typeof data === 'object' ? data : {};
+        let result = new UserWorkspace();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["id"] = this.id;
+        data["userId"] = this.userId;
+        data["activeNoteId"] = this.activeNoteId;
+        data["recentNoteIds"] = this.recentNoteIds;
+        data["editorState"] = this.editorState;
+        data["pinnedTags"] = this.pinnedTags;
+        data["layoutPreferences"] = this.layoutPreferences;
+        data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : <any>undefined;
+        data["updatedAt"] = this.updatedAt ? this.updatedAt.toISOString() : <any>undefined;
+        data["activeNote"] = this.activeNote ? this.activeNote.toJSON() : <any>undefined;
+        return data;
+    }
+}
+
+export interface IUserWorkspace {
+    id?: string | undefined;
+    userId?: string | undefined;
+    activeNoteId?: string | undefined;
+    recentNoteIds?: string | undefined;
+    editorState?: string | undefined;
+    pinnedTags?: string | undefined;
+    layoutPreferences?: string | undefined;
+    createdAt?: Date;
+    updatedAt?: Date;
+    activeNote?: Note;
+}
+
+export class ValidateConfigurationRequest implements IValidateConfigurationRequest {
+    settings?: ConfigurationUpdateItem[] | undefined;
+
+    constructor(data?: IValidateConfigurationRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            if (Array.isArray(_data["settings"])) {
+                this.settings = [] as any;
+                for (let item of _data["settings"])
+                    this.settings!.push(ConfigurationUpdateItem.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): ValidateConfigurationRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new ValidateConfigurationRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        if (Array.isArray(this.settings)) {
+            data["settings"] = [];
+            for (let item of this.settings)
+                data["settings"].push(item.toJSON());
+        }
+        return data;
+    }
+}
+
+export interface IValidateConfigurationRequest {
+    settings?: ConfigurationUpdateItem[] | undefined;
+}
+
+export class ValidationError implements IValidationError {
+    key?: string | undefined;
+    message?: string | undefined;
+    code?: string | undefined;
+
+    constructor(data?: IValidationError) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.key = _data["key"];
+            this.message = _data["message"];
+            this.code = _data["code"];
+        }
+    }
+
+    static fromJS(data: any): ValidationError {
+        data = typeof data === 'object' ? data : {};
+        let result = new ValidationError();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["key"] = this.key;
+        data["message"] = this.message;
+        data["code"] = this.code;
+        return data;
+    }
+}
+
+export interface IValidationError {
+    key?: string | undefined;
+    message?: string | undefined;
+    code?: string | undefined;
+}
+
+export class ValidationWarning implements IValidationWarning {
+    key?: string | undefined;
+    message?: string | undefined;
+    code?: string | undefined;
+
+    constructor(data?: IValidationWarning) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.key = _data["key"];
+            this.message = _data["message"];
+            this.code = _data["code"];
+        }
+    }
+
+    static fromJS(data: any): ValidationWarning {
+        data = typeof data === 'object' ? data : {};
+        let result = new ValidationWarning();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["key"] = this.key;
+        data["message"] = this.message;
+        data["code"] = this.code;
+        return data;
+    }
+}
+
+export interface IValidationWarning {
+    key?: string | undefined;
+    message?: string | undefined;
+    code?: string | undefined;
 }
 
 export class VoiceConfigRequest implements IVoiceConfigRequest {

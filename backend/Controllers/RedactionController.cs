@@ -1,11 +1,13 @@
 using CortexApi.Models;
 using CortexApi.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CortexApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class RedactionController : ControllerBase
 {
     private readonly IRedactionService _redactionService;

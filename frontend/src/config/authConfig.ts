@@ -2,7 +2,7 @@ import { Configuration, RedirectRequest } from '@azure/msal-browser'
 
 // MSAL Configuration for Azure AD B2C
 const AUTH_CLIENT_ID = (globalThis as any).process?.env?.NEXT_PUBLIC_MSAL_CLIENT_ID || 'c83c5908-2b64-4304-8c53-b964ace5a1ea'
-const AUTH_AUTHORITY = (globalThis as any).process?.env?.NEXT_PUBLIC_MSAL_AUTHORITY || 'https://jsraauth.b2clogin.com/jsraauth.onmicrosoft.com/B2C_1_SIGNUP_SIGNIN'
+const AUTH_AUTHORITY = (globalThis as any).process?.env?.NEXT_PUBLIC_MSAL_AUTHORITY || 'https://jsraauth.b2clogin.com/jsraauth.onmicrosoft.com/B2C_1_SIGNUP_SIGNIN/v2.0'
 const AUTH_KNOWN_AUTHORITIES = ((globalThis as any).process?.env?.NEXT_PUBLIC_MSAL_KNOWN_AUTHORITIES || 'jsraauth.b2clogin.com').split(',').map((s: string) => s.trim()).filter(Boolean)
 
 export const msalConfig: Configuration = {

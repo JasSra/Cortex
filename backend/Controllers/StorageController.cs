@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using CortexApi.Data;
 using CortexApi.Models;
 using CortexApi.Security;
+using CortexApi.Services;
 using System.Text;
 using System.Text.Json;
 
@@ -15,17 +16,17 @@ namespace CortexApi.Controllers
     public class StorageController : ControllerBase
     {
         private readonly CortexDbContext _db;
-        private readonly IConfiguration _config;
+        private readonly IConfigurationService _configurationService;
         private readonly IUserContextAccessor _user;
         private readonly ILogger<StorageController> _logger;
         private readonly HttpClient _http;
 
         private const long MaxSizeBytes = 100L * 1024 * 1024; // 100MB
 
-        public StorageController(CortexDbContext db, IConfiguration config, IUserContextAccessor user, ILogger<StorageController> logger, HttpClient http)
+        public StorageController(CortexDbContext db, IConfigurationService configurationService, IUserContextAccessor user, ILogger<StorageController> logger, HttpClient http)
         {
             _db = db;
-            _config = config;
+            _configurationService = configurationService;
             _user = user;
             _logger = logger;
             _http = http;
@@ -41,7 +42,8 @@ namespace CortexApi.Controllers
             if (files == null || files.Count == 0)
                 return BadRequest("No files provided");
 
-            var storageRoot = _config["Storage:Root"] ?? Path.Combine(AppContext.BaseDirectory, "storage");
+            var config = _configurationService.GetConfiguration();
+            var storageRoot = config["Storage:Root"] ?? Path.Combine(AppContext.BaseDirectory, "storage");
             Directory.CreateDirectory(storageRoot);
 
             var results = new List<StoredFileResponse>();
@@ -194,9 +196,10 @@ namespace CortexApi.Controllers
         {
             try
             {
-                var apiKey = _config["OpenAI:ApiKey"] ?? _config["OPENAI_API_KEY"];
+                var config = _configurationService.GetConfiguration();
+                var apiKey = config["OpenAI:ApiKey"] ?? config["OPENAI_API_KEY"];
                 if (string.IsNullOrWhiteSpace(apiKey)) return new List<string>();
-                var model = _config["OPENAI_MODEL"] ?? _config["OpenAI:Model"] ?? "gpt-4o-mini";
+                var model = config["OPENAI_MODEL"] ?? config["OpenAI:Model"] ?? "gpt-4o-mini";
 
                 var prompt = $@"You are a tagging assistant. Based only on file metadata, propose 3-6 short tags.
 - Use lowercase, single words or kebab-case.
@@ -278,7 +281,8 @@ Metadata:
         private string ResolveSecureUrl(string id)
         {
             // If an explicit public base URL is configured, caller takes responsibility for security.
-            var publicBase = _config["Storage:PublicBaseUrl"];
+            var config = _configurationService.GetConfiguration();
+            var publicBase = config["Storage:PublicBaseUrl"];
             if (!string.IsNullOrWhiteSpace(publicBase))
             {
                 // Keep legacy behavior (not recommended). Join base + api route for id to ensure auth is still required by default.

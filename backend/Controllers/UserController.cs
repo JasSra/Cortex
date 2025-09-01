@@ -548,7 +548,7 @@ namespace CortexApi.Controllers
         public bool MascotVoice { get; set; } = true;
         public double MascotProactivity { get; set; } = 0.5;
         // Appearance
-        public string Theme { get; set; } = "auto"; // light|dark|auto
+        public string Theme { get; set; } = "auto"; // light|dark|auto|cybertron
         public string PrimaryColor { get; set; } = "#7c3aed";
         public string FontSize { get; set; } = "medium"; // small|medium|large
         public bool ReducedMotion { get; set; } = false;

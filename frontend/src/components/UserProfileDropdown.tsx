@@ -208,10 +208,16 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
               >
                 {theme === 'dark' ? (
                   <SunIcon className="h-5 w-5 text-yellow-500" />
+                ) : theme === 'cybertron' ? (
+                  <div className="w-5 h-5 bg-gradient-to-br from-cyan-400 to-orange-500 rounded" />
                 ) : (
                   <MoonIcon className="h-5 w-5 text-gray-400 dark:text-slate-400" />
                 )}
-                <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+                <span>
+                  {theme === 'dark' ? 'Light Mode' : 
+                   theme === 'cybertron' ? 'Light Mode' : 
+                   'Dark Mode'}
+                </span>
               </button>
 
               <div className="border-t border-gray-200 dark:border-slate-700 mt-2 pt-2">
