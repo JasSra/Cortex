@@ -16,11 +16,13 @@ public class SeedDataService : ISeedDataService
 {
     private readonly CortexDbContext _context;
     private readonly ILogger<SeedDataService> _logger;
+    private readonly IVectorService _vectorService;
 
-    public SeedDataService(CortexDbContext context, ILogger<SeedDataService> logger)
+    public SeedDataService(CortexDbContext context, ILogger<SeedDataService> logger, IVectorService vectorService)
     {
         _context = context;
         _logger = logger;
+        _vectorService = vectorService;
     }
 
     public async Task<bool> HasUserDataAsync(string userId)
@@ -43,8 +45,42 @@ public class SeedDataService : ISeedDataService
 
         var allNotes = shakespeareNotes.Concat(scienceNotes).ToList();
 
+        // For each note, create a single chunk from full content and enqueue embedding
+        var now = DateTime.UtcNow;
+        var allChunks = new List<NoteChunk>();
+        foreach (var note in allNotes)
+        {
+            if (!string.IsNullOrWhiteSpace(note.Content))
+            {
+                var text = note.Content.Trim();
+                var chunk = new NoteChunk
+                {
+                    NoteId = note.Id,
+                    Content = text,
+                    Text = text,
+                    ChunkIndex = 0,
+                    Seq = 0,
+                    TokenCount = Math.Max(1, text.Length / 4),
+                    CreatedAt = now
+                };
+                note.ChunkCount = 1;
+                allChunks.Add(chunk);
+            }
+        }
+
         await _context.Notes.AddRangeAsync(allNotes);
+        if (allChunks.Count > 0)
+        {
+            await _context.NoteChunks.AddRangeAsync(allChunks);
+        }
         await _context.SaveChangesAsync();
+
+        // Enqueue embeddings after IDs are persisted
+        foreach (var chunk in allChunks)
+        {
+            var note = allNotes.First(n => n.Id == chunk.NoteId);
+            await _vectorService.EnqueueEmbedAsync(note, chunk);
+        }
 
         _logger.LogInformation("Successfully seeded {Count} notes for user {UserId}", allNotes.Count, userId);
     }

@@ -1,6 +1,7 @@
 using StackExchange.Redis;
 using System.Text.Json;
 using CortexApi.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CortexApi.Services;
 
@@ -91,22 +92,17 @@ public class VectorService : IVectorService
 
     public async Task EnqueueEmbedAsync(Note note, NoteChunk chunk, CancellationToken ct = default)
     {
-    EnsureConnected();
-    if (!_connected || _db is null) return;
-        // Publish embedding job to unified stream used by BackgroundJobService
-        var job = new
+        // Route embedding requests to Hangfire instead of Redis streams
+        try
         {
-            ChunkId = chunk.Id,
-            NoteId = note.Id,
-            UserId = note.UserId
-        };
-        var fields = new NameValueEntry[]
+            using var scope = _serviceScopeFactory.CreateScope();
+            var jobs = scope.ServiceProvider.GetRequiredService<IBackgroundJobService>();
+            await jobs.EnqueueJobAsync("embedding", new EmbeddingJobPayload { ChunkId = chunk.Id }, ct);
+        }
+        catch (Exception ex)
         {
-            new("type", "embedding"),
-            new("payload", JsonSerializer.Serialize(job)),
-            new("enqueued_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds())
-        };
-        await _db.StreamAddAsync("jobs:embedding", fields);
+            _logger.LogWarning(ex, "Failed to enqueue embedding job to Hangfire for Chunk {ChunkId}", chunk.Id);
+        }
     }
 
     public async Task UpsertChunkAsync(Note note, NoteChunk chunk, float[] embedding, CancellationToken ct = default)

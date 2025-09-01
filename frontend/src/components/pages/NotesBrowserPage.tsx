@@ -396,7 +396,12 @@ const NotesBrowserPage: React.FC = () => {
             source: note.source || note.Source,
             fileType: note.fileType || note.FileType,
             chunkCount: note.chunkCount || note.ChunkCount || 0,
-            wordCount: typeof content === 'string' ? (content.trim() ? content.trim().split(/\s+/).length : 0) : 0,
+            // Use Preview field for word count when Content is empty (includeContent=false)
+            wordCount: (() => {
+              const contentToCount = content || (note as any).preview || (note as any).Preview || '';
+              return typeof contentToCount === 'string' && contentToCount.trim() ? 
+                contentToCount.trim().split(/\s+/).length : 0;
+            })(),
           },
           status: {
             chunkCount: s.ChunkCount ?? s.chunkCount ?? (note.chunkCount || note.ChunkCount || 0),

@@ -41,10 +41,8 @@ interface HealthData {
   jobs: {
     pending: number
     processedRecently: number
-    pendingStreams: number
     pendingBacklog: number
-    usingStreams: boolean
-    redisConnected: boolean
+  // Streams removed; Hangfire-only
   }
   db: {
     ok: boolean
@@ -350,22 +348,10 @@ const SystemPage: React.FC = () => {
           <StatusCard
             title="Background Jobs (Hangfire)"
             icon={<BoltIcon className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />}
-            status={
-              !healthData.jobs.redisConnected ? 'error' :
-              healthData.jobs.pendingBacklog > 100 ? 'degraded' : 'ok'
-            }
+            status={healthData.jobs.pendingBacklog > 100 ? 'degraded' : 'ok'}
             getStatusIcon={getStatusIcon}
             details={
               <>
-                <DetailRow 
-                  label="Redis Connected" 
-                  value={healthData.jobs.redisConnected ? 'Yes' : 'No'}
-                  status={healthData.jobs.redisConnected ? 'ok' : 'error'}
-                />
-                <DetailRow 
-                  label="Using Streams" 
-                  value={healthData.jobs.usingStreams ? 'Yes' : 'No'}
-                />
                 <DetailRow 
                   label="Pending" 
                   value={healthData.jobs.pending}
@@ -396,29 +382,7 @@ const SystemPage: React.FC = () => {
             }
           />
 
-          {/* Redis Streams Detail */}
-          {healthData.redis.connected && Object.keys(healthData.redis.streams).length > 0 && (
-            <StatusCard
-              title="Redis Streams"
-              icon={<QueueListIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />}
-              status="ok"
-              getStatusIcon={getStatusIcon}
-              details={
-                <div className="space-y-1 text-xs">
-                  {Object.entries(healthData.redis.streams).map(([stream, data]) => (
-                    <div key={stream} className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400 truncate" title={stream}>
-                        {stream.replace('jobs:', '')}:
-                      </span>
-                      <span className="text-gray-900 dark:text-white">
-                        {data.length} / {data.pendingPEL}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              }
-            />
-          )}
+          {/* Redis Streams section removed (Hangfire-only) */}
         </div>
       )}
 

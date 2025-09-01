@@ -170,6 +170,56 @@
 			"command": "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:8081 dotnet run --project ./backend/CortexApi.csproj",
 			"isBackground": true,
 			"group": "dev"
+		},
+		{
+			"label": "frontend-build-once",
+			"type": "shell",
+			"command": "npm run --silent build"
+		},
+		{
+			"label": "build-backend-now",
+			"type": "shell",
+			"command": "dotnet build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "call-indexing-audit",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$ProgressPreference = 'SilentlyContinue'; $headers = @{ 'X-UserId' = 'dev'; 'X-Roles' = 'Admin,Editor,Reader' }; try { $res = Invoke-RestMethod -Method GET -Uri 'http://localhost:8081/api/Admin/indexing/audit' -Headers $headers -TimeoutSec 20; $res | ConvertTo-Json -Depth 6 } catch { Write-Error $_; exit 1 }"
+			],
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "test"
+		},
+		{
+			"label": "call-indexing-audit",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$ProgressPreference = 'SilentlyContinue'; $headers = @{'X-UserId'='dev';'X-Roles'='Admin,Editor,Reader'}; try { $res = Invoke-RestMethod -Method GET -Uri 'http://localhost:8081/api/Admin/indexing/audit' -Headers $headers -TimeoutSec 20; $res | ConvertTo-Json -Depth 8 } catch { Write-Error $_; exit 1 }"
+			],
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "test"
+		},
+		{
+			"label": "frontend-build-once",
+			"type": "shell",
+			"command": "npm run --silent build",
+			"group": "build"
 		}
 	]
 }

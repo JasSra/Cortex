@@ -63,10 +63,6 @@ public class JobsController : ControllerBase
                 processed = stats.ProcessedJobs,
                 failed = stats.FailedJobs,
                 avgMs,
-                pendingStreams = stats.PendingStreams,
-                pendingBacklog = stats.PendingBacklog,
-                usingStreams = stats.UsingStreams,
-                redisConnected = stats.RedisConnected,
             });
         }
         catch (Exception ex)
@@ -92,18 +88,13 @@ public class JobsController : ControllerBase
                 processed = stats.ProcessedJobs,
                 failed = stats.FailedJobs,
                 avgMs,
-                pendingStreams = stats.PendingStreams,
-                pendingBacklog = stats.PendingBacklog,
-                usingStreams = stats.UsingStreams,
-                redisConnected = stats.RedisConnected,
-                streamDetails = stats.PendingStreams,
                 lastUpdated = DateTime.UtcNow,
                 performanceMetrics = new
                 {
                     averageProcessingTimeMs = avgMs,
                     totalJobsThisSession = stats.ProcessedJobs,
                     currentQueueSize = stats.PendingJobs,
-                    systemHealth = stats.RedisConnected ? "healthy" : "degraded"
+                    systemHealth = "healthy"
                 },
                 jobTypes = new[]
                 {
@@ -183,10 +174,6 @@ public class JobsController : ControllerBase
                     processed = stats.ProcessedJobs,
                     failed = stats.FailedJobs,
                     avgMs,
-                    pendingStreams = stats.PendingStreams,
-                    pendingBacklog = stats.PendingBacklog,
-                    usingStreams = stats.UsingStreams,
-                    redisConnected = stats.RedisConnected,
                 });
                 await Response.WriteAsync($"data: {payload}\n\n");
                 await Response.Body.FlushAsync();

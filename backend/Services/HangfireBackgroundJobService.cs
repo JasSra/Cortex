@@ -117,10 +117,10 @@ public class HangfireBackgroundJobService : IBackgroundJobService
 			ProcessedJobs = processedJobs,
 			FailedJobs = failedJobs,
 			AverageProcessingTime = TimeSpan.Zero,
-			PendingStreams = pendingJobs, // Hangfire queue jobs
+			PendingStreams = 0, // No Redis streams in use
 			PendingBacklog = pendingBacklog,
-			UsingStreams = true, // Hangfire is always "active"
-			RedisConnected = true, // Using SQLite instead
+			UsingStreams = false, // Hangfire-only
+			RedisConnected = false, // Job system uses SQLite storage
 		};
 	}
 

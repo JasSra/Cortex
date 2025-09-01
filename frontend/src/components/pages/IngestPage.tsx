@@ -69,54 +69,103 @@ const IngestPage: React.FC = () => {
     setUploadProgress(prev => [...prev, ...progressItems])
     setIsUploading(true)
     
-    try {
-      // Update status to uploading
-      setUploadProgress(prev => prev.map(item => 
-        progressItems.find(p => p.id === item.id) 
-          ? { ...item, status: 'uploading', progress: 25 }
-          : item
-      ))
+    // Process files one by one with retry logic
+    const results: IngestResult[] = []
+    let currentIndex = 0
+    
+    for (const progressItem of progressItems) {
+      currentIndex++
+      const maxRetries = 3
+      let retryCount = 0
+      let success = false
       
-      const res = await uploadFiles(validFiles)
-      
-      // Update with results - match by array index since backend processes files in order
-      setUploadProgress(prev => prev.map(item => {
-        const progressItemIndex = progressItems.findIndex(p => p.id === item.id)
-        if (progressItemIndex >= 0 && progressItemIndex < res.length) {
-          const result = res[progressItemIndex]
-          return {
-            ...item,
-            status: 'success',
-            progress: 100,
-            result,
-            error: undefined
+      while (retryCount < maxRetries && !success) {
+        try {
+          // Update status to uploading
+          setUploadProgress(prev => prev.map(item => 
+            item.id === progressItem.id 
+              ? { 
+                  ...item, 
+                  status: 'uploading', 
+                  progress: 25 + (retryCount * 20),
+                  error: retryCount > 0 ? `Retry ${retryCount}/${maxRetries}` : undefined
+                }
+              : item
+          ))
+          
+          // Upload single file
+          const res = await uploadFiles([progressItem.file])
+          
+          if (res && res.length > 0) {
+            const result = res[0] as Partial<IngestResult>
+            const ingestResult: IngestResult = {
+              noteId: (result.noteId as string) || '',
+              title: result.title || progressItem.file.name,
+              status: result.status || 'ingested',
+              chunkCount: result.chunkCount ?? 0,
+              error: result.error,
+            }
+            
+            // Update with success
+            setUploadProgress(prev => prev.map(item => 
+              item.id === progressItem.id 
+                ? {
+                    ...item,
+                    status: 'success',
+                    progress: 100,
+                    result: ingestResult,
+                    error: undefined
+                  }
+                : item
+            ))
+            
+            results.push(ingestResult)
+            success = true
+            
+            // Log progress
+            console.log(`✅ Uploaded ${currentIndex}/${progressItems.length}: ${progressItem.file.name} (${ingestResult.chunkCount} chunks)`)
+            
+          } else {
+            throw new Error('No result returned from server')
           }
-        } else if (progressItems.find(p => p.id === item.id)) {
-          // File was processed but no result (likely failed extraction)
-          return {
-            ...item,
-            status: 'error',
-            progress: 100,
-            error: 'No content could be extracted from this file'
+          
+        } catch (e: any) {
+          retryCount++
+          const errorMessage = e?.message || 'Upload failed'
+          
+          if (retryCount >= maxRetries) {
+            // Final failure
+            setUploadProgress(prev => prev.map(item => 
+              item.id === progressItem.id 
+                ? { 
+                    ...item, 
+                    status: 'error', 
+                    progress: 100, 
+                    error: `Failed after ${maxRetries} attempts: ${errorMessage}` 
+                  }
+                : item
+            ))
+            
+            console.error(`❌ Failed ${progressItem.file.name} after ${maxRetries} attempts:`, errorMessage)
+          } else {
+            // Will retry
+            console.warn(`⚠️ Retry ${retryCount}/${maxRetries} for ${progressItem.file.name}:`, errorMessage)
+            
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000))
           }
         }
-        return item
-      }))
+      }
       
-      setResults(prev => [...res, ...prev])
-      appBus.emit('notes:updated', { source: 'ingest:files', count: res.length })
-    } catch (e: any) {
-      setError(e?.message || 'Upload failed')
-      
-      // Mark all as error
-      setUploadProgress(prev => prev.map(item => 
-        progressItems.find(p => p.id === item.id) 
-          ? { ...item, status: 'error', progress: 0, error: e?.message || 'Upload failed' }
-          : item
-      ))
-    } finally {
-      setIsUploading(false)
+      // Brief pause between files to avoid overwhelming the server
+      if (currentIndex < progressItems.length) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
     }
+    
+    setResults(prev => [...results, ...prev])
+    appBus.emit('notes:updated', { source: 'ingest:files', count: results.length })
+    setIsUploading(false)
   }, [uploadFiles])
 
   const onDrop = useCallback((ev: React.DragEvent) => {

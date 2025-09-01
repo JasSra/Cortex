@@ -3,34 +3,122 @@
 ```yaml
 - generic [active] [ref=e1]:
   - generic [ref=e2]:
-    - button "Toggle theme" [ref=e6] [cursor=pointer]:
-      - img [ref=e7] [cursor=pointer]
-    - generic [ref=e9]:
-      - generic [ref=e10]:
-        - img [ref=e12]
-        - heading "Cortex" [level=1] [ref=e14]
-        - paragraph [ref=e15]: Your Personal Knowledge Hub
-      - generic [ref=e16]:
-        - generic [ref=e17]:
-          - heading "Welcome Back" [level=2] [ref=e18]
-          - paragraph [ref=e19]: Sign in with your Microsoft account to continue
-        - button "Continue with Microsoft" [ref=e20] [cursor=pointer]:
-          - generic [ref=e22] [cursor=pointer]:
-            - img [ref=e23] [cursor=pointer]
-            - generic [ref=e25] [cursor=pointer]: Continue with Microsoft
-        - generic [ref=e27]:
-          - generic [ref=e28]:
-            - img [ref=e29]
-            - generic [ref=e31]: Secure Authentication
-          - generic [ref=e32]:
-            - img [ref=e33]
-            - generic [ref=e35]: Personal Data
+    - navigation [ref=e3]:
+      - link "Logo" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "Logo" [ref=e6] [cursor=pointer]
+      - generic [ref=e8]:
+        - link "Staff Login" [ref=e10] [cursor=pointer]:
+          - /url: /admin
+        - button "My Business" [ref=e12]:
+          - link "My Business" [ref=e13] [cursor=pointer]:
+            - /url: /client
+            - img [ref=e14] [cursor=pointer]
+            - text: My Business
+        - button "My Account" [ref=e17]:
+          - link "My Account" [ref=e18] [cursor=pointer]:
+            - /url: /user
+            - img [ref=e19] [cursor=pointer]
+            - text: My Account
+    - generic [ref=e25]:
+      - generic [ref=e27]:
+        - heading "Navigate your debt, chart your future." [level=1] [ref=e29]
+        - heading "💪 Take charge of your debt today with simple steps and pave the way to financial freedom!" [level=3] [ref=e31]
+      - generic [ref=e34]:
+        - form "Form" [ref=e35]:
           - generic [ref=e36]:
-            - img [ref=e37]
-            - generic [ref=e39]: AI-Powered Search
-          - generic [ref=e40]:
-            - img [ref=e41]
-            - generic [ref=e43]: Smart Organization
-      - paragraph [ref=e45]: By signing in, you agree to our terms of service and privacy policy.
-  - alert [ref=e46]
+            - generic [ref=e37]:
+              - heading "Make Payment" [level=3] [ref=e39]:
+                - generic [ref=e40]: 
+                - text: Make Payment
+              - paragraph [ref=e41]: Please enter your client reference number.
+            - generic [ref=e43]:
+              - generic [ref=e45]:
+                - generic [ref=e46]:
+                  - text: Reference Number
+                  - generic "required" [ref=e47]: "*"
+                - paragraph [ref=e48]: This is your client reference number
+                - 'region "text field: Reference Number" [ref=e50]':
+                  - generic [ref=e52]:
+                    - generic:
+                      - generic: CD-
+                    - textbox "Reference Number" [ref=e53]
+              - 'region "toc field: terms_and_conditions" [ref=e57]':
+                - generic [ref=e59]:
+                  - checkbox "Terms and Conditions" [ref=e61]
+                  - generic [ref=e65] [cursor=pointer]:
+                    - generic [ref=e66] [cursor=pointer]: 
+                    - generic [ref=e67] [cursor=pointer]: Terms and Conditions
+          - generic [ref=e68]:
+            - button "Click to continue ⌘↵" [disabled] [ref=e69]:
+              - generic [ref=e70]: 
+              - text: Click to continue
+              - generic [ref=e71]: ⌘↵
+            - button "Reset ⌘R" [disabled] [ref=e72]:
+              - generic [ref=e73]: 
+              - text: Reset
+              - generic [ref=e74]: ⌘R
+          - contentinfo [ref=e75]:
+            - paragraph [ref=e76]:
+              - text: Powered by
+              - generic [ref=e77]: Servive stack
+        - generic [ref=e78]:
+          - generic [ref=e79]:
+            - generic [ref=e80]: ⌘↵
+            - text: Submit
+          - generic [ref=e81]:
+            - text: •
+            - generic [ref=e82]: ⌘R
+            - text: Reset
+    - contentinfo [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - img "Logo" [ref=e86]
+          - paragraph [ref=e87]: Adeva Plus is committed to delivering the best solutions for your business needs. Join us on our journey.
+        - generic [ref=e88]:
+          - heading "Quick Links" [level=3] [ref=e89]
+          - list [ref=e90]:
+            - listitem [ref=e91]:
+              - link " Our Story" [ref=e92] [cursor=pointer]:
+                - /url: /article/our-story
+                - generic [ref=e93] [cursor=pointer]: 
+                - text: Our Story
+            - listitem [ref=e94]:
+              - link " Careers" [ref=e95] [cursor=pointer]:
+                - /url: /article/careers
+                - generic [ref=e96] [cursor=pointer]: 
+                - text: Careers
+            - listitem [ref=e97]:
+              - link " Contact Us" [ref=e98] [cursor=pointer]:
+                - /url: /article/contact-us
+                - generic [ref=e99] [cursor=pointer]: 
+                - text: Contact Us
+        - generic [ref=e100]:
+          - heading "Follow Us" [level=3] [ref=e101]
+          - list [ref=e102]:
+            - listitem [ref=e103]:
+              - link " Facebook" [ref=e104] [cursor=pointer]:
+                - /url: https://facebook.com
+                - generic [ref=e105] [cursor=pointer]: 
+                - text: Facebook
+            - listitem [ref=e106]:
+              - link " Twitter" [ref=e107] [cursor=pointer]:
+                - /url: https://twitter.com
+                - generic [ref=e108] [cursor=pointer]: 
+                - text: Twitter
+            - listitem [ref=e109]:
+              - link " LinkedIn" [ref=e110] [cursor=pointer]:
+                - /url: https://linkedin.com
+                - generic [ref=e111] [cursor=pointer]: 
+                - text: LinkedIn
+      - generic [ref=e113]:
+        - paragraph [ref=e114]: © 2025 Adeva Plus. All rights reserved.
+        - 'button " unknown Server: http://localhost:5229/health " [ref=e116]':
+          - generic [ref=e117]: 
+          - generic [ref=e119]: "Server: http://localhost:5229/health"
+          - generic [ref=e120]: 
+  - button "Dev Clear All" [ref=e121]
+  - alert [ref=e122]
+  - button "Open Next.js Dev Tools" [ref=e128] [cursor=pointer]:
+    - img [ref=e129] [cursor=pointer]
 ```

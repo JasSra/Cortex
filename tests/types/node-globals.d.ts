@@ -6,6 +6,4 @@ interface BufferConstructor {
   from(input: string | ArrayBuffer | ArrayBufferView): Buffer;
 }
 
-declare const Buffer: BufferConstructor & {
-  prototype: Uint8Array;
-};
+declare const Buffer: any;

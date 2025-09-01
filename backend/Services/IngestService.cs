@@ -124,6 +124,9 @@ public class IngestService : IIngestService
             return null;
         }
 
+    // Normalize content for chunking (remove empty/whitespace-only lines)
+    var normalizedForChunk = RemoveEmptyLines(content);
+
         // Calculate SHA-256 hash from content (normalized)
         var hash = CalculateSha256FromText(NormalizeForHash(content));
 
@@ -150,7 +153,7 @@ public class IngestService : IIngestService
             finalTitle = string.IsNullOrWhiteSpace(suggested) ? $"Note {now:yyyy-MM-dd HH:mm}" : suggested.Trim();
         }
 
-        // Create note and chunks directly from text
+    // Create note and chunks directly from text
         var note = new Note
         {
             UserId = _user.UserId ?? "dev-user",
@@ -165,7 +168,7 @@ public class IngestService : IIngestService
             UpdatedAt = now
         };
 
-        var chunks = ChunkText(content, note.Id);
+    var chunks = ChunkText(normalizedForChunk, note.Id);
         note.ChunkCount = chunks.Count;
         note.Chunks = chunks;
 
@@ -277,13 +280,16 @@ public class IngestService : IIngestService
             await file.CopyToAsync(fileStream);
         }
 
-        // Extract text content
-        var content = await ExtractTextAsync(filePath, file.FileName);
+    // Extract text content
+    var content = await ExtractTextAsync(filePath, file.FileName);
         if (string.IsNullOrWhiteSpace(content))
         {
             _logger.LogWarning("No text content extracted from file {FileName}", file.FileName);
             return null;
         }
+
+    // Normalize content for chunking (remove empty/whitespace-only lines)
+    var normalizedForChunk = RemoveEmptyLines(content);
 
         // Content-based SHA for dedupe (normalized)
         var contentHash = CalculateSha256FromText(NormalizeForHash(content));
@@ -320,7 +326,7 @@ public class IngestService : IIngestService
             UpdatedAt = now
         };
 
-        var chunks = ChunkText(content, note.Id);
+    var chunks = ChunkText(normalizedForChunk, note.Id);
         note.ChunkCount = chunks.Count;
         note.Chunks = chunks;
 
@@ -350,12 +356,15 @@ public class IngestService : IIngestService
 
         var fileInfo = new FileInfo(filePath);
 
-        // Extract text content
-        var content = await ExtractTextAsync(filePath, fileInfo.Name);
+    // Extract text content
+    var content = await ExtractTextAsync(filePath, fileInfo.Name);
         if (string.IsNullOrWhiteSpace(content))
         {
             return null;
         }
+
+    // Normalize content for chunking (remove empty/whitespace-only lines)
+    var normalizedForChunk = RemoveEmptyLines(content);
 
         var contentHash = CalculateSha256FromText(NormalizeForHash(content));
         var existingByContent = await _context.Notes.FirstOrDefaultAsync(n => n.Sha256Hash == contentHash);
@@ -389,7 +398,7 @@ public class IngestService : IIngestService
             UpdatedAt = DateTime.UtcNow
         };
 
-        var chunks = ChunkText(content, note.Id);
+    var chunks = ChunkText(normalizedForChunk, note.Id);
         note.ChunkCount = chunks.Count;
         note.Chunks = chunks;
 
@@ -891,6 +900,9 @@ public class IngestService : IIngestService
 
     private List<string> SplitIntoSentences(string text)
     {
+        if (string.IsNullOrWhiteSpace(text))
+            return new List<string>();
+
         var sentences = new List<string>();
         var current = new StringBuilder();
 
@@ -899,27 +911,51 @@ public class IngestService : IIngestService
             var trimmed = line.Trim();
             if (string.IsNullOrEmpty(trimmed))
             {
+                // Only add current content and clear if we have accumulated content
                 if (current.Length > 0)
                 {
-                    sentences.Add(current.ToString());
+                    var accumulated = current.ToString().Trim();
+                    if (!string.IsNullOrWhiteSpace(accumulated))
+                    {
+                        sentences.Add(accumulated);
+                    }
                     current.Clear();
                 }
                 continue;
             }
 
-            current.AppendLine(trimmed);
+            // Add line to current accumulator
+            if (current.Length > 0)
+                current.AppendLine(trimmed);
+            else
+                current.Append(trimmed);
 
-            // End sentence on period, exclamation, question mark followed by space or end
+            // End sentence on period, exclamation, question mark at end of line
             if (trimmed.EndsWith('.') || trimmed.EndsWith('!') || trimmed.EndsWith('?'))
             {
-                sentences.Add(current.ToString());
+                var accumulated = current.ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(accumulated))
+                {
+                    sentences.Add(accumulated);
+                }
                 current.Clear();
             }
         }
 
+        // Add any remaining content
         if (current.Length > 0)
         {
-            sentences.Add(current.ToString());
+            var accumulated = current.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(accumulated))
+            {
+                sentences.Add(accumulated);
+            }
+        }
+
+        // If no sentences were found but we have content, treat entire text as one sentence
+        if (sentences.Count == 0 && !string.IsNullOrWhiteSpace(text))
+        {
+            sentences.Add(text.Trim());
         }
 
         return sentences.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
@@ -1005,6 +1041,8 @@ public class IngestService : IIngestService
 
         try
         {
+            // Normalize content for chunking (remove empty/whitespace-only lines)
+            var normalizedForChunk = RemoveEmptyLines(content);
             // Calculate content hash for duplicate detection
             var contentHash = CalculateSha256FromText(content);
             
@@ -1063,7 +1101,7 @@ public class IngestService : IIngestService
                 UpdatedAt = now
             };
 
-            var chunks = ChunkText(content, note.Id);
+            var chunks = ChunkText(normalizedForChunk, note.Id);
             note.ChunkCount = chunks.Count;
             note.Chunks = chunks;
 
@@ -1108,6 +1146,32 @@ public class IngestService : IIngestService
                 Status = "error",
                 Error = ex.Message
             };
+        }
+    }
+
+    private static string RemoveEmptyLines(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return string.Empty;
+        try
+        {
+            var lf = content.Replace("\r\n", "\n").Replace('\r', '\n');
+            var lines = lf.Split('\n');
+            var filtered = lines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim());
+            var result = string.Join("\n", filtered);
+            
+            // Log the transformation for debugging
+            if (result.Length == 0 && content.Length > 0)
+            {
+                // Content was completely filtered out - this might be the issue
+                // Return original content trimmed instead of empty string
+                return content.Trim();
+            }
+            
+            return result;
+        }
+        catch
+        {
+            return content.Trim();
         }
     }
 

@@ -23,7 +23,7 @@ public class HealthRedis
     public bool Configured { get; set; }
     public bool Connected { get; set; }
     public long PingMs { get; set; }
-    public Dictionary<string, StreamHealth> Streams { get; set; } = new();
+    // Removed stream-level reporting now that we don't use Redis streams for jobs
 }
 
 public class StreamHealth
@@ -77,12 +77,6 @@ public class HealthController : ControllerBase
     private readonly IBackgroundJobService _jobs;
     private readonly HttpClient _http;
 
-    private const string GROUP = "cortex-workers";
-    private static readonly string[] Streams = new[]
-    {
-        "jobs:embedding","jobs:classification","jobs:pii_detection","jobs:weekly_digest","jobs:graph_enrich"
-    };
-
     public HealthController(IConfigurationService configurationService, IEmbeddingService embedding, IServiceScopeFactory scopeFactory, IBackgroundJobService jobs, HttpClient http)
     {
         _configurationService = configurationService;
@@ -128,12 +122,12 @@ public class HealthController : ControllerBase
             resp.Jobs.PendingBacklog = stats.PendingBacklog;
             resp.Jobs.UsingStreams = stats.UsingStreams;
             resp.Jobs.RedisConnected = stats.RedisConnected;
-            if (!stats.RedisConnected) status = "degraded";
+            if (!stats.RedisConnected && stats.UsingStreams) status = "degraded";
         }
         catch { status = "degraded"; }
 
-        // Redis: ping and streams with PEL counts
-        await PopulateRedisAsync(resp);
+        // Redis: optional ping only (no streams)
+        await PingRedisAsync(resp);
         if (resp.Redis.Configured && !resp.Redis.Connected) status = "degraded";
 
         // Embedding provider check (end-to-end invoke)
@@ -189,7 +183,7 @@ public class HealthController : ControllerBase
         return Ok(resp);
     }
 
-    private async Task PopulateRedisAsync(HealthResponse resp)
+    private async Task PingRedisAsync(HealthResponse resp)
     {
         var config = _configurationService.GetConfiguration();
         var redisConfig = config["REDIS_CONNECTION"] ?? config["Redis:Connection"] ?? config.GetConnectionString("Redis");
@@ -198,33 +192,13 @@ public class HealthController : ControllerBase
 
         try
         {
-            var mux = await ConnectionMultiplexer.ConnectAsync(redisConfig);
-            var db = mux.GetDatabase();
+            var cfg = redisConfig ?? string.Empty;
+            var mux = await ConnectionMultiplexer.ConnectAsync(cfg);
             var sw = Stopwatch.StartNew();
-            await db.PingAsync();
+            await mux.GetDatabase().PingAsync();
             sw.Stop();
             resp.Redis.Connected = true;
             resp.Redis.PingMs = sw.ElapsedMilliseconds;
-
-            foreach (var s in Streams)
-            {
-                long length = 0;
-                long pending = 0;
-                try
-                {
-                    var info = await db.StreamInfoAsync(s);
-                    length = (long)info.Length;
-                }
-                catch { /* stream may not exist yet */ }
-                try
-                {
-                    var pen = await db.StreamPendingAsync(s, GROUP);
-                    pending = (long)pen.PendingMessageCount;
-                }
-                catch { /* group may not exist */ }
-
-                resp.Redis.Streams[s] = new StreamHealth { Length = length, PendingPEL = pending };
-            }
         }
         catch
         {

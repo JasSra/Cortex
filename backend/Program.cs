@@ -17,6 +17,7 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using Hangfire;
 using Hangfire.SQLite;
+using Microsoft.AspNetCore.Authentication;
 
 // Configure Serilog early to capture startup logs
 Log.Logger = new LoggerConfiguration()
@@ -174,8 +175,25 @@ builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
 builder.Services.AddScoped<UserContextAccessor>();
 builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());
 
-// Add Authentication with JWT Bearer (MSAL.js integration)
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+// Add Authentication with JWT Bearer and a development header-based fallback
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = "AppAuth";
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddPolicyScheme("AppAuth", "JWT or DevHeader", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+        {
+            // Prefer JWT when Authorization header is present
+            var hasAuth = !string.IsNullOrEmpty(context.Request.Headers["Authorization"].FirstOrDefault());
+            if (hasAuth) return JwtBearerDefaults.AuthenticationScheme;
+            // Otherwise in Development use DevHeader
+            var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+            return env.IsDevelopment() ? "DevHeader" : JwtBearerDefaults.AuthenticationScheme;
+        };
+    })
     .AddJwtBearer(options =>
     {
         // Azure B2C configuration
@@ -216,7 +234,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 return Task.CompletedTask;
             }
         };
-    });
+    })
+    .AddScheme<AuthenticationSchemeOptions, CortexApi.Security.DevHeaderAuthHandler>("DevHeader", options => { });
 
 builder.Services.AddAuthorization();
 
@@ -230,7 +249,7 @@ if (!string.IsNullOrWhiteSpace(corsOriginsSetting))
 else
 {
     corsOrigins = builder.Configuration.GetSection("Server:CorsOrigins").Get<string[]>()
-                   ?? new[] { "http://localhost:3000", "http://localhost:3001" };
+                   ?? new[] { "http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003" };
 }
 
 builder.Services.AddCors(options =>

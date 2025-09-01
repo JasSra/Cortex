@@ -24,7 +24,7 @@ interface StatSample {
 const JobsPage: React.FC = () => {
   const { getStatus, getPendingJobs, statusStreamUrl, enqueueGraphEnrich } = useJobsApi()
   const { discoverAll } = useGraphApi()
-  const { getSystemStats } = useAdminApi()
+  const { getSystemStats, reembedConfirmed } = useAdminApi()
   const [samples, setSamples] = useState<StatSample[]>([])
   const [current, setCurrent] = useState<any | null>(null)
   const [pendingJobs, setPendingJobs] = useState<JobDetails[]>([])
@@ -73,21 +73,9 @@ const JobsPage: React.FC = () => {
     }
   }, [showDetails, getPendingJobs])
 
-  // Custom reembed function with required confirmation header
+  // Use admin API helper to re-embed with confirmation handled in the hook
   const triggerReembed = async () => {
-    const response = await fetch('/api/admin/reembed', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Confirm-Delete': 'true'
-      }
-    })
-    
-    if (!response.ok) {
-      throw new Error(`Re-embed failed: ${response.statusText}`)
-    }
-    
-    return response.json()
+    return await reembedConfirmed()
   }
 
   const last5 = useMemo(() => samples.slice(-50).reverse(), [samples])
@@ -101,12 +89,11 @@ const JobsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Pending" value={current?.pending ?? 0} />
         <StatCard label="Processed (10m)" value={current?.processed ?? 0} />
         <StatCard label="Failed" value={current?.failed ?? 0} />
         <StatCard label="Avg ms" value={current?.avgMs ?? 0} />
-        <StatCard label="Redis Connected" value={current?.redisConnected ? "Yes" : "No"} />
       </div>
 
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
@@ -158,7 +145,7 @@ const JobsPage: React.FC = () => {
               </p>
             </div>
             <a
-              href="/api/hangfire"
+              href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'}/hangfire`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"

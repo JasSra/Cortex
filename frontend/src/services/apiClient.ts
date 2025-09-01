@@ -212,9 +212,25 @@ export function useHealthApi() {
 // Admin
 export function useAdminApi() {
   const client = useCortexApiClient()
+  const { getAccessToken, logout } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+  const authedFetch = useMemo(() => createAuthedFetch(getAccessToken, logout), [getAccessToken, logout])
   return {
     reindex: () => client.reindex(),
     reembed: () => client.reembed(),
+    // Some admin endpoints require confirmation headers not modeled in OpenAPI
+    reembedConfirmed: async () => {
+      // Use authed fetch to include the X-Confirm-Delete header
+      const res = await authedFetch(`${baseUrl}/api/Admin/reembed`, {
+        method: 'POST',
+        headers: {
+          'X-Confirm-Delete': 'true',
+        }
+      })
+      const text = await res.text()
+      if (!res.ok) throw new Error(text || `HTTP ${res.status}`)
+      return text ? JSON.parse(text) : { status: 'ok' }
+    },
     healthCheck: () => client.health(),
     getSystemStats: () => client.stats(), // Embedding stats
   }
@@ -250,54 +266,78 @@ export function useIngestApi() {
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
   const authedFetch = useMemo(() => createAuthedFetch(getAccessToken, logout), [getAccessToken, logout])
 
-  const uploadFiles = useCallback(async (files: File[] | FileList) => {
-    try {
-      const token = await getAccessToken()
-      const form = new FormData()
-      const arr = Array.isArray(files) ? files : Array.from(files)
-      for (const f of arr) form.append('files', f, f.name)
-      
-      const res = await fetch(`${baseUrl}/api/Ingest/files`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } as any : undefined,
-        body: form,
-      })
-      
-      if (!res.ok) {
-        const errorText = await res.text()
-        throw new Error(`Upload failed: ${res.status} - ${errorText}`)
+  // Retry helper with exponential backoff
+  const retry = useCallback(async <T,>(fn: () => Promise<T>, attempts = 3, baseDelay = 400): Promise<T> => {
+    let lastErr: any
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await fn()
+      } catch (e: any) {
+        lastErr = e
+        // network-ish errors: retry
+        const msg = String(e?.message || '')
+        const shouldRetry = /NetworkError|Failed to fetch|ECONNRESET|ETIMEDOUT|429|5\d{2}/i.test(msg)
+        if (!shouldRetry) break
+        const delay = baseDelay * Math.pow(2, i) + Math.floor(Math.random() * 150)
+        await new Promise(res => setTimeout(res, delay))
       }
-      
-      const text = await res.text()
-      if (!text) {
-        console.warn('Empty response from upload API')
-        return []
-      }
-      
-      const raw = JSON.parse(text)
-      if (!Array.isArray(raw)) {
-        console.error('Unexpected response format:', raw)
-        throw new Error('Invalid response format from server')
-      }
-      
-      // Normalize backend result shape to frontend IngestResult
-      const results = raw.map((r, index) => ({
-        noteId: r.noteId ?? r.NoteId,
-        title: r.title ?? r.Title,
-        status: r.status ?? 'ingested',
-        chunkCount: r.chunkCount ?? r.CountChunks ?? r.countChunks ?? 0,
-        error: r.error,
-      }))
-      
-      console.log(`Successfully processed ${results.length} files`)
-      return results
-    } catch (error) {
-      console.error('Upload files error:', error)
-      throw error
     }
-  }, [baseUrl, getAccessToken])
+    throw lastErr
+  }, [])
 
-  const ingestFolder = useCallback(async (path: string) => {
+  // NEW: upload files sequentially, one request per file with retries
+  const uploadFiles = useCallback(async (files: File[] | FileList): Promise<import('@/types/api').IngestResult[]> => {
+    const token = await getAccessToken()
+    const arr = Array.isArray(files) ? files : Array.from(files)
+
+  const results: import('@/types/api').IngestResult[] = []
+
+    // process each file sequentially
+    for (const f of arr) {
+      const form = new FormData()
+      form.append('files', f, f.name)
+
+      const doUpload = async () => {
+        const res = await fetch(`${baseUrl}/api/Ingest/files`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } as any : undefined,
+          body: form,
+        })
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(`Upload failed: ${res.status} - ${errorText}`)
+        }
+        const text = await res.text()
+        const raw = text ? JSON.parse(text) : []
+        // Backend returns an array; for single file expect array length 0 or 1
+        const item = Array.isArray(raw) ? raw[0] : raw
+        return item
+      }
+
+      try {
+        const item = await retry(doUpload)
+        results.push({
+          noteId: item?.noteId ?? item?.NoteId ?? '',
+          title: item?.title ?? item?.Title ?? f.name,
+          status: (item?.status ?? 'ingested') as string,
+          chunkCount: item?.chunkCount ?? item?.CountChunks ?? item?.countChunks ?? 0,
+          error: item?.error,
+        })
+      } catch (e: any) {
+        results.push({
+          noteId: '',
+          title: f.name,
+          status: 'error',
+          chunkCount: 0,
+          error: e?.message || 'Upload failed',
+        })
+      }
+    }
+
+    return results
+  }, [baseUrl, getAccessToken, retry])
+
+  const ingestFolder = useCallback(async (path: string): Promise<import('@/types/api').IngestResult[]> => {
     const res = await authedFetch(`${baseUrl}/api/Ingest/folder`, {
       method: 'POST',
       body: JSON.stringify({ path }),
@@ -306,15 +346,15 @@ export function useIngestApi() {
     const text = await res.text()
     const raw = text ? JSON.parse(text) : []
     return (raw as any[]).map(r => ({
-      noteId: r.noteId ?? r.NoteId,
-      title: r.title ?? r.Title,
+      noteId: r.noteId ?? r.NoteId ?? '',
+      title: r.title ?? r.Title ?? '',
       status: r.status ?? 'ingested',
       chunkCount: r.chunkCount ?? r.CountChunks ?? r.countChunks ?? 0,
       error: r.error,
     }))
   }, [authedFetch, baseUrl])
 
-  const createNote = useCallback(async (content: string, title?: string) => {
+  const createNote = useCallback(async (content: string, title?: string): Promise<import('@/types/api').IngestResult> => {
     const res = await authedFetch(`${baseUrl}/api/Notes`, {
       method: 'POST',
       body: JSON.stringify({ content, title: title || '' }),
@@ -322,8 +362,8 @@ export function useIngestApi() {
     if (!res.ok) throw new Error(`Create note failed: ${res.status}`)
     const data = await res.json()
     return {
-      noteId: data.noteId ?? data.NoteId,
-      title: data.title ?? data.Title,
+      noteId: data.noteId ?? data.NoteId ?? '',
+      title: data.title ?? data.Title ?? (title || ''),
       status: 'created',
       chunkCount: data.chunkCount ?? data.CountChunks ?? data.countChunks ?? 0,
       error: data.error,
@@ -346,14 +386,14 @@ export function useIngestApi() {
     if (!res.ok) throw new Error(`URL ingestion failed: ${res.status}`)
     const data = await res.json()
     return {
-      noteId: data.noteId ?? data.NoteId,
-      title: data.title ?? data.Title,
+      noteId: data.noteId ?? data.NoteId ?? '',
+      title: data.title ?? data.Title ?? (urlData.title || ''),
       status: data.status ?? 'success',
       chunkCount: data.countChunks ?? data.CountChunks ?? data.countChunks ?? 0,
       originalUrl: data.originalUrl ?? data.OriginalUrl,
       finalUrl: data.finalUrl ?? data.FinalUrl,
       error: data.error,
-    }
+    } as any
   }, [authedFetch, baseUrl])
 
   return useMemo(() => ({ uploadFiles, ingestFolder, createNote, ingestUrlContent }), [uploadFiles, ingestFolder, createNote, ingestUrlContent])
@@ -552,11 +592,7 @@ export function useJobsApi() {
       pending: res?.pending ?? res?.Pending ?? 0,
       processed: res?.processed ?? res?.Processed ?? 0,
       failed: res?.failed ?? res?.Failed ?? 0,
-      avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
-      pendingStreams: res?.pendingStreams ?? res?.PendingStreams ?? 0,
-      pendingBacklog: res?.pendingBacklog ?? res?.PendingBacklog ?? 0,
-      usingStreams: res?.usingStreams ?? res?.UsingStreams ?? false,
-      redisConnected: res?.redisConnected ?? res?.RedisConnected ?? false,
+  avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
     }
   }, [http])
 
@@ -571,12 +607,7 @@ export function useJobsApi() {
       pending: res?.pending ?? res?.Pending ?? 0,
       processed: res?.processed ?? res?.Processed ?? 0,
       failed: res?.failed ?? res?.Failed ?? 0,
-      avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
-      pendingStreams: res?.pendingStreams ?? res?.PendingStreams ?? 0,
-      pendingBacklog: res?.pendingBacklog ?? res?.PendingBacklog ?? 0,
-      usingStreams: res?.usingStreams ?? res?.UsingStreams ?? false,
-      redisConnected: res?.redisConnected ?? res?.RedisConnected ?? false,
-      streamDetails: res?.streamDetails ?? res?.StreamDetails ?? {},
+  avgMs: res?.avgMs ?? res?.AverageMs ?? 0,
       lastUpdated: res?.lastUpdated ?? res?.LastUpdated ?? new Date().toISOString(),
       performanceMetrics: res?.performanceMetrics ?? res?.PerformanceMetrics ?? {},
       jobTypes: res?.jobTypes ?? res?.JobTypes ?? []
@@ -600,7 +631,7 @@ export function useJobsApi() {
     // Helper to build SSE URL with token
     statusStreamUrl,
     // Subscribe and push normalized updates
-    subscribeStatusStream: (onUpdate: (s: { summary: string; pending: number; processed: number; failed: number; avgMs: number; pendingStreams?: number; pendingBacklog?: number; usingStreams?: boolean; redisConnected?: boolean }) => void) => {
+  subscribeStatusStream: (onUpdate: (s: { summary: string; pending: number; processed: number; failed: number; avgMs: number }) => void) => {
       let es: EventSource | null = null
       let closed = false
       ;(async () => {
@@ -621,11 +652,7 @@ export function useJobsApi() {
                   pending: data?.pending ?? data?.Pending ?? 0,
                   processed: data?.processed ?? data?.Processed ?? 0,
                   failed: data?.failed ?? data?.Failed ?? 0,
-                  avgMs: data?.avgMs ?? data?.AverageMs ?? 0,
-                  pendingStreams: data?.pendingStreams ?? data?.PendingStreams ?? 0,
-                  pendingBacklog: data?.pendingBacklog ?? data?.PendingBacklog ?? 0,
-                  usingStreams: data?.usingStreams ?? data?.UsingStreams ?? false,
-                  redisConnected: data?.redisConnected ?? data?.RedisConnected ?? false,
+          avgMs: data?.avgMs ?? data?.AverageMs ?? 0,
                 })
               } catch {}
             }

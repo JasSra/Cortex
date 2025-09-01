@@ -19,20 +19,26 @@ public class AdminController : ControllerBase
     private readonly CortexDbContext _db;
     private readonly IVectorService _vectorService;
     private readonly IEmbeddingService _embeddingService;
+    private readonly IIngestService _ingestService;
     private readonly IUserContextAccessor _userContext;
+    private readonly IWebHostEnvironment _env;
     private readonly ILogger<AdminController> _logger;
 
     public AdminController(
         CortexDbContext db,
         IVectorService vectorService,
-        IEmbeddingService embeddingService,
+    IEmbeddingService embeddingService,
+    IIngestService ingestService,
         IUserContextAccessor userContext,
+        IWebHostEnvironment env,
         ILogger<AdminController> logger)
     {
         _db = db;
         _vectorService = vectorService;
         _embeddingService = embeddingService;
+    _ingestService = ingestService;
         _userContext = userContext;
+        _env = env;
         _logger = logger;
     }
 
@@ -149,6 +155,182 @@ public class AdminController : ControllerBase
         {
             _logger.LogError(ex, "Health check failed for user {UserId}", _userContext.UserId);
             return StatusCode(500, new { error = "Health check failed", details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Indexing audit for current user's notes (Admin role required)
+    /// Lists notes with ChunkCount and EmbeddingCount, and flags reasons for not search-ready
+    /// </summary>
+    [HttpGet("indexing/audit")]
+    [AllowAnonymous] // Dev-only: we'll guard inside for non-dev
+    public async Task<IActionResult> GetIndexingAudit()
+    {
+        // In non-development environments, enforce authentication normally
+        if (!_env.IsDevelopment())
+        {
+            if (!(HttpContext.User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized("Authentication required");
+        }
+
+        if (!Rbac.RequireRole(_userContext, "Admin"))
+            return Forbid("Admin role required");
+
+        // Fetch notes first
+        var notes = await _db.Notes
+            .Where(n => !n.IsDeleted && n.UserId == _userContext.UserId)
+            .Select(n => new { n.Id, n.Title, n.ChunkCount, n.Content, n.FileType, n.UpdatedAt })
+            .ToListAsync();
+
+        if (notes.Count == 0)
+        {
+            return Ok(new
+            {
+                summary = new { notes = 0, noChunks = 0, noEmbeddings = 0, partial = 0, complete = 0 },
+                items = Array.Empty<object>()
+            });
+        }
+
+        var noteIds = notes.Select(n => n.Id).ToList();
+
+        // Compute embedding counts per note in one query
+        var embeddingCounts = await _db.Embeddings
+            .Where(e => _db.NoteChunks.Any(c => c.Id == e.ChunkId && noteIds.Contains(c.NoteId)))
+            .GroupBy(e => e.Chunk.NoteId)
+            .Select(g => new { NoteId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.NoteId, x => x.Count);
+
+        int noChunks = 0, noEmbeddings = 0, partial = 0, complete = 0;
+
+        var items = new List<object>(notes.Count);
+        foreach (var n in notes)
+        {
+            var embeddingCount = embeddingCounts.TryGetValue(n.Id, out var c) ? c : 0;
+            var status = "none";
+            var reason = "";
+            var reasonDetail = "";
+
+            if (n.ChunkCount <= 0)
+            {
+                status = "none";
+                reason = "no_chunks";
+                reasonDetail = string.IsNullOrWhiteSpace(n.Content)
+                    ? "empty_content"
+                    : "content_not_chunked (likely whitespace-only lines or removed on update)";
+                noChunks++;
+            }
+            else if (embeddingCount <= 0)
+            {
+                status = "none";
+                reason = "no_embeddings";
+                noEmbeddings++;
+            }
+            else if (embeddingCount < n.ChunkCount)
+            {
+                status = "partial";
+                reason = "partial_embeddings";
+                partial++;
+            }
+            else
+            {
+                status = "complete";
+                reason = "ok";
+                complete++;
+            }
+
+            items.Add(new
+            {
+                noteId = n.Id,
+                title = n.Title,
+                chunkCount = n.ChunkCount,
+                embeddingCount,
+                status,
+                reason,
+                reasonDetail,
+                fileType = n.FileType,
+                updatedAt = n.UpdatedAt
+            });
+        }
+
+        return Ok(new
+        {
+            summary = new
+            {
+                notes = notes.Count,
+                noChunks,
+                noEmbeddings,
+                partial,
+                complete
+            },
+            items
+        });
+    }
+
+    /// <summary>
+    /// Repair notes that have no chunks by generating minimal chunks from existing content and enqueuing embeddings
+    /// </summary>
+    [HttpPost("indexing/repair-missing-chunks")]
+    public async Task<IActionResult> RepairMissingChunks()
+    {
+        if (!Rbac.RequireRole(_userContext, "Admin"))
+            return Forbid("Admin role required");
+
+        var userId = _userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return BadRequest(new { error = "Missing user context" });
+
+        try
+        {
+            var notes = await _db.Notes
+                .Where(n => !n.IsDeleted && n.UserId == userId && n.ChunkCount <= 0 && !string.IsNullOrWhiteSpace(n.Content))
+                .ToListAsync();
+
+            if (notes.Count == 0)
+            {
+                return Ok(new { status = "ok", repaired = 0 });
+            }
+
+            int repaired = 0;
+            foreach (var note in notes)
+            {
+                // If chunks somehow exist but count wasn't updated, skip creation
+                var existingChunks = await _db.NoteChunks.Where(c => c.NoteId == note.Id).ToListAsync();
+                if (existingChunks.Count == 0)
+                {
+                    var content = note.Content?.Trim();
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        var chunk = new NoteChunk
+                        {
+                            NoteId = note.Id,
+                            Content = content,
+                            Text = content,
+                            ChunkIndex = 0,
+                            Seq = 0,
+                            TokenCount = Math.Max(1, content.Length / 4),
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        note.ChunkCount = 1;
+                        _db.NoteChunks.Add(chunk);
+
+                        // Enqueue embedding in background
+                        await _vectorService.EnqueueEmbedAsync(note, chunk);
+                        repaired++;
+                    }
+                }
+                else if (note.ChunkCount != existingChunks.Count)
+                {
+                    note.ChunkCount = existingChunks.Count;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+            return Ok(new { status = "ok", repaired });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "RepairMissingChunks failed for user {UserId}", _userContext.UserId);
+            return StatusCode(500, new { error = "Repair failed", details = ex.Message });
         }
     }
 
