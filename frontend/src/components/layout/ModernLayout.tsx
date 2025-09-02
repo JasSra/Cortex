@@ -6,6 +6,7 @@ import {
   HomeIcon, 
   ChatBubbleLeftRightIcon, 
   MagnifyingGlassIcon, 
+  MicrophoneIcon,
   DocumentTextIcon,
   ShareIcon,
   CogIcon,
@@ -44,6 +45,7 @@ interface ModernLayoutProps {
 // Navigation organized by relevance and logical grouping
 const coreNavigation = [
   { name: 'Workspace', href: 'workspace', icon: Cog6ToothIcon, current: false },
+  { name: 'Workflow', href: 'workflow', icon: MicrophoneIcon, current: false },
   { name: 'Search', href: 'search', icon: MagnifyingGlassIcon, current: true },
   { name: 'Chat Assistant', href: 'chat', icon: ChatBubbleLeftRightIcon, current: false },
   { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: false },

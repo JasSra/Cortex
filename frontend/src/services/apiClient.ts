@@ -937,6 +937,55 @@ export function useAssistApi() {
   }
 }
 
+// Suggestions API - AI-powered suggestions and insights
+export function useSuggestionsApi() {
+  const http = useAuthedFetch()
+  return {
+    // Note title suggestion
+    suggestNoteTitle: (body: { content: string }) =>
+      http.post<{ title: string }>(`/api/Suggestions/note-title`, body).then(r => (r as any)?.title ?? ''),
+    
+    // Summary generation
+    generateSummary: (body: { content: string; maxLength?: number }) =>
+      http.post<{ summary: string; wordCount: number }>(`/api/Suggestions/summary`, body),
+    
+    // Content classification
+    classifyContent: (body: { content: string; noteId?: string }) =>
+      http.post<{
+        noteId: string;
+        tags: string[];
+        suggestedTags: string[];
+        sensitivity: number;
+        sensitivityScore: number;
+        pii: string[];
+        secrets: string[];
+        summary: string;
+        confidence: number;
+        processedAt: string;
+        error?: string;
+      }>(`/api/Suggestions/classify`, body),
+    
+    // Proactive suggestions
+    getProactiveSuggestions: (limit = 5) =>
+      http.get<Array<{
+        type: string;
+        title: string;
+        description: string;
+        actionUrl: string;
+        priority: string;
+        estimatedTimeMinutes: number;
+      }>>(`/api/Suggestions/proactive?limit=${limit}`),
+    
+    // Entity insights
+    getEntityInsights: () =>
+      http.get<{
+        topEntities: string[];
+        recentConnections: string[];
+        suggestedExplorations: string[];
+      }>(`/api/Suggestions/insights`),
+  }
+}
+
 // Mascot API convenience
 export function useMascotApi() {
   const http = useAuthedFetch()

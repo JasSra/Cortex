@@ -15,6 +15,7 @@ import KnowledgeGraphPage from './pages/KnowledgeGraphPage'
 import JobsPage from './pages/JobsPage'
 import SystemPage from './pages/SystemPage'
 import WorkspaceView from './workspace/WorkspaceView'
+import WorkflowPage from './pages/WorkflowPage'
 import ConfigurationPage from '../app/config/page'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -32,6 +33,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({ activeView, onViewChange })
   switch (activeView) {
     case 'workspace':
       return <WorkspaceView activeView={activeView} onViewChange={onViewChange} />
+    case 'workflow':
+      return <WorkflowPage />
     case 'analytics':
       return <AnalyticsPage />
     case 'achievements':
