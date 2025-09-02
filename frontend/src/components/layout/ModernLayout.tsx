@@ -21,7 +21,9 @@ import {
   SparklesIcon,
   MapPinIcon,
   ServerIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  ChevronDownIcon,
+  ChevronRightIcon
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -39,22 +41,39 @@ interface ModernLayoutProps {
   onSidebarToggle: () => void
 }
 
-// Reordered to surface the most-used sections first
-const navigation = [
+// Navigation organized by relevance and logical grouping
+const coreNavigation = [
   { name: 'Workspace', href: 'workspace', icon: Cog6ToothIcon, current: false },
   { name: 'Search', href: 'search', icon: MagnifyingGlassIcon, current: true },
   { name: 'Chat Assistant', href: 'chat', icon: ChatBubbleLeftRightIcon, current: false },
+  { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: false },
+]
+
+const contentManagement = [
   { name: 'Documents', href: 'documents', icon: DocumentTextIcon, current: false },
   { name: 'Notes Browser', href: 'notes-browser', icon: FolderIcon, current: false },
   { name: 'Knowledge Graph', href: 'graph', icon: ShareIcon, current: false },
-  { name: 'System Status', href: 'system', icon: ServerIcon, current: false },
-  { name: 'Jobs', href: 'jobs', icon: ChartBarIcon, current: false },
   { name: 'Ingest', href: 'ingest', icon: DocumentTextIcon, current: false },
-  { name: 'Dashboard', href: 'dashboard', icon: HomeIcon, current: false },
+]
+
+const analyticsAndGamification = [
   { name: 'Analytics', href: 'analytics', icon: ChartBarIcon, current: false },
   { name: 'Achievements', href: 'achievements', icon: TrophyIcon, current: false },
+]
+
+const systemAndAdmin = [
+  { name: 'System Status', href: 'system', icon: ServerIcon, current: false },
+  { name: 'Jobs', href: 'jobs', icon: ChartBarIcon, current: false },
   { name: 'Configuration', href: 'config', icon: Cog6ToothIcon, current: false },
   { name: 'Settings', href: 'settings', icon: CogIcon, current: false },
+]
+
+// All navigation items in order of priority
+const navigation = [
+  ...coreNavigation,
+  ...contentManagement,
+  ...analyticsAndGamification,
+  ...systemAndAdmin,
 ]
 
 export default function ModernLayout({ 
@@ -64,7 +83,7 @@ export default function ModernLayout({
   onSidebarToggle 
 }: ModernLayoutProps) {
   const { user, isAuthenticated } = useAuth()
-  const { theme, toggleTheme, isCybertron } = useTheme()
+  const { theme, toggleTheme } = useTheme()
   const searchApi = useSearchApi()
   
   // Global search state
@@ -78,7 +97,23 @@ export default function ModernLayout({
   const searchResultsRef = useRef<HTMLDivElement>(null)
   const searchRequestIdRef = useRef<number>(0)
   const [sidebarPinned, setSidebarPinned] = useState<boolean>(false)
+  
+  // Collapsible section state
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    content: false,
+    analytics: false,
+    system: true, // Start collapsed for less important sections
+  })
+  
   const isTest = process.env.NEXT_PUBLIC_TEST === '1' || process.env.NEXT_PUBLIC_TEST === 'true'
+
+  // Toggle section collapse
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId]
+    }))
+  }
 
   // Load persisted pin state and ensure sidebar opens if pinned
   useEffect(() => {
@@ -155,7 +190,7 @@ export default function ModernLayout({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Debounced search function with race protection and fallback modes
+  // Enhanced search function using advanced search with better scoring and features
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim() || !isAuthenticated) {
       setSearchResults([])
@@ -165,13 +200,19 @@ export default function ModernLayout({
     setIsSearching(true)
     setShowSearchResults(true)
 
-  // Track the latest request to avoid out-of-order updates
-  const reqId = ++searchRequestIdRef.current
+    // Track the latest request to avoid out-of-order updates
+    const reqId = ++searchRequestIdRef.current
 
-    const tryMode = async (mode: string) => {
+    const tryAdvancedSearch = async (mode: string) => {
       try {
-        const res = await searchApi.searchGet(query, 5, mode, 0.6)
-        // normalized: res.hits | res.Hits
+        const res = await searchApi.advancedSearch({
+          Q: query,
+          K: 5, // Limit to 5 results for the dropdown
+          Mode: mode,
+          Alpha: 0.6,
+          UseReranking: true // Enable reranking for better results
+        })
+        // Use the enhanced search response format
         const results = (res?.Hits || res?.hits || []) as any[]
         return results
       } catch {
@@ -180,18 +221,37 @@ export default function ModernLayout({
     }
 
     try {
-      let results = await tryMode('hybrid')
-      if (results.length === 0) results = await tryMode('semantic')
-      if (results.length === 0) results = await tryMode('keyword')
+      // First try hybrid search (best overall results)
+      let results = await tryAdvancedSearch('hybrid')
+      
+      // If no results, try semantic search
+      if (results.length === 0) {
+        results = await tryAdvancedSearch('semantic')
+      }
+      
+      // If still no results, try BM25 keyword search
+      if (results.length === 0) {
+        results = await tryAdvancedSearch('bm25')
+      }
 
       // Only update if this is the latest request
-  if (searchRequestIdRef.current === reqId) {
+      if (searchRequestIdRef.current === reqId) {
         setSearchResults(results)
       }
     } catch (error) {
-      console.error('Global search failed:', error)
+      console.error('Enhanced global search failed:', error)
+      // Fallback to basic search if advanced search fails
+      try {
+        const res = await searchApi.searchGet(query, 5, 'hybrid', 0.6)
+        const results = (res?.Hits || res?.hits || []) as any[]
+        if (searchRequestIdRef.current === reqId) {
+          setSearchResults(results)
+        }
+      } catch (fallbackError) {
+        console.error('Fallback search also failed:', fallbackError)
+      }
     } finally {
-  if (searchRequestIdRef.current === reqId) setIsSearching(false)
+      if (searchRequestIdRef.current === reqId) setIsSearching(false)
     }
   }, [searchApi, isAuthenticated])
 
@@ -226,11 +286,7 @@ export default function ModernLayout({
   }
   
   return (
-    <div className={`min-h-screen ${
-      isCybertron 
-        ? 'bg-black' 
-        : 'bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900'
-    }`}>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <motion.div
@@ -247,31 +303,16 @@ export default function ModernLayout({
         initial={{ x: sidebarOpen ? 0 : -320 }}
         animate={{ x: sidebarOpen ? 0 : -320 }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className={`fixed inset-y-0 z-50 flex w-80 flex-col ${
-          isCybertron 
-            ? 'cybertron-bg-elevated cybertron-border' 
-            : 'bg-white/80 dark:bg-slate-800/90 border-r border-gray-200/50 dark:border-slate-700/50'
-        } backdrop-blur-xl shadow-xl`}
+        className="fixed inset-y-0 z-50 flex w-80 flex-col bg-white/80 dark:bg-slate-800/90 border-r border-gray-200/50 dark:border-slate-700/50 backdrop-blur-xl shadow-xl"
       >
         {/* Sidebar header */}
-        <div className={`flex h-16 shrink-0 items-center justify-between px-6 ${
-          isCybertron 
-            ? 'cybertron-border border-b' 
-            : 'border-b border-gray-200/50 dark:border-slate-700/50'
-        }`}>
+        <div className="flex h-16 shrink-0 items-center justify-between px-6 border-b border-gray-200/50 dark:border-slate-700/50"
+        >
           <div className="flex items-center space-x-3">
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-              isCybertron 
-                ? 'bg-gradient-to-br from-cyan-400 to-orange-500 cybertron-glow' 
-                : 'bg-gradient-to-br from-blue-600 to-indigo-600'
-            }`}>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-600">
               <span className="text-white font-bold text-sm">C</span>
             </div>
-            <span className={`text-xl font-bold ${
-              isCybertron 
-                ? 'cybertron-text-primary animate-cybertron-flicker' 
-                : 'bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent'
-            }`}>
+            <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
               Cortex
             </span>
           </div>
@@ -285,38 +326,215 @@ export default function ModernLayout({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-2">
-      {navigation.map((item) => (
-            <motion.button
-              key={item.name}
-              onClick={() => onViewChange(item.href)}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              data-testid={`nav-${item.href}`}
-              className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
-                activeView === item.href
-                  ? isCybertron
-                    ? 'cybertron-btn-primary cybertron-glow'
-                    : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
-                  : isCybertron
-                    ? 'cybertron-text-primary hover:cybertron-bg hover:cybertron-border-bright'
-                    : 'text-gray-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70 hover:text-gray-900 dark:hover:text-slate-100 hover:shadow-sm'
-              }`}
+        <nav className="flex-1 px-4 py-6 space-y-3">
+          {/* Core Features - Always visible */}
+          <div className="space-y-1">
+            {coreNavigation.map((item) => (
+              <motion.button
+                key={item.name}
+                onClick={() => onViewChange(item.href)}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                data-testid={`nav-${item.href}`}
+                className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
+                  activeView === item.href
+                    ? false
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                      : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
+                    : false
+                      ? 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      : 'text-gray-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70 hover:text-gray-900 dark:hover:text-slate-100 hover:shadow-sm'
+                }`}
+              >
+                <item.icon 
+                  className={`h-5 w-5 ${
+                    activeView === item.href 
+                      ? false 
+                        ? 'text-slate-700 dark:text-slate-200' 
+                        : 'text-white' 
+                      : false 
+                        ? 'text-blue-600 dark:text-blue-400' 
+                        : 'text-gray-400 dark:text-slate-400'
+                  }`} 
+                />
+                <span>{item.name}</span>
+              </motion.button>
+            ))}
+          </div>
+
+          {/* Content Management */}
+          <div className="space-y-1">
+            <button
+              onClick={() => toggleSection('content')}
+              className="w-full flex items-center justify-between px-2 py-2 text-xs font-semibold text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200 transition-colors"
             >
-              <item.icon 
-                className={`h-5 w-5 ${
-                  activeView === item.href 
-                    ? isCybertron 
-                      ? 'cybertron-text-primary' 
-                      : 'text-white' 
-                    : isCybertron 
-                      ? 'cybertron-text-accent' 
-                      : 'text-gray-400 dark:text-slate-400'
-                }`} 
-              />
-              <span>{item.name}</span>
-            </motion.button>
-          ))}
+              <span>CONTENT MANAGEMENT</span>
+              {collapsedSections.content ? (
+                <ChevronRightIcon className="w-4 h-4" />
+              ) : (
+                <ChevronDownIcon className="w-4 h-4" />
+              )}
+            </button>
+            <AnimatePresence>
+              {!collapsedSections.content && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden space-y-1"
+                >
+                  {contentManagement.map((item) => (
+                    <motion.button
+                      key={item.name}
+                      onClick={() => onViewChange(item.href)}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      data-testid={`nav-${item.href}`}
+                      className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
+                        activeView === item.href
+                          ? false
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                            : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
+                          : false
+                            ? 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            : 'text-gray-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70 hover:text-gray-900 dark:hover:text-slate-100 hover:shadow-sm'
+                      }`}
+                    >
+                      <item.icon 
+                        className={`h-5 w-5 ${
+                          activeView === item.href 
+                            ? false 
+                              ? 'text-slate-700 dark:text-slate-200' 
+                              : 'text-white' 
+                            : false 
+                              ? 'text-blue-600 dark:text-blue-400' 
+                              : 'text-gray-400 dark:text-slate-400'
+                        }`} 
+                      />
+                      <span>{item.name}</span>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Analytics & Gamification */}
+          <div className="space-y-1">
+            <button
+              onClick={() => toggleSection('analytics')}
+              className="w-full flex items-center justify-between px-2 py-2 text-xs font-semibold text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200 transition-colors"
+            >
+              <span>ANALYTICS & PROGRESS</span>
+              {collapsedSections.analytics ? (
+                <ChevronRightIcon className="w-4 h-4" />
+              ) : (
+                <ChevronDownIcon className="w-4 h-4" />
+              )}
+            </button>
+            <AnimatePresence>
+              {!collapsedSections.analytics && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden space-y-1"
+                >
+                  {analyticsAndGamification.map((item) => (
+                    <motion.button
+                      key={item.name}
+                      onClick={() => onViewChange(item.href)}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      data-testid={`nav-${item.href}`}
+                      className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
+                        activeView === item.href
+                          ? false
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                            : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
+                          : false
+                            ? 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            : 'text-gray-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70 hover:text-gray-900 dark:hover:text-slate-100 hover:shadow-sm'
+                      }`}
+                    >
+                      <item.icon 
+                        className={`h-5 w-5 ${
+                          activeView === item.href 
+                            ? false 
+                              ? 'text-slate-700 dark:text-slate-200' 
+                              : 'text-white' 
+                            : false 
+                              ? 'text-blue-600 dark:text-blue-400' 
+                              : 'text-gray-400 dark:text-slate-400'
+                        }`} 
+                      />
+                      <span>{item.name}</span>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* System & Admin */}
+          <div className="space-y-1">
+            <button
+              onClick={() => toggleSection('system')}
+              className="w-full flex items-center justify-between px-2 py-2 text-xs font-semibold text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200 transition-colors"
+            >
+              <span>SYSTEM & ADMIN</span>
+              {collapsedSections.system ? (
+                <ChevronRightIcon className="w-4 h-4" />
+              ) : (
+                <ChevronDownIcon className="w-4 h-4" />
+              )}
+            </button>
+            <AnimatePresence>
+              {!collapsedSections.system && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden space-y-1"
+                >
+                  {systemAndAdmin.map((item) => (
+                    <motion.button
+                      key={item.name}
+                      onClick={() => onViewChange(item.href)}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      data-testid={`nav-${item.href}`}
+                      className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
+                        activeView === item.href
+                          ? false
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                            : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
+                          : false
+                            ? 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            : 'text-gray-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70 hover:text-gray-900 dark:hover:text-slate-100 hover:shadow-sm'
+                      }`}
+                    >
+                      <item.icon 
+                        className={`h-5 w-5 ${
+                          activeView === item.href 
+                            ? false 
+                              ? 'text-slate-700 dark:text-slate-200' 
+                              : 'text-white' 
+                            : false 
+                              ? 'text-blue-600 dark:text-blue-400' 
+                              : 'text-gray-400 dark:text-slate-400'
+                        }`} 
+                      />
+                      <span>{item.name}</span>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </nav>
 
         {/* Gamification Widget */}
@@ -328,8 +546,8 @@ export default function ModernLayout({
 
         {/* User profile */}
         <div className={`p-4 ${
-          isCybertron 
-            ? 'cybertron-border border-t' 
+          false 
+            ? 'border-gray-200 dark:border-slate-700 border-t' 
             : 'border-t border-gray-200/50 dark:border-slate-700/50'
         }`}>
           <UserProfileDropdown onNavigate={onViewChange} />
@@ -343,8 +561,8 @@ export default function ModernLayout({
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           className={`sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between ${
-            isCybertron 
-              ? 'cybertron-bg-elevated cybertron-border border-b' 
+            false 
+              ? 'bg-white/90 dark:bg-slate-800/90 border-gray-200 dark:border-slate-700 border-b' 
               : 'bg-white/80 dark:bg-slate-900/80 border-b border-gray-200/50 dark:border-slate-700/50'
           } backdrop-blur-xl px-6 shadow-sm dark:shadow-slate-900/20`}
         >
@@ -373,8 +591,8 @@ export default function ModernLayout({
             
             <div className="hidden lg:block">
               <h1 className={`text-xl font-semibold capitalize ${
-                isCybertron 
-                  ? 'cybertron-text-primary animate-cybertron-flicker' 
+                false 
+                  ? 'text-slate-700 dark:text-slate-200 ' 
                   : 'text-gray-900 dark:text-slate-100'
               }`}>
                 {activeView.replace('-', ' ')}
@@ -398,8 +616,8 @@ export default function ModernLayout({
                   placeholder="Search everything... (Ctrl+K)"
                   data-testid="global-search-input"
                   className={`w-64 pl-10 pr-4 py-2 rounded-xl border focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
-                    isCybertron
-                      ? 'cybertron-bg cybertron-border cybertron-text-primary focus:cybertron-border-bright focus:cybertron-glow placeholder-cyan-400/50'
+                    false
+                      ? 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-blue-500 placeholder-gray-500'
                       : 'bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-600 focus:ring-blue-500 focus:border-transparent text-slate-900 dark:text-slate-100'
                   }`}
                   onFocus={() => {
@@ -422,8 +640,8 @@ export default function ModernLayout({
               <div
                 ref={searchResultsRef}
                 className={`absolute top-full left-0 right-0 mt-2 rounded-xl border shadow-lg z-50 max-h-96 overflow-y-auto transition-all duration-150 ${
-                  isCybertron
-                    ? 'cybertron-bg-elevated cybertron-border'
+                  false
+                    ? 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'
                     : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600'
                 } ${
                   showSearchResults && hasFocus ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
@@ -490,16 +708,16 @@ export default function ModernLayout({
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className={`p-2 rounded-xl transition-colors ${
-                isCybertron
-                  ? 'hover:cybertron-bg cybertron-border'
+                false
+                  ? 'hover:bg-gray-100 dark:hover:bg-slate-700 border-gray-200 dark:border-slate-700'
                   : 'hover:bg-gray-100 dark:hover:bg-slate-700'
               }`}
-              title={`Switch to ${theme === 'dark' ? 'light' : theme === 'cybertron' ? 'light' : 'dark'} mode`}
+              title={`Switch to ${theme === 'dark' ? 'light' : theme === 'auto' ? (theme === 'auto' ? 'light' : 'auto') : 'dark'} mode`}
             >
               {theme === 'dark' ? (
                 <SunIcon className="h-5 w-5 text-yellow-500" />
-              ) : theme === 'cybertron' ? (
-                <div className="w-5 h-5 bg-gradient-to-br from-cyan-400 to-orange-500 rounded animate-cybertron-pulse" />
+              ) : false ? (
+                <div className="w-5 h-5 bg-gradient-to-br from-cyan-400 to-orange-500 rounded animate-pulse" />
               ) : (
                 <MoonIcon className="h-5 w-5 text-slate-600 dark:text-slate-400" />
               )}

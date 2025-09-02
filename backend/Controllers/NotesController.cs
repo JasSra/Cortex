@@ -134,6 +134,7 @@ public class NotesController : ControllerBase
                 n.FileType,
                 n.Sha256Hash,
                 n.FileSizeBytes,
+                n.WordCount,
                 n.CreatedAt,
                 n.UpdatedAt,
                 n.ChunkCount,

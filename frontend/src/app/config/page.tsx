@@ -30,7 +30,7 @@ import {
 
 export default function ConfigurationPage() {
   const { isAuthenticated, user } = useAuth()
-  const { isCybertron } = useTheme()
+  const { theme } = useTheme()
   const configApi = useConfigurationApi()
   
   const [sections, setSections] = useState<ConfigurationSection[]>([])
@@ -367,7 +367,7 @@ export default function ConfigurationPage() {
 
   return (
     <div className={`min-h-screen ${
-      isCybertron 
+      false 
         ? 'bg-black' 
         : 'bg-gray-50 dark:bg-slate-900'
     }`}>

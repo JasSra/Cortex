@@ -16,6 +16,7 @@ public interface IGraphService
     Task<List<Edge>> DiscoverSemanticRelationshipsAsync();
     Task<List<Edge>> DiscoverTemporalRelationshipsAsync();
     Task<GraphInsights> AnalyzeGraphStructureAsync();
+    Task CleanupUserEntitiesAsync(string userId);
 }
 
 public class GraphService : IGraphService
@@ -554,6 +555,46 @@ public class GraphService : IGraphService
         }
 
         return d[n, m];
+    }
+
+    public async Task CleanupUserEntitiesAsync(string userId)
+    {
+        _logger.LogInformation("Cleaning up graph entities for user: {UserId}", userId);
+
+        try
+        {
+            // Find all entities and edges created by this user by looking at note references
+            var userNoteIds = await _context.Notes
+                .Where(n => n.UserId == userId)
+                .Select(n => n.Id)
+                .ToListAsync();
+
+            if (userNoteIds.Any())
+            {
+                var noteIdsString = string.Join("','", userNoteIds);
+
+                // Delete edges referencing user's notes
+                await _context.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM edges WHERE source_id IN (SELECT id FROM entities WHERE note_ids LIKE '%{0}%') OR target_id IN (SELECT id FROM entities WHERE note_ids LIKE '%{0}%')",
+                    string.Join("%' OR note_ids LIKE '%", userNoteIds));
+
+                // Delete entities referencing user's notes  
+                await _context.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM entities WHERE note_ids LIKE '%{0}%'",
+                    string.Join("%' OR note_ids LIKE '%", userNoteIds));
+
+                _logger.LogInformation("Deleted graph entities and edges for {Count} notes belonging to user {UserId}", userNoteIds.Count, userId);
+            }
+            else
+            {
+                _logger.LogInformation("No notes found for user {UserId}, no graph cleanup needed", userId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cleanup graph entities for user {UserId}", userId);
+            throw;
+        }
     }
 
     public void Dispose()

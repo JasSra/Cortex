@@ -16,17 +16,23 @@ namespace CortexApi.Controllers
         private readonly CortexDbContext _context;
         private readonly IUserContextAccessor _userContext;
         private readonly IGamificationService _gamificationService;
+        private readonly IVectorService _vectorService;
+        private readonly IGraphService _graphService;
         private readonly ILogger<UserController> _logger;
 
         public UserController(
             CortexDbContext context,
             IUserContextAccessor userContext,
             IGamificationService gamificationService,
+            IVectorService vectorService,
+            IGraphService graphService,
             ILogger<UserController> logger)
         {
             _context = context;
             _userContext = userContext;
             _gamificationService = gamificationService;
+            _vectorService = vectorService;
+            _graphService = graphService;
             _logger = logger;
         }
 
@@ -236,6 +242,32 @@ namespace CortexApi.Controllers
                 }
 
                 await _context.SaveChangesAsync();
+
+                // 5) Clean up vectors from Redis for each note
+                foreach (var note in notes)
+                {
+                    try
+                    {
+                        await _vectorService.RemoveNoteAsync(note.Id);
+                        _logger.LogDebug("Removed vectors for note {NoteId}", note.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to remove vectors for note {NoteId}", note.Id);
+                    }
+                }
+
+                // 6) Clean up graph entities and edges
+                try
+                {
+                    await _graphService.CleanupUserEntitiesAsync(userId);
+                    _logger.LogDebug("Cleaned up graph entities for user {UserId}", userId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to cleanup graph entities for user {UserId}", userId);
+                }
+
                 await tx.CommitAsync();
 
                 _logger.LogInformation("Deleted user data but kept profile. SubjectId: {SubjectId}, UserId: {UserId}. NotesDeleted: {NotesCount}, FilesDeleted: {FilesCount}, AchievementsDeleted: {AchievementsCount}",
@@ -309,6 +341,32 @@ namespace CortexApi.Controllers
                 _context.UserProfiles.Remove(profile);
 
                 await _context.SaveChangesAsync();
+
+                // 5) Clean up vectors from Redis for each note
+                foreach (var note in notes)
+                {
+                    try
+                    {
+                        await _vectorService.RemoveNoteAsync(note.Id);
+                        _logger.LogDebug("Removed vectors for note {NoteId}", note.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to remove vectors for note {NoteId}", note.Id);
+                    }
+                }
+
+                // 6) Clean up graph entities and edges
+                try
+                {
+                    await _graphService.CleanupUserEntitiesAsync(userId);
+                    _logger.LogDebug("Cleaned up graph entities for user {UserId}", userId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to cleanup graph entities for user {UserId}", userId);
+                }
+
                 await tx.CommitAsync();
 
                 _logger.LogInformation("Deleted user account and all associated data. SubjectId: {SubjectId}, UserId: {UserId}. NotesDeleted: {NotesCount}, FilesDeleted: {FilesCount}, RolesDeleted: {RolesCount}",

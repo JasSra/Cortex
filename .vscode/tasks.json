@@ -220,6 +220,18 @@
 			"type": "shell",
 			"command": "npm run --silent build",
 			"group": "build"
+		},
+		{
+			"label": "run-backend-8081-dev-simple",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"run",
+				"--project",
+				"c:\\Code\\Cortex\\backend\\CortexApi.csproj"
+			],
+			"isBackground": true,
+			"group": "dev"
 		}
 	]
 }

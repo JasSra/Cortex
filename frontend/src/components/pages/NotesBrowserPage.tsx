@@ -469,9 +469,8 @@ const NotesBrowserPage: React.FC = () => {
             source: note.source || note.Source,
             fileType: note.fileType || note.FileType,
             chunkCount: note.chunkCount || note.ChunkCount || 0,
-            // Use Preview field for word count when Content is empty (includeContent=false)
-            wordCount: (() => {
-              // When includeContent=false, content will be empty string, so use Preview field
+            // Use backend's calculated word count if available, otherwise calculate from content
+            wordCount: note.wordCount || note.WordCount || (() => {
               const contentToCount = (content && content.trim()) ? content : 
                 (note.Preview || note.preview || '');
               if (!contentToCount || !contentToCount.trim()) return 0;

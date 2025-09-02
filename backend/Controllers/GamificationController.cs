@@ -234,6 +234,37 @@ public class GamificationController : ControllerBase
         var subjectId = _userContext.UserSubjectId ?? _userContext.UserId;
         var userProfile = await _db.UserProfiles
             .FirstOrDefaultAsync(up => up.SubjectId == subjectId);
+
+        // If no profile exists, create one automatically for dev mode
+        if (userProfile == null && !string.IsNullOrEmpty(subjectId))
+        {
+            userProfile = new UserProfile
+            {
+                SubjectId = subjectId,
+                Email = _userContext.UserEmail ?? "dev@example.com",
+                Name = _userContext.UserName ?? "Dev User",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                // Initialize gamification fields
+                ExperiencePoints = 0,
+                Level = 1,
+                TotalNotes = 0,
+                TotalSearches = 0,
+                TotalLogins = 1,
+                LoginStreak = 1,
+                LastLoginAt = DateTime.UtcNow,
+                LastStreakDate = DateTime.UtcNow.Date
+            };
+
+            _db.UserProfiles.Add(userProfile);
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Auto-created user profile for SubjectId: {SubjectId}", subjectId);
+
+            // Award registration achievements
+            await _gamificationService.CheckAndAwardAchievementsAsync(userProfile.Id, "registration");
+        }
+
         return userProfile?.Id ?? string.Empty;
     }
 

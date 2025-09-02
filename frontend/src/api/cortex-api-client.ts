@@ -8007,6 +8007,7 @@ export class Note implements INote {
     createdAt?: Date;
     updatedAt?: Date;
     chunkCount?: number;
+    wordCount?: number;
     tags?: string | undefined;
     chunks?: NoteChunk[] | undefined;
     noteTags?: NoteTag[] | undefined;
@@ -8044,6 +8045,7 @@ export class Note implements INote {
             this.createdAt = _data["createdAt"] ? new Date(_data["createdAt"].toString()) : <any>undefined;
             this.updatedAt = _data["updatedAt"] ? new Date(_data["updatedAt"].toString()) : <any>undefined;
             this.chunkCount = _data["chunkCount"];
+            this.wordCount = _data["wordCount"];
             this.tags = _data["tags"];
             if (Array.isArray(_data["chunks"])) {
                 this.chunks = [] as any;
@@ -8097,6 +8099,7 @@ export class Note implements INote {
         data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : <any>undefined;
         data["updatedAt"] = this.updatedAt ? this.updatedAt.toISOString() : <any>undefined;
         data["chunkCount"] = this.chunkCount;
+        data["wordCount"] = this.wordCount;
         data["tags"] = this.tags;
         if (Array.isArray(this.chunks)) {
             data["chunks"] = [];
@@ -8143,6 +8146,7 @@ export interface INote {
     createdAt?: Date;
     updatedAt?: Date;
     chunkCount?: number;
+    wordCount?: number;
     tags?: string | undefined;
     chunks?: NoteChunk[] | undefined;
     noteTags?: NoteTag[] | undefined;

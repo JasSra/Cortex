@@ -58,7 +58,7 @@ interface UserSettings {
   mascotProactivity: number
 
   // Appearance settings
-  theme: 'light' | 'dark' | 'auto' | 'cybertron'
+  theme: 'light' | 'dark' | 'auto'
   primaryColor: string
   fontSize: 'small' | 'medium' | 'large'
   reducedMotion: boolean
@@ -1212,7 +1212,7 @@ const SettingsPage: React.FC = () => {
                           Theme
                         </label>
                         <div className="flex gap-3">
-                          {(['light', 'dark', 'auto', 'cybertron'] as const).map((theme) => (
+                          {(['light', 'dark', 'auto', ] as const).map((theme) => (
                             <button
                               key={theme}
                               onClick={() => updateSetting('theme', theme)}
@@ -1225,10 +1225,7 @@ const SettingsPage: React.FC = () => {
                               {theme === 'light' && <SunIcon className="w-4 h-4" />}
                               {theme === 'dark' && <MoonIcon className="w-4 h-4" />}
                               {theme === 'auto' && <ComputerDesktopIcon className="w-4 h-4" />}
-                              {theme === 'cybertron' && (
-                                <div className="w-4 h-4 bg-gradient-to-br from-cyan-400 to-orange-500 rounded" />
-                              )}
-                              {theme === 'cybertron' ? 'Cybertron' : theme}
+                              {theme.charAt(0).toUpperCase() + theme.slice(1)}
                             </button>
                           ))}
                         </div>

@@ -758,19 +758,29 @@ using (var scope = app.Services.CreateScope())
     // Ensure vector index exists
     try
     {
+        Console.WriteLine("[Config] Starting vector service initialization...");
         var vector = scope.ServiceProvider.GetRequiredService<IVectorService>();
         var embed = scope.ServiceProvider.GetRequiredService<IEmbeddingService>();
         await vector.EnsureIndexAsync(embed.GetEmbeddingDim());
+        Console.WriteLine("[Config] Vector service initialization completed");
     }
-    catch { /* optional backend; ignore */ }
+    catch (Exception ex) 
+    { 
+        Console.WriteLine($"[Config] Vector service failed: {ex.Message}");
+        /* optional backend; ignore */ 
+    }
 
     // Bootstrap configuration from appsettings to database (one-time only)
     try
     {
+        Console.WriteLine("[Config] Starting bootstrap...");
         var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
         await configService.BootstrapConfigurationAsync();
+        Console.WriteLine("[Config] Bootstrap completed");
         // Reload configuration from database for immediate use
+        Console.WriteLine("[Config] Reloading configuration...");
         await configService.ReloadConfigurationAsync();
+        Console.WriteLine("[Config] Configuration reload completed");
     }
     catch (Exception ex)
     {
@@ -807,15 +817,21 @@ app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
 
 try
 {
+    Console.WriteLine("[App] About to start application...");
     Log.Information("Starting Cortex API on {Urls}", app.Urls);
+    Console.WriteLine("[App] Starting application run...");
     app.Run();
+    Console.WriteLine("[App] Application run completed normally (this shouldn't appear)");
 }
 catch (Exception ex)
 {
+    Console.WriteLine($"[App] Application failed to start: {ex.Message}");
+    Console.WriteLine($"[App] Stack trace: {ex.StackTrace}");
     Log.Fatal(ex, "Application terminated unexpectedly");
 }
 finally
 {
+    Console.WriteLine("[App] Cleaning up...");
     Log.CloseAndFlush();
 }
 

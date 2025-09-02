@@ -6120,6 +6120,10 @@
             "type": "integer",
             "format": "int32"
           },
+          "wordCount": {
+            "type": "integer",
+            "format": "int32"
+          },
           "tags": {
             "type": "string",
             "nullable": true
