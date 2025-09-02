@@ -20,19 +20,22 @@ public class NotesController : ControllerBase
     private readonly ILogger<NotesController> _logger;
     private readonly IGamificationService _gamificationService;
     private readonly CortexApi.Data.CortexDbContext _db;
+    private readonly INoteDeletionService _noteDeletionService;
 
     public NotesController(
         IIngestService ingestService,
         IUserContextAccessor userContext,
         ILogger<NotesController> logger,
         IGamificationService gamificationService,
-        CortexApi.Data.CortexDbContext db)
+        CortexApi.Data.CortexDbContext db,
+        INoteDeletionService noteDeletionService)
     {
         _ingestService = ingestService;
         _userContext = userContext;
         _logger = logger;
         _gamificationService = gamificationService;
         _db = db;
+        _noteDeletionService = noteDeletionService;
     }
 
     private static string GetIndexingStatus(int chunkCount, int embeddingCount)
@@ -222,7 +225,7 @@ public class NotesController : ControllerBase
     /// Delete a note (Editor role required + confirmation)
     /// </summary>
     [HttpDelete("{id}")]
-    public IActionResult DeleteNote(string id)
+    public async Task<IActionResult> DeleteNote(string id, CancellationToken ct = default)
     {
         if (!Rbac.RequireRole(_userContext, "Editor"))
             return StatusCode(403, "Editor role required");
@@ -235,10 +238,49 @@ public class NotesController : ControllerBase
             return BadRequest(new { error = "ConfirmDelete required. Set X-Confirm-Delete: true" });
         }
 
-    _logger.LogWarning("Deleting note {NoteId} for user {UserId}", id, _userContext.UserId);
+        _logger.LogWarning("Deleting note {NoteId} for user {UserId}", id, _userContext.UserId);
 
-    // Implementation would go here - for now, return placeholder
-    return Ok(new { message = "Note deletion not yet implemented", noteId = id });
+        try
+        {
+            var success = await _noteDeletionService.DeleteNoteAsync(id, ct);
+            if (!success)
+            {
+                return NotFound(new { error = "Note not found" });
+            }
+
+            return Ok(new { message = "Note and all related data deleted successfully", noteId = id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting note {NoteId} for user {UserId}", id, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to delete note", details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get deletion plan for a note (what will be deleted)
+    /// </summary>
+    [HttpGet("{id}/deletion-plan")]
+    public async Task<IActionResult> GetDeletionPlan(string id, CancellationToken ct = default)
+    {
+        if (!Rbac.RequireRole(_userContext, "Reader"))
+            return StatusCode(403, "Reader role required");
+
+        try
+        {
+            var plan = await _noteDeletionService.GetDeletionPlanAsync(id, ct);
+            if (!plan.Found)
+            {
+                return NotFound(new { error = "Note not found" });
+            }
+
+            return Ok(plan);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting deletion plan for note {NoteId}", id);
+            return StatusCode(500, new { error = "Failed to get deletion plan" });
+        }
     }
 
     /// <summary>

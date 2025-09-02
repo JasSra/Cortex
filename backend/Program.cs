@@ -171,6 +171,10 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 // Configuration service for dynamic app configuration
 builder.Services.AddScoped<IConfigurationService, ConfigurationService>();
+// File storage service for common file operations
+builder.Services.AddScoped<IFileStorageService, FileStorageService>();
+// Note deletion service for safe cascading deletes
+builder.Services.AddScoped<INoteDeletionService, NoteDeletionService>();
 // User context / RBAC
 builder.Services.AddScoped<UserContextAccessor>();
 builder.Services.AddScoped<IUserContextAccessor>(sp => sp.GetRequiredService<UserContextAccessor>());

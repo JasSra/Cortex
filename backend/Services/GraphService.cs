@@ -17,6 +17,7 @@ public interface IGraphService
     Task<List<Edge>> DiscoverTemporalRelationshipsAsync();
     Task<GraphInsights> AnalyzeGraphStructureAsync();
     Task CleanupUserEntitiesAsync(string userId);
+    Task CleanupNoteEntitiesAsync(string noteId);
 }
 
 public class GraphService : IGraphService
@@ -593,6 +594,31 @@ public class GraphService : IGraphService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to cleanup graph entities for user {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task CleanupNoteEntitiesAsync(string noteId)
+    {
+        try
+        {
+            _logger.LogInformation("Cleaning up graph entities for note {NoteId}", noteId);
+
+            // Delete edges referencing this note's entities
+            await _context.Database.ExecuteSqlRawAsync(
+                "DELETE FROM edges WHERE source_id IN (SELECT id FROM entities WHERE note_ids LIKE '%{0}%') OR target_id IN (SELECT id FROM entities WHERE note_ids LIKE '%{0}%')",
+                noteId);
+
+            // Delete entities referencing this note  
+            await _context.Database.ExecuteSqlRawAsync(
+                "DELETE FROM entities WHERE note_ids LIKE '%{0}%'",
+                noteId);
+
+            _logger.LogInformation("Cleaned up graph entities for note {NoteId}", noteId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cleanup graph entities for note {NoteId}", noteId);
             throw;
         }
     }

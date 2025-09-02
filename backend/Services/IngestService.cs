@@ -40,6 +40,7 @@ public class IngestService : IIngestService
     private readonly ISecretsDetectionService _secretsDetectionService;
     private readonly IClassificationService _classificationService;
     private readonly ISuggestionsService _suggestionsService;
+    private readonly IFileStorageService _fileStorageService;
 
     public IngestService(
         CortexDbContext context, 
@@ -50,7 +51,8 @@ public class IngestService : IIngestService
         IPiiDetectionService piiDetectionService,
         ISecretsDetectionService secretsDetectionService,
         IClassificationService classificationService,
-        ISuggestionsService suggestionsService)
+        ISuggestionsService suggestionsService,
+        IFileStorageService fileStorageService)
     {
         _context = context;
         _configurationService = configurationService;
@@ -63,6 +65,7 @@ public class IngestService : IIngestService
         _secretsDetectionService = secretsDetectionService;
         _classificationService = classificationService;
         _suggestionsService = suggestionsService;
+        _fileStorageService = fileStorageService;
     }
 
     public async Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files)
@@ -267,7 +270,19 @@ public class IngestService : IIngestService
     {
         if (file.Length == 0) return null;
 
-        // Save file to data directory first
+        // Store the file using the shared storage service
+        StoredFile? storedFile = null;
+        try
+        {
+            storedFile = await _fileStorageService.StoreFileAsync(file);
+            _logger.LogInformation("Stored file {FileName} with ID {FileId}", file.FileName, storedFile.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to store file {FileName}, continuing with temporary storage", file.FileName);
+        }
+
+        // Save file to data directory for processing (keep existing logic for now)
         var now = DateTime.UtcNow;
         var yearMonth = $"{now.Year:D4}/{now.Month:D2}";
         var dataPath = PathIO.Combine(_dataDir, "raw", yearMonth);
@@ -281,16 +296,16 @@ public class IngestService : IIngestService
             await file.CopyToAsync(fileStream);
         }
 
-    // Extract text content
-    var content = await ExtractTextAsync(filePath, file.FileName);
+        // Extract text content
+        var content = await ExtractTextAsync(filePath, file.FileName);
         if (string.IsNullOrWhiteSpace(content))
         {
             _logger.LogWarning("No text content extracted from file {FileName}", file.FileName);
             return null;
         }
 
-    // Normalize content for chunking (remove empty/whitespace-only lines)
-    var normalizedForChunk = RemoveEmptyLines(content);
+        // Normalize content for chunking (remove empty/whitespace-only lines)
+        var normalizedForChunk = RemoveEmptyLines(content);
 
         // Content-based SHA for dedupe (normalized)
         var contentHash = CalculateSha256FromText(NormalizeForHash(content));
@@ -328,7 +343,14 @@ public class IngestService : IIngestService
             UpdatedAt = now
         };
 
-    var chunks = ChunkText(normalizedForChunk, note.Id);
+        // Link to stored file if available
+        if (storedFile != null)
+        {
+            note.StoredFileId = storedFile.Id;
+            _logger.LogInformation("Linked note {NoteId} to stored file {FileId}", note.Id, storedFile.Id);
+        }
+
+        var chunks = ChunkText(normalizedForChunk, note.Id);
         note.ChunkCount = chunks.Count;
         note.Chunks = chunks;
 

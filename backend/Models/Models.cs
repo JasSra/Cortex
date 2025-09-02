@@ -45,6 +45,9 @@ public class Note
     
     public string Tags { get; set; } = string.Empty; // JSON array
     
+    // Link to stored file if available
+    public string? StoredFileId { get; set; }
+    
     public virtual ICollection<NoteChunk> Chunks { get; set; } = new List<NoteChunk>();
     public virtual ICollection<NoteTag> NoteTags { get; set; } = new List<NoteTag>();
     public virtual ICollection<Classification> Classifications { get; set; } = new List<Classification>();

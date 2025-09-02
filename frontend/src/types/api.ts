@@ -203,3 +203,14 @@ export interface Note {
   chunkCount: number;
   tags: string;
 }
+
+export interface NoteDeletionPlan {
+  found: boolean;
+  noteTitle: string;
+  chunkCount: number;
+  embeddingCount: number;
+  entityCount: number;
+  edgeCount: number;
+  hasStoredFile: boolean;
+  storedFileId?: string;
+}

@@ -11,12 +11,14 @@ import {
   CalendarIcon,
   ArrowLeftIcon,
   ClipboardDocumentIcon,
-  SparklesIcon
+  SparklesIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline'
 import { useWorkspaceApi, useNotesApi, useAssistApi, useClassificationApi, useTagsApi } from '../../services/apiClient'
 import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
 import ProgressDialog from '@/components/common/ProgressDialog'
 import { formatRelativeTime, formatTimeWithTooltip } from '@/lib/timeUtils'
+import DeletionPlanDialog from '@/components/dialogs/DeletionPlanDialog'
 
 interface WorkspaceEditorProps {
   noteId: string | null
@@ -54,7 +56,7 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout>()
   
   const { updateWorkspace, trackNoteAccess } = useWorkspaceApi()
-  const { getNote, updateNote } = useNotesApi()
+  const { getNote, updateNote, deleteNote, getDeletionPlan } = useNotesApi()
   const { assist, generateSummary, classifyContent } = useAssistApi()
   const { classifyNote } = useClassificationApi()
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
@@ -75,6 +77,17 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
     title: '',
     message: '',
     progress: undefined
+  })
+
+  // Deletion dialog state
+  const [deletionDialog, setDeletionDialog] = useState<{
+    isOpen: boolean
+    noteId: string | null
+    noteTitle: string | null
+  }>({
+    isOpen: false,
+    noteId: null,
+    noteTitle: null
   })
   
   // Text selection state
@@ -214,6 +227,34 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
     setHasUnsavedChanges(true)
     scheduleAutoSave()
   }, [scheduleAutoSave])
+
+  // Handle note deletion
+  const handleDeleteNote = useCallback(async () => {
+    if (!note) return
+    
+    setDeletionDialog({
+      isOpen: true,
+      noteId: note.id,
+      noteTitle: note.title
+    })
+  }, [note])
+
+  // Confirm deletion handler
+  const confirmDeleteNote = useCallback(async () => {
+    if (!deletionDialog.noteId) return
+    
+    try {
+      setLoading(true)
+      await deleteNote(deletionDialog.noteId)
+      // Navigate back after successful deletion
+      onBack()
+    } catch (error: any) {
+      console.error('Failed to delete note:', error)
+      setError(`Failed to delete note: ${error.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [deletionDialog.noteId, deleteNote, onBack])
 
   // Restore editor state when note loads
   const restoreEditorState = useCallback(async () => {
@@ -682,6 +723,16 @@ Summary: ${response.summary}`)
               className={`px-2 py-1 rounded transition-colors ${showRecent ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600'}`}
               onClick={async () => { const next = !showRecent; setShowRecent(next); if (next) await loadRecent() }}
             >Recent</button>
+
+            <button
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 disabled:opacity-50 transition-colors"
+              onClick={handleDeleteNote}
+              disabled={loading || saving}
+              title="Delete this note"
+            >
+              <TrashIcon className="w-4 h-4" />
+              Delete
+            </button>
           </div>
         </div>
         {aiOutput && (
@@ -739,6 +790,15 @@ Summary: ${response.summary}`)
         message={progressDialog.message}
         progress={progressDialog.progress}
         canCancel={true}
+      />
+
+      {/* Deletion confirmation dialog */}
+      <DeletionPlanDialog
+        isOpen={deletionDialog.isOpen}
+        onClose={() => setDeletionDialog({ isOpen: false, noteId: null, noteTitle: null })}
+        onConfirm={confirmDeleteNote}
+        noteId={deletionDialog.noteId || ''}
+        getDeletionPlan={getDeletionPlan}
       />
     </motion.div>
   )

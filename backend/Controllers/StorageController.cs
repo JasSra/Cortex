@@ -16,24 +16,20 @@ namespace CortexApi.Controllers
     public class StorageController : ControllerBase
     {
         private readonly CortexDbContext _db;
-        private readonly IConfigurationService _configurationService;
+        private readonly IFileStorageService _fileStorageService;
         private readonly IUserContextAccessor _user;
         private readonly ILogger<StorageController> _logger;
-        private readonly HttpClient _http;
 
-        private const long MaxSizeBytes = 100L * 1024 * 1024; // 100MB
-
-        public StorageController(CortexDbContext db, IConfigurationService configurationService, IUserContextAccessor user, ILogger<StorageController> logger, HttpClient http)
+        public StorageController(CortexDbContext db, IFileStorageService fileStorageService, IUserContextAccessor user, ILogger<StorageController> logger)
         {
             _db = db;
-            _configurationService = configurationService;
+            _fileStorageService = fileStorageService;
             _user = user;
             _logger = logger;
-            _http = http;
         }
 
         [HttpPost("upload")] // single or batch via multipart
-        [RequestSizeLimit(MaxSizeBytes * 10)] // allow some headroom for batch
+        [RequestSizeLimit(100L * 1024 * 1024 * 10)] // allow some headroom for batch
         [ProducesResponseType(typeof(UploadFilesResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(object), StatusCodes.Status500InternalServerError)]
@@ -42,72 +38,27 @@ namespace CortexApi.Controllers
             if (files == null || files.Count == 0)
                 return BadRequest("No files provided");
 
-            var config = _configurationService.GetConfiguration();
-            var storageRoot = config["Storage:Root"] ?? Path.Combine(AppContext.BaseDirectory, "storage");
-            Directory.CreateDirectory(storageRoot);
-
             var results = new List<StoredFileResponse>();
             foreach (var file in files)
             {
                 try
                 {
                     if (file.Length == 0) { continue; }
-                    if (file.Length > MaxSizeBytes)
-                    {
-                        return BadRequest(new { error = $"File '{file.FileName}' exceeds 100MB limit" });
-                    }
 
-                    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-                    var now = DateTime.UtcNow;
-                    var userDir = Path.Combine(storageRoot, _user.UserId, now.ToString("yyyy"), now.ToString("MM"));
-                    Directory.CreateDirectory(userDir);
-
-                    var id = Guid.NewGuid().ToString("n");
-                    var storedFileName = id + ext;
-                    var storedPath = Path.Combine(userDir, storedFileName);
-
-                    using (var fs = new FileStream(storedPath, FileMode.CreateNew))
-                    {
-                        await file.CopyToAsync(fs, ct);
-                    }
-
-                    var relPath = Path.Combine(_user.UserId, now.ToString("yyyy"), now.ToString("MM"), storedFileName)
-                        .Replace("\\", "/");
-
-                    // Tags using OpenAI if configured; fallback to simple heuristics
-                    var tags = await GenerateTagsWithOpenAiAsync(file.FileName, ext, file.Length, ct);
-                    if (tags.Count == 0)
-                    {
-                        tags = ClassifySimple(file.FileName, ext, file.Length);
-                    }
-
-                    var entity = new StoredFile
-                    {
-                        Id = id,
-                        UserId = _user.UserId,
-                        OriginalFileName = file.FileName,
-                        StoredPath = storedPath,
-                        RelativePath = relPath,
-                        ContentType = file.ContentType ?? "application/octet-stream",
-                        SizeBytes = file.Length,
-                        Extension = ext,
-                        Tags = string.Join(",", tags),
-                        CreatedAt = now
-                    };
-
-                    _db.StoredFiles.Add(entity);
-                    await _db.SaveChangesAsync(ct);
-
-                    var url = ResolveSecureUrl(entity.Id);
+                    var storedFile = await _fileStorageService.StoreFileAsync(file, ct);
+                    var url = ResolveSecureUrl(storedFile.Id);
+                    
                     results.Add(new StoredFileResponse
                     {
-                        Id = entity.Id,
-                        FileName = entity.OriginalFileName,
+                        Id = storedFile.Id,
+                        FileName = storedFile.OriginalFileName,
                         Url = url,
-                        SizeBytes = entity.SizeBytes,
-                        ContentType = entity.ContentType,
-                        Extension = entity.Extension,
-                        Tags = tags
+                        SizeBytes = storedFile.SizeBytes,
+                        ContentType = storedFile.ContentType,
+                        Extension = storedFile.Extension,
+                        Tags = string.IsNullOrWhiteSpace(storedFile.Tags) 
+                            ? new List<string>() 
+                            : storedFile.Tags.Split(',').ToList()
                     });
                 }
                 catch (Exception ex)
@@ -124,13 +75,9 @@ namespace CortexApi.Controllers
         [ProducesResponseType(typeof(StorageListResponse), StatusCodes.Status200OK)]
         public async Task<ActionResult<StorageListResponse>> List([FromQuery] int limit = 50, [FromQuery] int offset = 0, CancellationToken ct = default)
         {
-            var q = _db.StoredFiles.Where(f => f.UserId == _user.UserId)
-                .OrderByDescending(f => f.CreatedAt);
+            var (total, items) = await _fileStorageService.GetUserStoredFilesAsync(_user.UserId, limit, offset, ct);
 
-            var total = await q.CountAsync(ct);
-            var page = await q.Skip(offset).Take(limit).ToListAsync(ct);
-
-            var items = page.Select(e => new StoredFileResponse
+            var response = items.Select(e => new StoredFileResponse
             {
                 Id = e.Id,
                 FileName = e.OriginalFileName,
@@ -141,7 +88,7 @@ namespace CortexApi.Controllers
                 Tags = string.IsNullOrWhiteSpace(e.Tags) ? new List<string>() : e.Tags.Split(',').ToList()
             }).ToList();
 
-            return Ok(new StorageListResponse { Total = total, Items = items });
+            return Ok(new StorageListResponse { Total = total, Items = response });
         }
 
         [HttpGet("file/{id}")]
@@ -149,7 +96,7 @@ namespace CortexApi.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetFile(string id, CancellationToken ct)
         {
-            var entity = await _db.StoredFiles.FirstOrDefaultAsync(f => f.Id == id && f.UserId == _user.UserId, ct);
+            var entity = await _fileStorageService.GetStoredFileAsync(id, ct);
             if (entity == null) return NotFound();
 
             try
@@ -169,126 +116,17 @@ namespace CortexApi.Controllers
         [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(string id, CancellationToken ct)
         {
-            var entity = await _db.StoredFiles.FirstOrDefaultAsync(f => f.Id == id && f.UserId == _user.UserId, ct);
-            if (entity == null)
+            var success = await _fileStorageService.DeleteStoredFileAsync(id, ct);
+            if (!success)
             {
                 return NotFound(new { error = "File not found" });
             }
 
-            try
-            {
-                if (System.IO.File.Exists(entity.StoredPath))
-                {
-                    System.IO.File.Delete(entity.StoredPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to delete file from disk: {Path}", entity.StoredPath);
-            }
-
-            _db.StoredFiles.Remove(entity);
-            await _db.SaveChangesAsync(ct);
             return NoContent();
-        }
-
-        private async Task<List<string>> GenerateTagsWithOpenAiAsync(string name, string ext, long size, CancellationToken ct)
-        {
-            try
-            {
-                var config = _configurationService.GetConfiguration();
-                var apiKey = config["OpenAI:ApiKey"] ?? config["OPENAI_API_KEY"];
-                if (string.IsNullOrWhiteSpace(apiKey)) return new List<string>();
-                var model = config["OPENAI_MODEL"] ?? config["OpenAI:Model"] ?? "gpt-4o-mini";
-
-                var prompt = $@"You are a tagging assistant. Based only on file metadata, propose 3-6 short tags.
-- Use lowercase, single words or kebab-case.
-- Consider extension, size bucket, and common semantic hints in the name.
-- Return ONLY a JSON array of strings, no commentary.
-
-Metadata:
-- name: {name}
-- extension: {ext}
-- size_bytes: {size}
-";
-
-                var req = new
-                {
-                    model,
-                    messages = new object[]
-                    {
-                        new { role = "system", content = "You generate concise tags as a JSON array only." },
-                        new { role = "user", content = prompt }
-                    },
-                    temperature = 0.1
-                };
-
-                using var content = new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json");
-                _http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-                using var resp = await _http.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    var body = await resp.Content.ReadAsStringAsync(ct);
-                    _logger.LogWarning("OpenAI tag generation failed: {Status} {Body}", (int)resp.StatusCode, body);
-                    return new List<string>();
-                }
-
-                var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-                var msg = json.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
-
-                // Try parse JSON array
-                msg = msg.Trim();
-                if (msg.StartsWith("["))
-                {
-                    var arr = JsonDocument.Parse(msg).RootElement;
-                    if (arr.ValueKind == JsonValueKind.Array)
-                    {
-                        var tags = new List<string>();
-                        foreach (var el in arr.EnumerateArray())
-                        {
-                            if (el.ValueKind == JsonValueKind.String)
-                                tags.Add(el.GetString()!.Trim());
-                        }
-                        return tags.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                    }
-                }
-
-                // Fallback: comma/space separated string
-                var parts = msg.Replace("\n", ",").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                return parts.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "OpenAI tag generation error, falling back to heuristic");
-                return new List<string>();
-            }
-        }
-
-        private static List<string> ClassifySimple(string name, string ext, long size)
-        {
-            var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(ext)) tags.Add(ext.Trim('.'));
-            if (size > 50 * 1024 * 1024) tags.Add("large");
-            else if (size > 10 * 1024 * 1024) tags.Add("medium");
-            else tags.Add("small");
-            var lower = name.ToLowerInvariant();
-            if (lower.Contains("invoice") || lower.Contains("receipt")) tags.Add("finance");
-            if (lower.Contains("report") || lower.Contains("summary")) tags.Add("report");
-            if (lower.Contains("image") || lower.Contains("photo") || lower.EndsWith(".png") || lower.EndsWith(".jpg")) tags.Add("image");
-            return tags.ToList();
         }
 
         private string ResolveSecureUrl(string id)
         {
-            // If an explicit public base URL is configured, caller takes responsibility for security.
-            var config = _configurationService.GetConfiguration();
-            var publicBase = config["Storage:PublicBaseUrl"];
-            if (!string.IsNullOrWhiteSpace(publicBase))
-            {
-                // Keep legacy behavior (not recommended). Join base + api route for id to ensure auth is still required by default.
-                if (!publicBase.EndsWith('/')) publicBase += "/";
-                return publicBase + $"api/Storage/file/{id}";
-            }
             // Default: serve via authenticated API endpoint
             return $"/api/Storage/file/{id}";
         }

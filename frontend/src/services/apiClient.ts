@@ -11,6 +11,7 @@ import type {
   TestNotificationRequest,
   TestNotificationResponse,
 } from './types/notifications'
+import type { NoteDeletionPlan } from '@/types/api'
 
 interface JobDetails {
   id: string
@@ -239,6 +240,10 @@ export function useAdminApi() {
 // Notes (fallback to raw fetch until OpenAPI adds response schemas)
 export function useNotesApi() {
   const http = useAuthedFetch()
+  const { getAccessToken, logout } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+  const authedFetch = useMemo(() => createAuthedFetch(getAccessToken, logout), [getAccessToken, logout])
+  
   const TTL = 20_000 // 20s cache
   return useMemo(() => ({
     getNotes: (page = 1, pageSize = 20) => {
@@ -257,7 +262,30 @@ export function useNotesApi() {
       title: data?.title ?? data?.Title ?? title ?? '',
       chunkCount: data?.countChunks ?? data?.CountChunks ?? 0,
     })),
-  }), [http])
+    deleteNote: async (id: string) => {
+      const response = await authedFetch(`${baseUrl}/api/Notes/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'X-Confirm-Delete': 'true'
+        }
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Delete failed: ${response.status} ${errorText}`)
+      }
+      return response.json().catch(() => ({ success: true }))
+    },
+    getDeletionPlan: async (id: string): Promise<NoteDeletionPlan> => {
+      const response = await authedFetch(`${baseUrl}/api/Notes/${id}/deletion-plan`, {
+        method: 'GET'
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to get deletion plan: ${response.status} ${errorText}`)
+      }
+      return response.json()
+    },
+  }), [http, authedFetch, baseUrl])
 }
 
 // Ingest (multipart uploads and local folder ingest)

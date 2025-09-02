@@ -24,6 +24,7 @@ import appBus from '@/lib/appBus'
 import { useNotesApi, useSearchApi, useTagsApi } from '@/services/apiClient'
 import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
 import { useJobsApi } from '@/services/apiClient'
+import DeletionPlanDialog from '@/components/dialogs/DeletionPlanDialog'
 
 interface Note {
   id: string
@@ -76,9 +77,10 @@ interface NoteCardProps {
   viewMode: ViewMode
   highlighted: boolean
   onClick: () => void
+  onDelete: (noteId: string, noteTitle: string) => void
 }
 
-const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, onClick }) => {
+const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, onClick, onDelete }) => {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -262,7 +264,19 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
             <h3 className="font-semibold text-gray-900 dark:text-white text-lg line-clamp-2">
               {note.title}
             </h3>
-            <DocumentTextSolid className="w-5 h-5 text-purple-500 flex-shrink-0 ml-2" />
+            <div className="flex items-center space-x-1 ml-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete(note.id, note.title)
+                }}
+                title="Delete note"
+                className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400"
+              >
+                <TrashIcon className="w-4 h-4" />
+              </button>
+              <DocumentTextSolid className="w-5 h-5 text-purple-500 flex-shrink-0" />
+            </div>
           </div>
           <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-3 mb-4">
             {getExcerpt(note.content)}
@@ -344,7 +358,19 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
                   {note.metadata?.wordCount || 0} words
                 </div>
               </div>
-              <EyeIcon className="w-5 h-5 text-gray-400" />
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(note.id, note.title)
+                  }}
+                  title="Delete note"
+                  className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                </button>
+                <EyeIcon className="w-5 h-5 text-gray-400" />
+              </div>
             </div>
           </div>
         </div>
@@ -370,7 +396,7 @@ const NotesBrowserPage: React.FC = () => {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   // Notes API helpers
-  const { updateNote, getNote, getNotes } = useNotesApi()
+  const { updateNote, getNote, getNotes, deleteNote, getDeletionPlan } = useNotesApi()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null)
   const [sortOption, setSortOption] = useState<SortOption>({
@@ -382,6 +408,16 @@ const NotesBrowserPage: React.FC = () => {
   const [filters, setFilters] = useState<FilterOptions>({
     tags: [],
     sources: []
+  })
+  // Deletion dialog state
+  const [deletionDialog, setDeletionDialog] = useState<{
+    isOpen: boolean
+    noteId: string | null
+    noteTitle: string | null
+  }>({
+    isOpen: false,
+    noteId: null,
+    noteTitle: null
   })
   const [availableTags, setAvailableTags] = useState<string[]>([])
   const [availableSources, setAvailableSources] = useState<string[]>([])
@@ -648,6 +684,38 @@ const NotesBrowserPage: React.FC = () => {
     })
     setSearchQuery('')
     speak('All filters cleared!', 'idle')
+  }
+
+  // Delete note handler
+  const handleDeleteNote = async (noteId: string, noteTitle: string) => {
+    setDeletionDialog({
+      isOpen: true,
+      noteId,
+      noteTitle
+    })
+  }
+
+  // Confirm deletion handler
+  const confirmDeleteNote = async () => {
+    if (!deletionDialog.noteId || !deletionDialog.noteTitle) return
+    
+    try {
+      await deleteNote(deletionDialog.noteId)
+      // Optimistic update - remove from local state
+      setNotes(prev => prev.filter(n => n.id !== deletionDialog.noteId))
+      setFilteredNotes(prev => prev.filter(n => n.id !== deletionDialog.noteId))
+      
+      // Close modal if the deleted note was selected
+      if (selectedNote?.id === deletionDialog.noteId) {
+        setSelectedNote(null)
+        setEditing(false)
+      }
+      
+      speak(`Note "${deletionDialog.noteTitle}" deleted!`, 'idle')
+    } catch (error: any) {
+      console.error('Failed to delete note:', error)
+      alert(`Failed to delete note: ${error.message || 'Unknown error'}`)
+    }
   }
 
   // Format date for display
@@ -964,6 +1032,7 @@ const NotesBrowserPage: React.FC = () => {
                     setSelectedNote({ ...note, content: full?.content || full?.Content || note.content })
                   } catch {}
                 }}
+                onDelete={handleDeleteNote}
               />
             ))}
           </div>
@@ -1110,6 +1179,15 @@ const NotesBrowserPage: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Deletion confirmation dialog */}
+        <DeletionPlanDialog
+          isOpen={deletionDialog.isOpen}
+          onClose={() => setDeletionDialog({ isOpen: false, noteId: null, noteTitle: null })}
+          onConfirm={confirmDeleteNote}
+          noteId={deletionDialog.noteId || ''}
+          getDeletionPlan={getDeletionPlan}
+        />
       </div>
     </div>
   )
