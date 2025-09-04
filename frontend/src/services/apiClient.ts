@@ -751,7 +751,109 @@ export function useGraphApi() {
     return await res.json().catch(() => ({}))
   }, [client])
 
-  return useMemo(() => ({ getGraph, getConnectedEntities, getEntitySuggestions, getStatistics, discoverAll }), [getGraph, getConnectedEntities, getEntitySuggestions, getStatistics, discoverAll])
+  // Rebuild entire graph from existing notes
+  const rebuildGraph = useCallback(async () => {
+    const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+    const res = await (client as any).http.fetch(`${baseUrl}/api/Graph/rebuild`, { 
+      method: 'POST', 
+      headers: { Accept: 'application/json' } 
+    })
+    if (!res.ok) throw new Error(`Graph rebuild failed: ${res.status}`)
+    return await res.json()
+  }, [client])
+
+  // Manually link two entities
+  const linkEntities = useCallback(async (fromEntityId: string, toEntityId: string, relationType: string = 'manual', confidence: number = 0.8) => {
+    const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+    const url = `${baseUrl}/api/Graph/entities/${encodeURIComponent(fromEntityId)}/link/${encodeURIComponent(toEntityId)}?relationType=${encodeURIComponent(relationType)}&confidence=${confidence}`
+    const res = await (client as any).http.fetch(url, { 
+      method: 'POST', 
+      headers: { Accept: 'application/json' } 
+    })
+    if (!res.ok) throw new Error(`Link entities failed: ${res.status}`)
+    return await res.json()
+  }, [client])
+
+  // Remove link between two entities
+  const unlinkEntities = useCallback(async (fromEntityId: string, toEntityId: string) => {
+    const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+    const url = `${baseUrl}/api/Graph/entities/${encodeURIComponent(fromEntityId)}/link/${encodeURIComponent(toEntityId)}`
+    const res = await (client as any).http.fetch(url, { 
+      method: 'DELETE', 
+      headers: { Accept: 'application/json' } 
+    })
+    if (!res.ok) throw new Error(`Unlink entities failed: ${res.status}`)
+    return await res.json()
+  }, [client])
+
+  // Get notes for an entity
+  const getEntityNotes = useCallback(async (entityId: string) => {
+    const key = `graph:entity-notes:${entityId}`
+    return getCached(key, TTL, async () => {
+      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+      const res = await (client as any).http.fetch(`${baseUrl}/api/Graph/entities/${encodeURIComponent(entityId)}/notes`, {
+        headers: { Accept: 'application/json' }
+      })
+      if (!res.ok) throw new Error(`Get entity notes failed: ${res.status}`)
+      return await res.json()
+    })
+  }, [client])
+
+  // Get connection suggestions for an entity
+  const getConnectionSuggestions = useCallback(async (entityId: string, maxSuggestions: number = 5) => {
+    const key = `graph:connection-suggestions:${entityId}:${maxSuggestions}`
+    return getCached(key, TTL, async () => {
+      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+      const res = await (client as any).http.fetch(`${baseUrl}/api/Graph/entities/${encodeURIComponent(entityId)}/connection-suggestions?maxSuggestions=${maxSuggestions}`, {
+        headers: { Accept: 'application/json' }
+      })
+      if (!res.ok) throw new Error(`Get connection suggestions failed: ${res.status}`)
+      return await res.json()
+    })
+  }, [client])
+
+  // Get global graph suggestions
+  const getGlobalSuggestions = useCallback(async (maxSuggestions: number = 10) => {
+    const key = `graph:global-suggestions:${maxSuggestions}`
+    return getCached(key, TTL, async () => {
+      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+      const res = await (client as any).http.fetch(`${baseUrl}/api/Graph/global-suggestions?maxSuggestions=${maxSuggestions}`, {
+        headers: { Accept: 'application/json' }
+      })
+      if (!res.ok) throw new Error(`Get global suggestions failed: ${res.status}`)
+      return await res.json()
+    })
+  }, [client])
+
+  // Apply a suggested connection
+  const applySuggestion = useCallback(async (suggestion: any) => {
+    const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+    const res = await (client as any).http.fetch(`${baseUrl}/api/Graph/apply-suggestion`, {
+      method: 'POST',
+      headers: { 
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(suggestion)
+    })
+    if (!res.ok) throw new Error(`Apply suggestion failed: ${res.status}`)
+    return await res.json()
+  }, [client])
+
+  return useMemo(() => ({ 
+    getGraph, 
+    getConnectedEntities, 
+    getEntitySuggestions, 
+    getStatistics, 
+    discoverAll,
+    rebuildGraph,
+    linkEntities,
+    unlinkEntities,
+    getEntityNotes,
+    getConnectionSuggestions,
+    getGlobalSuggestions,
+    applySuggestion
+  }), [getGraph, getConnectedEntities, getEntitySuggestions, getStatistics, discoverAll, rebuildGraph, linkEntities, unlinkEntities, getEntityNotes, getConnectionSuggestions, getGlobalSuggestions, applySuggestion])
 }
 
 // Classification

@@ -315,4 +315,199 @@ public class GraphController : ControllerBase
             return StatusCode(500, new { status = "error", message = "Error checking graph health" });
         }
     }
+
+    /// <summary>
+    /// Completely rebuild the knowledge graph from existing notes
+    /// </summary>
+    [HttpPost("rebuild")]
+    public async Task<ActionResult<GraphRebuildResult>> RebuildGraph()
+    {
+        try
+        {
+            _logger.LogInformation("Starting graph rebuild for user {UserId}", _userContext.UserId);
+            
+            var result = await _graphService.RebuildGraphAsync();
+            
+            if (result.Success)
+            {
+                _logger.LogInformation("Graph rebuild completed for user {UserId}. Entities: {Entities}, Relations: {Relations}", 
+                    _userContext.UserId, result.TotalEntities, result.TotalRelations);
+                return Ok(result);
+            }
+            else
+            {
+                _logger.LogError("Graph rebuild failed for user {UserId}: {Error}", _userContext.UserId, result.ErrorMessage);
+                return StatusCode(500, result);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error rebuilding graph for user {UserId}", _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to rebuild graph" });
+        }
+    }
+
+    /// <summary>
+    /// Manually create a link between two entities
+    /// </summary>
+    [HttpPost("entities/{fromEntityId}/link/{toEntityId}")]
+    public async Task<ActionResult> LinkEntities(
+        string fromEntityId, 
+        string toEntityId,
+        [FromQuery] string relationType = "manual",
+        [FromQuery] double confidence = 0.8)
+    {
+        try
+        {
+            _logger.LogInformation("Creating manual link between entities {FromId} and {ToId} for user {UserId}", 
+                fromEntityId, toEntityId, _userContext.UserId);
+            
+            var success = await _graphService.LinkEntitiesAsync(fromEntityId, toEntityId, relationType, confidence);
+            
+            if (success)
+            {
+                return Ok(new { message = "Entities linked successfully" });
+            }
+            else
+            {
+                return BadRequest(new { error = "Failed to link entities. They may not exist or may already be linked." });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error linking entities {FromId} and {ToId} for user {UserId}", 
+                fromEntityId, toEntityId, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to link entities" });
+        }
+    }
+
+    /// <summary>
+    /// Remove a link between two entities
+    /// </summary>
+    [HttpDelete("entities/{fromEntityId}/link/{toEntityId}")]
+    public async Task<ActionResult> UnlinkEntities(string fromEntityId, string toEntityId)
+    {
+        try
+        {
+            _logger.LogInformation("Removing link between entities {FromId} and {ToId} for user {UserId}", 
+                fromEntityId, toEntityId, _userContext.UserId);
+            
+            var success = await _graphService.UnlinkEntitiesAsync(fromEntityId, toEntityId);
+            
+            if (success)
+            {
+                return Ok(new { message = "Entities unlinked successfully" });
+            }
+            else
+            {
+                return NotFound(new { error = "No link found between these entities" });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error unlinking entities {FromId} and {ToId} for user {UserId}", 
+                fromEntityId, toEntityId, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to unlink entities" });
+        }
+    }
+
+    /// <summary>
+    /// Get notes associated with a specific entity
+    /// </summary>
+    [HttpGet("entities/{entityId}/notes")]
+    public async Task<ActionResult<List<GraphNode>>> GetEntityNotes(string entityId)
+    {
+        try
+        {
+            _logger.LogInformation("Getting notes for entity {EntityId} for user {UserId}", 
+                entityId, _userContext.UserId);
+            
+            var notes = await _graphService.GetNotesForEntityAsync(entityId);
+            
+            return Ok(notes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting notes for entity {EntityId} for user {UserId}", 
+                entityId, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to get entity notes" });
+        }
+    }
+
+    /// <summary>
+    /// Get connection suggestions for a specific entity
+    /// </summary>
+    [HttpGet("entities/{entityId}/connection-suggestions")]
+    public async Task<ActionResult<List<GraphSuggestion>>> GetConnectionSuggestions(string entityId, [FromQuery] int maxSuggestions = 5)
+    {
+        try
+        {
+            _logger.LogInformation("Getting connection suggestions for entity {EntityId} for user {UserId}", 
+                entityId, _userContext.UserId);
+            
+            var suggestions = await _graphService.GetConnectionSuggestionsAsync(entityId, maxSuggestions);
+            
+            return Ok(suggestions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting connection suggestions for entity {EntityId} for user {UserId}", 
+                entityId, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to get connection suggestions" });
+        }
+    }
+
+    /// <summary>
+    /// Get global graph suggestions
+    /// </summary>
+    [HttpGet("global-suggestions")]
+    public async Task<ActionResult<List<GraphSuggestion>>> GetGlobalSuggestions([FromQuery] int maxSuggestions = 10)
+    {
+        try
+        {
+            _logger.LogInformation("Getting global suggestions for user {UserId}", _userContext.UserId);
+            
+            var suggestions = await _graphService.GetGlobalSuggestionsAsync(maxSuggestions);
+            
+            return Ok(suggestions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting global suggestions for user {UserId}", _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to get global suggestions" });
+        }
+    }
+
+    /// <summary>
+    /// Apply a suggested connection
+    /// </summary>
+    [HttpPost("apply-suggestion")]
+    public async Task<ActionResult> ApplySuggestion([FromBody] GraphSuggestion suggestion)
+    {
+        try
+        {
+            _logger.LogInformation("Applying suggestion between {FromId} and {ToId} for user {UserId}", 
+                suggestion.FromEntityId, suggestion.ToEntityId, _userContext.UserId);
+            
+            var result = await _graphService.LinkEntitiesAsync(
+                suggestion.FromEntityId, 
+                suggestion.ToEntityId, 
+                suggestion.SuggestedRelationType);
+            
+            if (result)
+            {
+                return Ok(new { success = true, message = "Suggestion applied successfully" });
+            }
+            else
+            {
+                return BadRequest(new { error = "Failed to create link between entities" });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error applying suggestion between {FromId} and {ToId} for user {UserId}", 
+                suggestion.FromEntityId, suggestion.ToEntityId, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to apply suggestion" });
+        }
+    }
 }

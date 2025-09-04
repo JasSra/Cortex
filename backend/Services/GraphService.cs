@@ -18,6 +18,12 @@ public interface IGraphService
     Task<GraphInsights> AnalyzeGraphStructureAsync();
     Task CleanupUserEntitiesAsync(string userId);
     Task CleanupNoteEntitiesAsync(string noteId);
+    Task<GraphRebuildResult> RebuildGraphAsync();
+    Task<bool> LinkEntitiesAsync(string fromEntityId, string toEntityId, string relationType, double confidence = 0.8);
+    Task<bool> UnlinkEntitiesAsync(string fromEntityId, string toEntityId);
+    Task<List<GraphNode>> GetNotesForEntityAsync(string entityId);
+    Task<List<GraphSuggestion>> GetConnectionSuggestionsAsync(string entityId, int maxSuggestions = 5);
+    Task<List<GraphSuggestion>> GetGlobalSuggestionsAsync(int maxSuggestions = 10);
 }
 
 public class GraphService : IGraphService
@@ -623,8 +629,378 @@ public class GraphService : IGraphService
         }
     }
 
+    public async Task<GraphRebuildResult> RebuildGraphAsync()
+    {
+        _logger.LogInformation("Starting complete graph rebuild");
+        var result = new GraphRebuildResult();
+        
+        try
+        {
+            // Clear existing graph data
+            _logger.LogInformation("Clearing existing graph data");
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM edges");
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM entities");
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM text_spans WHERE entity_id IS NOT NULL");
+            
+            result.ClearedEntities = true;
+            
+            // Get all notes for the current user
+            var notes = await _context.Notes
+                .Where(n => n.Content.Length > 50) // Only substantial notes
+                .OrderBy(n => n.CreatedAt)
+                .ToListAsync();
+            
+            result.ProcessedNotes = notes.Count;
+            _logger.LogInformation("Processing {Count} notes for graph reconstruction", notes.Count);
+            
+            var totalEntities = 0;
+            var totalRelations = 0;
+            
+            // Process each note
+            foreach (var note in notes)
+            {
+                try
+                {
+                    // Extract entities from note content
+                    var extractions = await _nerService.ExtractEntitiesAsync(note.Content);
+                    
+                    if (extractions.Any())
+                    {
+                        // Get or create canonical entities
+                        var canonicalEntities = new List<Entity>();
+                        foreach (var extraction in extractions)
+                        {
+                            var entity = await _nerService.GetOrCreateCanonicalEntityAsync(
+                                extraction.Type, 
+                                extraction.Value, 
+                                extraction.Confidence);
+                            canonicalEntities.Add(entity);
+                        }
+                        
+                        totalEntities += canonicalEntities.Count;
+                        
+                        // Create relationships between entities in the same note
+                        if (canonicalEntities.Count > 1)
+                        {
+                            var relations = await CreateEntityRelationsAsync(canonicalEntities.Distinct().ToList(), note.Id);
+                            totalRelations += relations.Count;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to process note {NoteId} during graph rebuild", note.Id);
+                    result.FailedNotes++;
+                }
+            }
+            
+            // Run discovery algorithms
+            _logger.LogInformation("Running relationship discovery algorithms");
+            var coOccurrenceTask = DiscoverCoOccurrenceRelationshipsAsync();
+            var semanticTask = DiscoverSemanticRelationshipsAsync();
+            var temporalTask = DiscoverTemporalRelationshipsAsync();
+            
+            await Task.WhenAll(coOccurrenceTask, semanticTask, temporalTask);
+            
+            totalRelations += coOccurrenceTask.Result.Count + semanticTask.Result.Count + temporalTask.Result.Count;
+            
+            result.TotalEntities = totalEntities;
+            result.TotalRelations = totalRelations;
+            result.Success = true;
+            result.CompletedAt = DateTime.UtcNow;
+            
+            _logger.LogInformation("Graph rebuild completed successfully. Entities: {Entities}, Relations: {Relations}", 
+                totalEntities, totalRelations);
+                
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rebuild graph");
+            result.Success = false;
+            result.ErrorMessage = ex.Message;
+            return result;
+        }
+    }
+
+    public async Task<bool> LinkEntitiesAsync(string fromEntityId, string toEntityId, string relationType, double confidence = 0.8)
+    {
+        try
+        {
+            // Check if entities exist
+            var fromEntity = await _context.Entities.FindAsync(fromEntityId);
+            var toEntity = await _context.Entities.FindAsync(toEntityId);
+            
+            if (fromEntity == null || toEntity == null)
+            {
+                _logger.LogWarning("Cannot link entities - one or both entities not found: {FromId}, {ToId}", 
+                    fromEntityId, toEntityId);
+                return false;
+            }
+            
+            // Check if link already exists
+            var existingEdge = await _context.Edges
+                .FirstOrDefaultAsync(e => 
+                    (e.FromEntityId == fromEntityId && e.ToEntityId == toEntityId) ||
+                    (e.FromEntityId == toEntityId && e.ToEntityId == fromEntityId));
+                    
+            if (existingEdge != null)
+            {
+                _logger.LogInformation("Link already exists between entities {FromId} and {ToId}", 
+                    fromEntityId, toEntityId);
+                return false;
+            }
+            
+            // Create new edge
+            var newEdge = new Edge
+            {
+                FromEntityId = fromEntityId,
+                ToEntityId = toEntityId,
+                RelationType = relationType,
+                Confidence = confidence,
+                Source = "manual_link",
+                CreatedAt = DateTime.UtcNow
+            };
+            
+            _context.Edges.Add(newEdge);
+            await _context.SaveChangesAsync();
+            
+            _logger.LogInformation("Successfully linked entities {FromId} and {ToId} with relation {RelationType}", 
+                fromEntityId, toEntityId, relationType);
+                
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to link entities {FromId} and {ToId}", fromEntityId, toEntityId);
+            return false;
+        }
+    }
+
+    public async Task<bool> UnlinkEntitiesAsync(string fromEntityId, string toEntityId)
+    {
+        try
+        {
+            var edge = await _context.Edges
+                .FirstOrDefaultAsync(e => 
+                    (e.FromEntityId == fromEntityId && e.ToEntityId == toEntityId) ||
+                    (e.FromEntityId == toEntityId && e.ToEntityId == fromEntityId));
+                    
+            if (edge == null)
+            {
+                _logger.LogWarning("No link found between entities {FromId} and {ToId}", fromEntityId, toEntityId);
+                return false;
+            }
+            
+            _context.Edges.Remove(edge);
+            await _context.SaveChangesAsync();
+            
+            _logger.LogInformation("Successfully unlinked entities {FromId} and {ToId}", fromEntityId, toEntityId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to unlink entities {FromId} and {ToId}", fromEntityId, toEntityId);
+            return false;
+        }
+    }
+
+    public async Task<List<GraphNode>> GetNotesForEntityAsync(string entityId)
+    {
+        try
+        {
+            // Find all text spans that reference this entity
+            var textSpans = await _context.TextSpans
+                .Where(ts => ts.EntityId == entityId)
+                .Include(ts => ts.Note)
+                .Select(ts => ts.Note)
+                .Distinct()
+                .ToListAsync();
+            
+            var notes = textSpans.Where(n => n != null).Select(note => new GraphNode
+            {
+                Id = note!.Id,
+                Type = "note",
+                Value = note.Title,
+                ConnectionCount = 0, // Will be populated if needed
+                LastSeen = note.UpdatedAt
+            }).ToList();
+            
+            return notes;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get notes for entity {EntityId}", entityId);
+            return new List<GraphNode>();
+        }
+    }
+
+    public async Task<List<GraphSuggestion>> GetConnectionSuggestionsAsync(string entityId, int maxSuggestions = 5)
+    {
+        try
+        {
+            var suggestions = new List<GraphSuggestion>();
+            
+            // Get the source entity
+            var sourceEntity = await _context.Entities.FindAsync(entityId);
+            if (sourceEntity == null) return suggestions;
+            
+            // Find entities that appear in similar contexts but aren't connected
+            var sourceNotes = await _context.TextSpans
+                .Where(ts => ts.EntityId == entityId)
+                .Select(ts => ts.NoteId)
+                .Distinct()
+                .ToListAsync();
+            
+            // Find other entities in the same notes
+            var coOccurringEntities = await _context.TextSpans
+                .Where(ts => sourceNotes.Contains(ts.NoteId) && ts.EntityId != entityId && ts.EntityId != null)
+                .GroupBy(ts => ts.EntityId)
+                .Select(g => new { EntityId = g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count)
+                .Take(maxSuggestions * 2) // Get more candidates
+                .ToListAsync();
+            
+            // Check which ones aren't already connected
+            var existingConnections = await _context.Edges
+                .Where(e => (e.FromEntityId == entityId && coOccurringEntities.Select(x => x.EntityId).Contains(e.ToEntityId)) ||
+                           (e.ToEntityId == entityId && coOccurringEntities.Select(x => x.EntityId).Contains(e.FromEntityId)))
+                .Select(e => e.FromEntityId == entityId ? e.ToEntityId : e.FromEntityId)
+                .ToListAsync();
+            
+            var candidateEntityIds = coOccurringEntities
+                .Where(x => !existingConnections.Contains(x.EntityId))
+                .Take(maxSuggestions)
+                .ToList();
+            
+            foreach (var candidate in candidateEntityIds)
+            {
+                var targetEntity = await _context.Entities.FindAsync(candidate.EntityId);
+                if (targetEntity == null) continue;
+                
+                // Determine suggested relationship type based on entity types
+                var relationType = DetermineSuggestedRelationType(sourceEntity.Type, targetEntity.Type);
+                
+                // Calculate confidence based on co-occurrence frequency
+                var confidence = Math.Min(0.9, (double)candidate.Count / Math.Max(1, sourceNotes.Count));
+                
+                suggestions.Add(new GraphSuggestion
+                {
+                    FromEntityId = sourceEntity.Id,
+                    FromEntityName = sourceEntity.CanonicalValue,
+                    FromEntityType = sourceEntity.Type,
+                    ToEntityId = targetEntity.Id,
+                    ToEntityName = targetEntity.CanonicalValue,
+                    ToEntityType = targetEntity.Type,
+                    SuggestedRelationType = relationType,
+                    Confidence = confidence,
+                    Reason = $"Appears together in {candidate.Count} note(s)",
+                    SupportingNotes = sourceNotes.Take(3).ToList() // Show up to 3 supporting notes
+                });
+            }
+            
+            return suggestions.OrderByDescending(s => s.Confidence).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get connection suggestions for entity {EntityId}", entityId);
+            return new List<GraphSuggestion>();
+        }
+    }
+
+    public async Task<List<GraphSuggestion>> GetGlobalSuggestionsAsync(int maxSuggestions = 10)
+    {
+        try
+        {
+            var suggestions = new List<GraphSuggestion>();
+            
+            // Find entities that frequently co-occur but aren't connected
+            var coOccurrences = await _context.Database
+                .SqlQueryRaw<EntityCoOccurrence>(@"
+                    SELECT 
+                        ts1.entity_id as EntityId1,
+                        ts2.entity_id as EntityId2,
+                        COUNT(DISTINCT ts1.note_id) as CoOccurrenceCount
+                    FROM text_spans ts1
+                    JOIN text_spans ts2 ON ts1.note_id = ts2.note_id 
+                    WHERE ts1.entity_id IS NOT NULL 
+                        AND ts2.entity_id IS NOT NULL 
+                        AND ts1.entity_id < ts2.entity_id
+                        AND NOT EXISTS (
+                            SELECT 1 FROM edges e 
+                            WHERE (e.from_entity_id = ts1.entity_id AND e.to_entity_id = ts2.entity_id)
+                               OR (e.from_entity_id = ts2.entity_id AND e.to_entity_id = ts1.entity_id)
+                        )
+                    GROUP BY ts1.entity_id, ts2.entity_id
+                    HAVING COUNT(DISTINCT ts1.note_id) >= 2
+                    ORDER BY CoOccurrenceCount DESC
+                    LIMIT {0}", maxSuggestions)
+                .ToListAsync();
+            
+            foreach (var coOccurrence in coOccurrences)
+            {
+                var entity1 = await _context.Entities.FindAsync(coOccurrence.EntityId1);
+                var entity2 = await _context.Entities.FindAsync(coOccurrence.EntityId2);
+                
+                if (entity1 == null || entity2 == null) continue;
+                
+                var relationType = DetermineSuggestedRelationType(entity1.Type, entity2.Type);
+                var confidence = Math.Min(0.95, (double)coOccurrence.CoOccurrenceCount / 10.0);
+                
+                suggestions.Add(new GraphSuggestion
+                {
+                    FromEntityId = entity1.Id,
+                    FromEntityName = entity1.CanonicalValue,
+                    FromEntityType = entity1.Type,
+                    ToEntityId = entity2.Id,
+                    ToEntityName = entity2.CanonicalValue,
+                    ToEntityType = entity2.Type,
+                    SuggestedRelationType = relationType,
+                    Confidence = confidence,
+                    Reason = $"Co-occur in {coOccurrence.CoOccurrenceCount} note(s)",
+                    SupportingNotes = new List<string>()
+                });
+            }
+            
+            return suggestions.OrderByDescending(s => s.Confidence).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get global suggestions");
+            return new List<GraphSuggestion>();
+        }
+    }
+
+    private string DetermineSuggestedRelationType(string fromType, string toType)
+    {
+        // Smart relationship type suggestions based on entity types
+        return (fromType.ToLower(), toType.ToLower()) switch
+        {
+            ("person", "organization") => "works_for",
+            ("organization", "person") => "employs",
+            ("person", "person") => "knows",
+            ("person", "location") => "located_in",
+            ("organization", "location") => "based_in",
+            ("concept", "concept") => "related_to",
+            ("technology", "technology") => "depends_on",
+            ("project", "person") => "involves",
+            ("project", "technology") => "uses",
+            ("document", _) => "mentions",
+            (_, "document") => "mentioned_in",
+            _ => "related_to"
+        };
+    }
+
     public void Dispose()
     {
         _neo4jDriver?.Dispose();
     }
+}
+
+// Helper class for raw SQL query
+public class EntityCoOccurrence
+{
+    public string EntityId1 { get; set; } = string.Empty;
+    public string EntityId2 { get; set; } = string.Empty;
+    public int CoOccurrenceCount { get; set; }
 }

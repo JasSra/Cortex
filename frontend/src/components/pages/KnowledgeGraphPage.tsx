@@ -51,6 +51,19 @@ interface GraphFilters {
   maxDepth: number
 }
 
+interface GraphSuggestion {
+  fromEntityId: string
+  fromEntityName: string
+  fromEntityType: string
+  toEntityId: string
+  toEntityName: string
+  toEntityType: string
+  suggestedRelationType: string
+  confidence: number
+  reason: string
+  supportingNotes: string[]
+}
+
 const KnowledgeGraphPage: React.FC = () => {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [], depth: 2 })
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
@@ -72,13 +85,29 @@ const KnowledgeGraphPage: React.FC = () => {
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   const [relatedResults, setRelatedResults] = useState<any[] | null>(null)
   const [isCopying, setIsCopying] = useState(false)
+  
+  // Enhanced interaction states
+  const [interactionMode, setInteractionMode] = useState<'view' | 'link' | 'unlink'>('view')
+  const [linkingFromNode, setLinkingFromNode] = useState<GraphNode | null>(null)
+  const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
+  const [linkingRelationType, setLinkingRelationType] = useState('manual')
+  const [graphHistory, setGraphHistory] = useState<GraphData[]>([])
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const [isRebuildingGraph, setIsRebuildingGraph] = useState(false)
+  
+  // Suggestions states
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<GraphSuggestion[]>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [suggestionType, setSuggestionType] = useState<'entity' | 'global'>('global')
+  
   const loadingRef = useRef(false)
   
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   
   const { speak, think, idle, suggest } = useMascot()
-  const { getGraph, getConnectedEntities, discoverAll } = useGraphApi()
+  const { getGraph, getConnectedEntities, discoverAll, rebuildGraph, linkEntities, unlinkEntities, getEntityNotes, getConnectionSuggestions, getGlobalSuggestions, applySuggestion } = useGraphApi()
   const { searchGet } = useSearchApi()
 
   // Process graph data for visualization
@@ -142,6 +171,123 @@ const KnowledgeGraphPage: React.FC = () => {
       depth: data?.depth ?? data?.Depth ?? 2,
     }
   }, [])
+
+  // Save current graph state to history
+  const saveToHistory = useCallback((newGraphData: GraphData) => {
+    setGraphHistory(prev => {
+      const newHistory = prev.slice(0, historyIndex + 1)
+      newHistory.push(JSON.parse(JSON.stringify(newGraphData))) // Deep clone
+      return newHistory.slice(-20) // Keep last 20 states
+    })
+    setHistoryIndex(prev => Math.min(prev + 1, 19))
+  }, [historyIndex])
+
+  // Undo/Redo functionality
+  const undo = useCallback(() => {
+    if (historyIndex > 0) {
+      setHistoryIndex(prev => prev - 1)
+      setGraphData(graphHistory[historyIndex - 1])
+    }
+  }, [historyIndex, graphHistory])
+
+  const redo = useCallback(() => {
+    if (historyIndex < graphHistory.length - 1) {
+      setHistoryIndex(prev => prev + 1)
+      setGraphData(graphHistory[historyIndex + 1])
+    }
+  }, [historyIndex, graphHistory])
+
+  // Rebuild graph functionality
+  const handleRebuildGraph = useCallback(async () => {
+    if (isRebuildingGraph) return
+    
+    setIsRebuildingGraph(true)
+    think()
+    speak('Rebuilding knowledge graph from all notes. This may take a moment...')
+    
+    try {
+      const result = await rebuildGraph()
+      if (result.success) {
+        speak(`Graph rebuilt successfully. Created ${result.totalEntities} entities and ${result.totalRelations} relationships.`)
+        await loadGraph() // Reload the graph
+      } else {
+        speak('Failed to rebuild graph: ' + (result.errorMessage || 'Unknown error'), 'error')
+      }
+    } catch (error: any) {
+      speak('Failed to rebuild graph: ' + (error?.message || 'Unknown error'), 'error')
+      console.error('Graph rebuild failed:', error)
+    } finally {
+      setIsRebuildingGraph(false)
+      idle()
+    }
+  }, [isRebuildingGraph, rebuildGraph, speak, think, idle, loadGraph])
+
+  // Load notes for an entity
+  const loadEntityNotes = useCallback(async (entityId: string) => {
+    try {
+      think()
+      const notes = await getEntityNotes(entityId)
+      setRelatedResults(notes.map(note => ({
+        id: note.id,
+        title: note.value,
+        fileName: note.properties?.fileName || '',
+        snippet: note.properties?.content || '',
+        createdAt: note.properties?.createdAt,
+        updatedAt: note.properties?.updatedAt
+      })))
+      idle()
+    } catch (error) {
+      console.error('Failed to load entity notes:', error)
+      idle()
+    }
+  }, [getEntityNotes, think, idle])
+
+  // Load connection suggestions for selected entity
+  const loadConnectionSuggestions = useCallback(async (entityId: string) => {
+    setLoadingSuggestions(true)
+    try {
+      const suggestionData = await getConnectionSuggestions(entityId, 5)
+      setSuggestions(suggestionData)
+      setSuggestionType('entity')
+    } catch (error) {
+      console.error('Failed to load connection suggestions:', error)
+      setSuggestions([])
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }, [getConnectionSuggestions])
+
+  // Load global graph suggestions
+  const loadGlobalSuggestions = useCallback(async () => {
+    setLoadingSuggestions(true)
+    try {
+      const suggestionData = await getGlobalSuggestions(10)
+      setSuggestions(suggestionData)
+      setSuggestionType('global')
+    } catch (error) {
+      console.error('Failed to load global suggestions:', error)
+      setSuggestions([])
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }, [getGlobalSuggestions])
+
+  // Apply a suggestion
+  const handleApplySuggestion = useCallback(async (suggestion: GraphSuggestion) => {
+    try {
+      await applySuggestion(suggestion)
+      // Remove the applied suggestion from the list
+      setSuggestions(prev => prev.filter(s => 
+        s.fromEntityId !== suggestion.fromEntityId || s.toEntityId !== suggestion.toEntityId
+      ))
+      // Reload the graph to show the new connection
+      await loadGraph()
+      speak(`Connected ${suggestion.fromEntityName} to ${suggestion.toEntityName}`)
+    } catch (error) {
+      console.error('Failed to apply suggestion:', error)
+      speak('Failed to apply the suggestion. Please try again.')
+    }
+  }, [applySuggestion, loadGraph, speak])
 
   // Load graph data
   const loadGraph = useCallback(async (focus?: string) => {
@@ -247,21 +393,91 @@ const KnowledgeGraphPage: React.FC = () => {
     return map[type.toLowerCase()] || map.default
   }
 
-  // Handle node click
+  // Enhanced node click handler
   const handleNodeClick = async (node: GraphNode) => {
-    setSelectedNode(node)
-    speak(`Selected ${node.name}. Loading connected entities...`)
-    
-    try {
-      const connectedEntities: any = await getConnectedEntities(node.id, 1)
-      // You could expand the graph here or show related entities
-      // Preload related results panel for fast follow-up actions
-      setRelatedResults(null)
-      void fetchRelatedResults(node)
-    } catch (error) {
-      console.error('Failed to load connected entities:', error)
+    if (interactionMode === 'link') {
+      if (!linkingFromNode) {
+        setLinkingFromNode(node)
+        speak(`Selected ${node.name} as starting point for linking. Click another node to create a connection.`)
+      } else if (linkingFromNode.id !== node.id) {
+        try {
+          await linkEntities(linkingFromNode.id, node.id, linkingRelationType)
+          speak(`Created link between ${linkingFromNode.name} and ${node.name}`)
+          
+          // Add edge to current graph data
+          const newEdge: GraphEdge = {
+            id: `${linkingFromNode.id}-${node.id}`,
+            source: linkingFromNode.id,
+            target: node.id,
+            type: linkingRelationType,
+            properties: {},
+            weight: 1
+          }
+          
+          const newGraphData = {
+            ...graphData,
+            edges: [...graphData.edges, newEdge]
+          }
+          
+          saveToHistory(graphData)
+          setGraphData(newGraphData)
+          setLinkingFromNode(null)
+          setInteractionMode('view')
+        } catch (error) {
+          speak('Failed to create link between entities.', 'error')
+          console.error('Link creation failed:', error)
+        }
+      }
+    } else if (interactionMode === 'unlink') {
+      // Find existing edges involving this node
+      const connectedEdges = graphData.edges.filter(e => 
+        e.source === node.id || e.target === node.id
+      )
+      
+      if (connectedEdges.length > 0) {
+        try {
+          // For demo, remove first connection (could be enhanced with selection UI)
+          const edge = connectedEdges[0]
+          const otherId = edge.source === node.id ? edge.target : edge.source
+          await unlinkEntities(node.id, otherId)
+          
+          speak(`Removed connection from ${node.name}`)
+          
+          // Remove edge from current graph data
+          const newGraphData = {
+            ...graphData,
+            edges: graphData.edges.filter(e => e.id !== edge.id)
+          }
+          
+          saveToHistory(graphData)
+          setGraphData(newGraphData)
+        } catch (error) {
+          speak('Failed to remove connection.', 'error')
+        }
+      } else {
+        speak(`${node.name} has no connections to remove.`)
+      }
+    } else {
+      // Default view mode behavior
+      setSelectedNode(node)
+      speak(`Selected ${node.name}. Loading connected entities and suggestions...`)
+      
+      try {
+        const connectedEntities: any = await getConnectedEntities(node.id, 1)
+        setRelatedResults(null)
+        void fetchRelatedResults(node)
+        void loadEntityNotes(node.id) // Load related notes
+        void loadConnectionSuggestions(node.id) // Load connection suggestions
+      } catch (error) {
+        console.error('Failed to load connected entities:', error)
+      }
     }
   }
+
+  // Handle node hover for visual feedback
+  const handleNodeHover = useCallback((node: GraphNode | null) => {
+    setHoveredNode(node)
+  }, [])
 
   // Expand graph by one hop from a node and merge into current graph
   const expandFromNode = useCallback(async (node: GraphNode) => {
@@ -558,6 +774,107 @@ const KnowledgeGraphPage: React.FC = () => {
               className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
             >Run Discovery</button>
 
+            {/* Rebuild Graph */}
+            <button
+              onClick={handleRebuildGraph}
+              disabled={isRebuildingGraph}
+              title="Completely rebuild graph from all notes"
+              className={`px-3 py-2 text-white text-sm rounded-lg transition-colors ${
+                isRebuildingGraph 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-red-600 hover:bg-red-700'
+              }`}
+            >
+              {isRebuildingGraph ? 'Rebuilding...' : 'Rebuild Graph'}
+            </button>
+
+            {/* Global Suggestions */}
+            <button
+              onClick={() => {
+                setShowSuggestions(true)
+                setSuggestionType('global')
+                loadGlobalSuggestions()
+                setSelectedNode(null) // Clear selected node to show global suggestions
+              }}
+              title="Show global connection suggestions"
+              className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
+            >
+              Smart Suggestions
+            </button>
+
+            {/* Interaction Mode Toggle */}
+            <div className="flex bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => {
+                  setInteractionMode('view')
+                  setLinkingFromNode(null)
+                }}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  interactionMode === 'view'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}
+              >
+                View
+              </button>
+              <button
+                onClick={() => {
+                  setInteractionMode('link')
+                  setLinkingFromNode(null)
+                }}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  interactionMode === 'link'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}
+                title="Click two nodes to create a link between them"
+              >
+                Link
+              </button>
+              <button
+                onClick={() => {
+                  setInteractionMode('unlink')
+                  setLinkingFromNode(null)
+                }}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  interactionMode === 'unlink'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}
+                title="Click a node to remove its connections"
+              >
+                Unlink
+              </button>
+            </div>
+
+            {/* Undo/Redo Controls */}
+            <div className="flex gap-1">
+              <button
+                onClick={undo}
+                disabled={historyIndex <= 0}
+                title="Undo last change"
+                className={`p-2 rounded-lg transition-colors ${
+                  historyIndex <= 0
+                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                ↶
+              </button>
+              <button
+                onClick={redo}
+                disabled={historyIndex >= graphHistory.length - 1}
+                title="Redo last change"
+                className={`p-2 rounded-lg transition-colors ${
+                  historyIndex >= graphHistory.length - 1
+                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                ↷
+              </button>
+            </div>
+
             {/* Zoom + Fit Controls */}
             <div className="flex gap-1">
               <button
@@ -602,6 +919,29 @@ const KnowledgeGraphPage: React.FC = () => {
           {graphData.focus && (
             <span>
               Focus: <strong>{graphData.focus}</strong>
+            </span>
+          )}
+          
+          {/* Interaction Mode Status */}
+          <span className={`px-2 py-1 rounded text-xs font-medium ${
+            interactionMode === 'view' 
+              ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' 
+              : interactionMode === 'link'
+              ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+              : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+          }`}>
+            Mode: {interactionMode === 'view' ? 'View' : interactionMode === 'link' ? 'Link' : 'Unlink'}
+          </span>
+          
+          {linkingFromNode && (
+            <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200">
+              Linking from: {linkingFromNode.name}
+            </span>
+          )}
+          
+          {historyIndex >= 0 && (
+            <span className="text-xs">
+              History: {historyIndex + 1}/{graphHistory.length}
             </span>
           )}
         </div>
@@ -782,34 +1122,65 @@ const KnowledgeGraphPage: React.FC = () => {
 
             {/* Nodes */}
             <g>
-              {graphData.nodes.map(node => (
-                <g key={node.id}>
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={node.size}
-                    fill={node.color}
-                    stroke={selectedNode?.id === node.id ? '#7C3AED' : 'white'}
-                    strokeWidth={selectedNode?.id === node.id ? 3 : 2}
-                    opacity={(node as any).highlighted ? 1 : 0.8}
-                    className="cursor-pointer hover:opacity-100"
-                    onMouseDown={onNodeMouseDown(node)}
-                    onClick={() => {
-                      handleNodeClick(node)
-                      centerOnNode(node)
-                    }}
-                  />
-                  <text
-                    x={node.x}
-                    y={node.y! + (node.size! + 15)}
-                    textAnchor="middle"
-                    className="text-xs fill-gray-700 dark:fill-gray-300 pointer-events-none"
-                    fontSize="12"
-                  >
-                    {node.name.length > 15 ? node.name.substring(0, 15) + '...' : node.name}
-                  </text>
-                </g>
-              ))}
+              {graphData.nodes.map(node => {
+                // Visual feedback for different interaction modes
+                let strokeColor = 'white'
+                let strokeWidth = 2
+                let opacity = 0.8
+                
+                if (selectedNode?.id === node.id) {
+                  strokeColor = '#7C3AED'
+                  strokeWidth = 3
+                }
+                
+                if (interactionMode === 'link' && linkingFromNode?.id === node.id) {
+                  strokeColor = '#10B981'
+                  strokeWidth = 4
+                  opacity = 1
+                }
+                
+                if (interactionMode === 'link' && linkingFromNode && linkingFromNode.id !== node.id) {
+                  strokeColor = '#F59E0B'
+                  strokeWidth = 2
+                  opacity = 0.9
+                }
+                
+                if (hoveredNode?.id === node.id) {
+                  opacity = 1
+                  strokeWidth = Math.max(strokeWidth, 3)
+                }
+                
+                return (
+                  <g key={node.id}>
+                    <circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={node.size}
+                      fill={node.color}
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                      opacity={opacity}
+                      className="cursor-pointer hover:opacity-100 transition-all duration-200"
+                      onMouseDown={onNodeMouseDown(node)}
+                      onMouseEnter={() => handleNodeHover(node)}
+                      onMouseLeave={() => handleNodeHover(null)}
+                      onClick={() => {
+                        handleNodeClick(node)
+                        centerOnNode(node)
+                      }}
+                    />
+                    <text
+                      x={node.x}
+                      y={node.y! + (node.size! + 15)}
+                      textAnchor="middle"
+                      className="text-xs fill-gray-700 dark:fill-gray-300 pointer-events-none"
+                      fontSize="12"
+                    >
+                      {node.name.length > 15 ? node.name.substring(0, 15) + '...' : node.name}
+                    </text>
+                  </g>
+                )
+              })}
             </g>
             </g>
             </g>
@@ -896,6 +1267,25 @@ const KnowledgeGraphPage: React.FC = () => {
                     Center
                   </button>
                   <button
+                    onClick={() => loadEntityNotes(selectedNode.id)}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                    title="Load notes containing this entity"
+                  >
+                    View Notes
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowSuggestions(!showSuggestions)
+                      if (!showSuggestions && suggestions.length === 0) {
+                        loadConnectionSuggestions(selectedNode.id)
+                      }
+                    }}
+                    className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
+                    title="Show suggested connections for this entity"
+                  >
+                    Suggestions
+                  </button>
+                  <button
                     onClick={() => fetchRelatedResults(selectedNode)}
                     className="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors"
                   >
@@ -922,27 +1312,253 @@ const KnowledgeGraphPage: React.FC = () => {
                 {/* Inline related results */}
                 {Array.isArray(relatedResults) && (
                   <div className="mt-4">
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center justify-between">
                       Related notes/documents
+                      <span className="text-xs text-gray-500">({relatedResults.length})</span>
                     </h4>
                     {relatedResults.length === 0 ? (
                       <p className="text-sm text-gray-500">No related results.</p>
                     ) : (
                       <ul className="space-y-2 max-h-40 overflow-auto pr-1">
                         {relatedResults.map((r: any, i: number) => (
-                          <li key={i} className="text-sm">
-                            <div className="font-medium text-gray-900 dark:text-white truncate">
+                          <li 
+                            key={i} 
+                            className="text-sm p-2 bg-gray-50 dark:bg-gray-700 rounded border hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer transition-colors"
+                            onClick={() => {
+                              // Open note in new tab or navigate to note
+                              const noteId = r.id || r.Id
+                              if (noteId) {
+                                const url = `/notes/${noteId}`
+                                window.open(url, '_blank')
+                              }
+                            }}
+                            title="Click to open note"
+                          >
+                            <div className="font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
+                              <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
                               {r.title ?? r.Title ?? r.fileName ?? r.FileName ?? r.id ?? 'Untitled'}
                             </div>
-                            {r.snippet || r.Snippet ? (
-                              <div className="text-gray-600 dark:text-gray-400 line-clamp-2 text-xs" dangerouslySetInnerHTML={{ __html: r.snippet ?? r.Snippet }} />
-                            ) : null}
+                            {(r.snippet || r.Snippet) && (
+                              <div className="text-gray-600 dark:text-gray-400 line-clamp-2 text-xs mt-1" dangerouslySetInnerHTML={{ __html: r.snippet ?? r.Snippet }} />
+                            )}
+                            {(r.createdAt || r.updatedAt) && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                {r.updatedAt ? `Updated: ${new Date(r.updatedAt).toLocaleDateString()}` : 
+                                 r.createdAt ? `Created: ${new Date(r.createdAt).toLocaleDateString()}` : ''}
+                              </div>
+                            )}
                           </li>
                         ))}
                       </ul>
                     )}
                   </div>
                 )}
+
+                {/* Connection Suggestions */}
+                {showSuggestions && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Connection Suggestions
+                      </h4>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            setSuggestionType('entity')
+                            if (selectedNode) {
+                              loadConnectionSuggestions(selectedNode.id)
+                            }
+                          }}
+                          className={`px-2 py-1 text-xs rounded transition-colors ${
+                            suggestionType === 'entity'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          For Entity
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSuggestionType('global')
+                            loadGlobalSuggestions()
+                          }}
+                          className={`px-2 py-1 text-xs rounded transition-colors ${
+                            suggestionType === 'global'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          Global
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {loadingSuggestions ? (
+                      <div className="text-sm text-gray-500 text-center py-4">
+                        Loading suggestions...
+                      </div>
+                    ) : suggestions.length === 0 ? (
+                      <p className="text-sm text-gray-500">No suggestions available.</p>
+                    ) : (
+                      <ul className="space-y-2 max-h-60 overflow-auto pr-1">
+                        {suggestions.map((suggestion, i) => (
+                          <li 
+                            key={i}
+                            className="text-sm p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded border border-purple-200 dark:border-purple-700"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="font-medium text-gray-900 dark:text-white text-xs">
+                                {suggestion.fromEntityName} → {suggestion.toEntityName}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                  suggestion.confidence > 0.7 
+                                    ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                    : suggestion.confidence > 0.4
+                                    ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200'
+                                    : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                                }`}>
+                                  {Math.round(suggestion.confidence * 100)}%
+                                </span>
+                                <button
+                                  onClick={() => handleApplySuggestion(suggestion)}
+                                  className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded transition-colors"
+                                >
+                                  Apply
+                                </button>
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                              <span className="font-medium">Relation:</span> {suggestion.suggestedRelationType}
+                            </div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                              <span className="font-medium">Reason:</span> {suggestion.reason}
+                            </div>
+                            {suggestion.supportingNotes.length > 0 && (
+                              <div className="text-xs text-gray-500 mt-2">
+                                <span className="font-medium">Supporting notes:</span> {suggestion.supportingNotes.length} note(s)
+                              </div>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Global Suggestions Panel */}
+          <AnimatePresence>
+            {showSuggestions && !selectedNode && (
+              <motion.div
+                initial={{ x: 300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 300, opacity: 0 }}
+                className="absolute top-0 right-0 w-80 h-full bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-hidden z-20"
+              >
+                <div className="p-4 h-full flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      Smart Suggestions
+                    </h3>
+                    <button
+                      onClick={() => setShowSuggestions(false)}
+                      className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  <div className="flex gap-1 mb-4">
+                    <button
+                      onClick={() => {
+                        setSuggestionType('global')
+                        loadGlobalSuggestions()
+                      }}
+                      className={`px-3 py-1 text-sm rounded transition-colors ${
+                        suggestionType === 'global'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      Global Connections
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-auto">
+                    {loadingSuggestions ? (
+                      <div className="text-center py-8">
+                        <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                        <p className="text-sm text-gray-500">Finding intelligent connections...</p>
+                      </div>
+                    ) : suggestions.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-sm text-gray-500 mb-2">No suggestions available.</p>
+                        <p className="text-xs text-gray-400">
+                          Suggestions are based on entities that frequently appear together but aren't connected yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="text-xs text-gray-500 mb-3">
+                          Found {suggestions.length} potential connections
+                        </div>
+                        {suggestions.map((suggestion, i) => (
+                          <div 
+                            key={i}
+                            className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg border border-purple-200 dark:border-purple-700"
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-gray-900 dark:text-white text-sm mb-1">
+                                  <span className="text-purple-600 dark:text-purple-400">{suggestion.fromEntityName}</span>
+                                  <span className="text-gray-500 mx-2">→</span>
+                                  <span className="text-blue-600 dark:text-blue-400">{suggestion.toEntityName}</span>
+                                </div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">
+                                  {suggestion.fromEntityType} → {suggestion.toEntityType}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 ml-2">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                  suggestion.confidence > 0.7 
+                                    ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                    : suggestion.confidence > 0.4
+                                    ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200'
+                                    : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                                }`}>
+                                  {Math.round(suggestion.confidence * 100)}%
+                                </span>
+                                <button
+                                  onClick={() => handleApplySuggestion(suggestion)}
+                                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded transition-colors"
+                                >
+                                  Connect
+                                </button>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-2 text-xs">
+                              <div className="text-gray-600 dark:text-gray-400">
+                                <span className="font-medium">Relation:</span> {suggestion.suggestedRelationType}
+                              </div>
+                              <div className="text-gray-600 dark:text-gray-400">
+                                <span className="font-medium">Reason:</span> {suggestion.reason}
+                              </div>
+                              {suggestion.supportingNotes.length > 0 && (
+                                <div className="text-gray-500">
+                                  <span className="font-medium">Evidence:</span> {suggestion.supportingNotes.length} supporting note(s)
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

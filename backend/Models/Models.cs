@@ -931,6 +931,33 @@ public class GraphHub
     public int ConnectionCount { get; set; }
 }
 
+public class GraphRebuildResult
+{
+    public bool Success { get; set; }
+    public bool ClearedEntities { get; set; }
+    public int ProcessedNotes { get; set; }
+    public int FailedNotes { get; set; }
+    public int TotalEntities { get; set; }
+    public int TotalRelations { get; set; }
+    public string? ErrorMessage { get; set; }
+    public DateTime CompletedAt { get; set; }
+    public TimeSpan Duration => CompletedAt - DateTime.UtcNow.AddSeconds(-30); // Rough estimate
+}
+
+public class GraphSuggestion
+{
+    public string FromEntityId { get; set; } = string.Empty;
+    public string FromEntityName { get; set; } = string.Empty;
+    public string FromEntityType { get; set; } = string.Empty;
+    public string ToEntityId { get; set; } = string.Empty;
+    public string ToEntityName { get; set; } = string.Empty;
+    public string ToEntityType { get; set; } = string.Empty;
+    public string SuggestedRelationType { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public List<string> SupportingNotes { get; set; } = new();
+}
+
 // Security & Audit Models
 public class AuditEntry
 {
