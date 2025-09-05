@@ -307,6 +307,25 @@ public class SuggestionsController : ControllerBase
         
         return Ok(insights);
     }
+
+    /// <summary>
+    /// Get proactive suggestions for the current user (tasks, reviews, opportunities)
+    /// </summary>
+    [HttpGet("proactive")]
+    public async Task<ActionResult<List<ProactiveSuggestion>>> GetProactiveSuggestions([FromQuery] int limit = 5)
+    {
+        try
+        {
+            if (limit <= 0) limit = 5;
+            var suggestions = await _suggestionsService.GetProactiveSuggestionsAsync(limit);
+            return Ok(suggestions ?? new List<ProactiveSuggestion>());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get proactive suggestions for user {UserId}", _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to get proactive suggestions" });
+        }
+    }
 }
 
 // Request/Response models

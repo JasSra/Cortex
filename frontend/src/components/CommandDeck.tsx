@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMicrophone, faMicrophoneSlash, faCheck, faUndo } from "@fortawesome/free-solid-svg-icons";
+import { useAppAuth } from "@/hooks/useAppAuth";
 
 interface CommandDeckProps {}
 
@@ -12,13 +13,20 @@ export default function CommandDeck({}: CommandDeckProps) {
   const [micState, setMicState] = useState<"idle" | "listening" | "processing">("idle");
   const websocketRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const { getAccessToken } = useAppAuth();
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
       
       // Create WebSocket connection to backend
-      const ws = new WebSocket(`ws://localhost:8080/voice/stt`);
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+      const wsBase = baseUrl.replace(/^http/, "ws");
+      const token = await getAccessToken?.();
+      const url = `${wsBase}/voice/stt${token ? `?access_token=${encodeURIComponent(token)}` : ""}`;
+      const ws = new WebSocket(url);
       websocketRef.current = ws;
       
       ws.onopen = () => {
@@ -27,13 +35,30 @@ export default function CommandDeck({}: CommandDeckProps) {
       };
       
       ws.onmessage = (event) => {
+        const handleText = (text: string) => {
+          const cleaned = text?.replace(/^\s*Echo:\s*/i, "").trim();
+          if (cleaned) setTranscript(prev => (prev ? prev + " " : "") + cleaned);
+        };
+
         try {
-          const data = JSON.parse(event.data);
-          if (data.text) {
-            setTranscript(prev => prev + " " + data.text);
+          if (typeof event.data === "string") {
+            // Try JSON first, else treat as plain text
+            try {
+              const data = JSON.parse(event.data);
+              const msg = data?.text || data?.partial || data?.final;
+              if (typeof msg === "string") handleText(msg);
+              else if (data && typeof data === "object") {
+                const values = Object.values(data).filter(v => typeof v === "string") as string[];
+                if (values.length) handleText(values.join(" "));
+              }
+            } catch {
+              handleText(event.data as string);
+            }
+          } else if (event.data instanceof Blob) {
+            event.data.text().then(handleText).catch(() => {/* noop */});
           }
         } catch (error) {
-          console.error("Error parsing STT response:", error);
+          console.error("Error handling STT response:", error);
         }
       };
       
@@ -65,8 +90,17 @@ export default function CommandDeck({}: CommandDeckProps) {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
     }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
     
     if (websocketRef.current) {
+      try {
+        if (websocketRef.current.readyState === WebSocket.OPEN) {
+          websocketRef.current.send("end");
+        }
+      } catch {}
       websocketRef.current.close();
       websocketRef.current = null;
     }
@@ -111,6 +145,8 @@ export default function CommandDeck({}: CommandDeckProps) {
             onClick={isRecording ? stopRecording : startRecording}
             className={getMicButtonClass()}
             disabled={micState === "processing"}
+            aria-label={isRecording ? "Stop recording" : "Start recording"}
+            title={isRecording ? "Stop recording" : "Start recording"}
           >
             <FontAwesomeIcon 
               icon={isRecording ? faMicrophoneSlash : faMicrophone} 

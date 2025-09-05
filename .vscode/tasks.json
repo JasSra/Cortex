@@ -232,6 +232,11 @@
 			],
 			"isBackground": true,
 			"group": "dev"
+		},
+		{
+			"label": "frontend-build-once",
+			"type": "shell",
+			"command": "npm run --silent build"
 		}
 	]
 }

@@ -1505,6 +1505,28 @@
         }
       }
     },
+    "/api/Notes/{id}/deletion-plan": {
+      "get": {
+        "tags": [
+          "Notes"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
     "/api/Notifications/register-device": {
       "post": {
         "tags": [
@@ -3635,6 +3657,55 @@
               "text/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EntityInsights"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Suggestions/proactive": {
+      "get": {
+        "tags": [
+          "Suggestions"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProactiveSuggestion"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProactiveSuggestion"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProactiveSuggestion"
+                  }
                 }
               }
             }
@@ -6125,6 +6196,10 @@
             "format": "int32"
           },
           "tags": {
+            "type": "string",
+            "nullable": true
+          },
+          "storedFileId": {
             "type": "string",
             "nullable": true
           },

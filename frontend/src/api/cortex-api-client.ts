@@ -2204,6 +2204,42 @@ export class CortexApiClient {
     }
 
     /**
+     * @return Success
+     */
+    deletionPlan(id: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/Notes/{id}/deletion-plan";
+        if (id === undefined || id === null)
+            throw new Error("The parameter 'id' must be defined.");
+        url_ = url_.replace("{id}", encodeURIComponent("" + id));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processDeletionPlan(_response);
+        });
+    }
+
+    protected processDeletionPlan(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * @param body (optional) 
      * @return Success
      */
@@ -4138,6 +4174,55 @@ export class CortexApiClient {
             });
         }
         return Promise.resolve<EntityInsights>(null as any);
+    }
+
+    /**
+     * @param limit (optional) 
+     * @return Success
+     */
+    proactive(limit: number | undefined): Promise<ProactiveSuggestion[]> {
+        let url_ = this.baseUrl + "/api/Suggestions/proactive?";
+        if (limit === null)
+            throw new Error("The parameter 'limit' cannot be null.");
+        else if (limit !== undefined)
+            url_ += "limit=" + encodeURIComponent("" + limit) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processProactive(_response);
+        });
+    }
+
+    protected processProactive(response: Response): Promise<ProactiveSuggestion[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(ProactiveSuggestion.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ProactiveSuggestion[]>(null as any);
     }
 
     /**
@@ -8009,6 +8094,7 @@ export class Note implements INote {
     chunkCount?: number;
     wordCount?: number;
     tags?: string | undefined;
+    storedFileId?: string | undefined;
     chunks?: NoteChunk[] | undefined;
     noteTags?: NoteTag[] | undefined;
     classifications?: Classification[] | undefined;
@@ -8047,6 +8133,7 @@ export class Note implements INote {
             this.chunkCount = _data["chunkCount"];
             this.wordCount = _data["wordCount"];
             this.tags = _data["tags"];
+            this.storedFileId = _data["storedFileId"];
             if (Array.isArray(_data["chunks"])) {
                 this.chunks = [] as any;
                 for (let item of _data["chunks"])
@@ -8101,6 +8188,7 @@ export class Note implements INote {
         data["chunkCount"] = this.chunkCount;
         data["wordCount"] = this.wordCount;
         data["tags"] = this.tags;
+        data["storedFileId"] = this.storedFileId;
         if (Array.isArray(this.chunks)) {
             data["chunks"] = [];
             for (let item of this.chunks)
@@ -8148,6 +8236,7 @@ export interface INote {
     chunkCount?: number;
     wordCount?: number;
     tags?: string | undefined;
+    storedFileId?: string | undefined;
     chunks?: NoteChunk[] | undefined;
     noteTags?: NoteTag[] | undefined;
     classifications?: Classification[] | undefined;
