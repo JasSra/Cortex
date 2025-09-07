@@ -63,6 +63,7 @@ export default function WorkspaceSidebar({
   const [activeTab, setActiveTab] = useState<'all' | 'recent' | 'suggestions'>('all')
   const [smartSuggestions, setSmartSuggestions] = useState<SmartSuggestion[]>([])
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const suggestionsLoadingRef = React.useRef(false)
   const [autoTaggingEnabled, setAutoTaggingEnabled] = useState(true)
   const [tagGenerationProgress, setTagGenerationProgress] = useState<{ [noteId: string]: boolean }>({})
   const [selectionMode, setSelectionMode] = useState(false)
@@ -180,8 +181,8 @@ export default function WorkspaceSidebar({
 
   // Smart suggestions generation
   const generateSmartSuggestions = useCallback(async () => {
-    if (suggestionsLoading) return
-    
+    if (suggestionsLoadingRef.current) return
+    suggestionsLoadingRef.current = true
     setSuggestionsLoading(true)
     try {
       const suggestions: SmartSuggestion[] = []
@@ -260,9 +261,10 @@ export default function WorkspaceSidebar({
     } catch (error) {
       console.error('Failed to generate suggestions:', error)
     } finally {
+      suggestionsLoadingRef.current = false
       setSuggestionsLoading(false)
     }
-  }, [allNotes, recentNotes, searchQuery, onNoteSelect, onCreateNote, getEntitySuggestions, suggestionsLoading, autoTagNotes])
+  }, [allNotes, recentNotes, searchQuery, onNoteSelect, onCreateNote, getEntitySuggestions, autoTagNotes])
 
   // Generate smart tags for a specific note when selected
   const generateTagsForNote = useCallback(async (noteId: string) => {

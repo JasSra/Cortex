@@ -1040,6 +1040,36 @@ export function useAssistApi() {
         processedAt: string;
         error?: string;
       }>(`/api/Suggestions/classify`, body),
+
+    // Streaming suggestions via SSE (token-by-token)
+    streamAssist: async (
+      body: { prompt?: string; context?: string; mode?: 'suggest'|'summarize'|'rewrite'; provider?: 'openai'|'ollama'; maxTokens?: number; temperature?: number },
+      onUpdate: (partial: string) => void
+    ) => {
+      const res = await fetch(`/api/Suggestions/assist/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      if (!res.ok || !res.body) throw new Error(`streamAssist failed: ${res.status}`)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split(/\n/)
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const json = JSON.parse(line.slice(6))
+            if (typeof json?.text === 'string') onUpdate(json.text)
+          } catch { /* ignore */ }
+        }
+      }
+    },
   }
 }
 

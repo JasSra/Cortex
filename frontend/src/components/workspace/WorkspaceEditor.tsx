@@ -766,24 +766,16 @@ Summary: ${response.summary}`)
             onClick={async () => {
               if (!note) return
               try {
-                setProgressDialog({ isOpen: true, title: 'Auto-tagging', message: 'Classifying note and applying tags…', progress: 0 })
+                setProgressDialog({ isOpen: true, title: 'Auto-tagging (AI)', message: 'Classifying note with AI and applying tags…', progress: 0 })
                 const res: any = await classifyNote(note.id)
-                let tags: string[] = Array.isArray(res?.tags) ? res.tags : []
-                // Fallback: lightweight keyword tags if AI returned none
+                const tags: string[] = Array.isArray(res?.tags) ? res.tags : []
                 if (tags.length === 0) {
-                  const fallback = (text: string) => {
-                    const stop = new Set(['the','a','an','and','or','for','of','to','in','on','with','by','from','is','are','was','were'])
-                    const words = (text || '').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w => w.length >= 3 && !stop.has(w))
-                    const freq: Record<string, number> = {}
-                    for (const w of words) freq[w] = (freq[w] || 0) + 1
-                    return Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([w])=>w)
-                  }
-                  tags = fallback(content)
+                  // AI-first only: do not apply any fallback tags
+                  setProgressDialog({ isOpen: false, title: '', message: '' })
+                  return
                 }
-                if (tags.length > 0) {
-                  await tagsApi.addToNote(note.id, tags)
-                  await refreshNoteTags(note.id)
-                }
+                await tagsApi.addToNote(note.id, tags)
+                await refreshNoteTags(note.id)
                 setProgressDialog({ isOpen: false, title: '', message: '' })
               } catch (e) {
                 setProgressDialog({ isOpen: false, title: '', message: '' })
@@ -791,7 +783,7 @@ Summary: ${response.summary}`)
               }
             }}
             disabled={!note || saving || loading}
-            title="Auto-generate and apply tags"
+            title="Auto-generate and apply AI tags"
           >
             <TagIcon className="w-4 h-4" />
             Auto Tag

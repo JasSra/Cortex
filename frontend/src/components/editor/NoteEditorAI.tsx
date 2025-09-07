@@ -21,9 +21,9 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
   const [mode, setMode] = useState<Mode>('suggest')
   const [loading, setLoading] = useState(false)
   const [debounceMs, setDebounceMs] = useState(450)
-  const [provider] = useState<'openai'|'ollama'>('openai')
+  const [provider, setProvider] = useState<'openai'|'ollama'>(() => (localStorage.getItem('editor:provider') as any) || 'openai')
 
-  const { assist } = useAssistApi()
+  const { assist, streamAssist } = useAssistApi()
   const voice = useVoiceApi()
   const { getAccessToken } = useAppAuth()
 
@@ -44,8 +44,16 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
     const t = setTimeout(async () => {
       try {
         setLoading(true)
-        const res = await assist({ context: text.slice(-1500), mode: 'suggest', provider, maxTokens: 80, temperature: 0.4 })
-        if (id === lastReqId.current) setSuggestion(res.text?.trim() ?? '')
+        // Try streaming first for lower latency
+        let gotStream = false
+        await streamAssist(
+          { context: text.slice(-1500), mode: 'suggest', provider, maxTokens: 80, temperature: 0.4 },
+          (partial) => { if (id === lastReqId.current) { gotStream = true; setSuggestion(partial.trim()) } }
+        ).catch(() => {/* fall back to non-stream */})
+        if (!gotStream) {
+          const res = await assist({ context: text.slice(-1500), mode: 'suggest', provider, maxTokens: 80, temperature: 0.4 })
+          if (id === lastReqId.current) setSuggestion(res.text?.trim() ?? '')
+        }
       } catch {
         if (id === lastReqId.current) setSuggestion('')
       } finally {
@@ -165,6 +173,15 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
         title="Rewrite last section"
       >Rewrite</button>
       <div className="ml-auto flex items-center gap-2">
+        <select
+          className="text-xs border rounded px-2 py-1 bg-white dark:bg-slate-800"
+          value={provider}
+          onChange={(e) => { const v = (e.target.value as 'openai'|'ollama'); setProvider(v); try { localStorage.setItem('editor:provider', v) } catch {} }}
+          title="AI provider"
+        >
+          <option value="openai">OpenAI</option>
+          <option value="ollama">Ollama</option>
+        </select>
         <label className="text-xs text-gray-600 dark:text-gray-400">Debounce</label>
         <input 
           type="range" 
@@ -176,6 +193,9 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
           title={`Debounce delay: ${debounceMs}ms`}
           aria-label="AI suggestion debounce delay"
         />
+        {suggestion && (
+          <span className="text-[11px] text-gray-500 ml-2">Tab to accept</span>
+        )}
       </div>
     </div>
   ), [recording, stopVoice, startVoice, doSummarize, doRewrite, debounceMs])
@@ -185,19 +205,37 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
       {toolbar}
       <div className="grid grid-cols-1 md:grid-cols-3">
         <div className="md:col-span-2 p-3">
-          <textarea
-            className="w-full h-72 md:h-96 resize-y outline-none bg-transparent"
+          {/* Ghost suggestion overlay container */}
+          <div className="relative">
+            {/* Overlay shows ghost text after current content; typed text is invisible in overlay to align line breaks */}
+            {suggestion && (
+              <pre aria-hidden="true" className="pointer-events-none absolute inset-3 whitespace-pre-wrap font-mono text-sm leading-6 select-none">
+                <span className="invisible">{text}</span>
+                <span className="text-gray-400">{(text && !text.endsWith(' ') ? ' ' : '') + suggestion}</span>
+              </pre>
+            )}
+            <textarea
+              className="w-full h-72 md:h-96 resize-y outline-none bg-transparent font-mono text-sm leading-6"
             placeholder={placeholder}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onSelect={(e) => {
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (suggestion && e.key === 'Tab') {
+                  e.preventDefault()
+                  const sep = text && !text.endsWith(' ') ? ' ' : ''
+                  setText(text + sep + suggestion)
+                  setSuggestion('')
+                }
+              }}
+              onSelect={(e) => {
               const target = e.target as HTMLTextAreaElement
               const start = target.selectionStart
               const end = target.selectionEnd
               const selectedText = text.substring(start, end).trim()
               onSelect?.(selectedText)
-            }}
-          />
+              }}
+            />
+          </div>
           <div className="mt-3 flex gap-2">
             <button
               className="px-3 py-1.5 rounded-md text-sm bg-purple-600 text-white disabled:opacity-50"

@@ -136,6 +136,82 @@ public class SuggestionsController : ControllerBase
     }
 
     /// <summary>
+    /// Streaming variant of Assist that returns token-by-token suggestion text via SSE
+    /// </summary>
+    [HttpPost("assist/stream")]
+    public async Task AssistStream([FromBody] AssistRequest request)
+    {
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["Content-Type"] = "text/event-stream";
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        // Send initial comment to open stream
+        await Response.WriteAsync(": ok\n\n");
+        await Response.Body.FlushAsync();
+
+        try
+        {
+            // Reuse the non-streaming logic to get a single response for now,
+            // then emit it token-by-token to the client.
+            if (string.IsNullOrWhiteSpace(request.Context) && string.IsNullOrWhiteSpace(request.Prompt))
+            {
+                await Response.WriteAsync("data: {\"text\":\"\"}\n\n");
+                await Response.Body.FlushAsync();
+                return;
+            }
+
+            var messages = new List<ChatMessage>();
+            var mode = (request.Mode ?? "suggest").ToLowerInvariant();
+            if (mode == "summarize")
+            {
+                messages.Add(new ChatMessage { Role = "system", Content = "You are a helpful assistant that creates concise, informative summaries." });
+            }
+            else if (mode == "rewrite")
+            {
+                messages.Add(new ChatMessage { Role = "system", Content = "You improve clarity and brevity of the user's text." });
+            }
+            else
+            {
+                messages.Add(new ChatMessage { Role = "system", Content = "You provide short, context-aware continuations." });
+            }
+            if (!string.IsNullOrWhiteSpace(request.Context))
+                messages.Add(new ChatMessage { Role = "user", Content = request.Context! });
+            if (!string.IsNullOrWhiteSpace(request.Prompt))
+                messages.Add(new ChatMessage { Role = "user", Content = request.Prompt! });
+
+            var maxTokens = request.MaxTokens ?? 80;
+            var temperature = request.Temperature ?? 0.3;
+
+            var options = new LlmCompletionOptions
+            {
+                Temperature = temperature,
+                MaxTokens = maxTokens,
+                Stream = true
+            };
+
+            string buffer = string.Empty;
+            await _llmProvider.StreamChatCompletionAsync(messages, async chunk =>
+            {
+                buffer += chunk;
+                var payload = System.Text.Json.JsonSerializer.Serialize(new { text = buffer });
+                await Response.WriteAsync($"data: {payload}\n\n");
+                await Response.Body.FlushAsync();
+            }, options);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "AssistStream failed");
+            try
+            {
+                var payload = System.Text.Json.JsonSerializer.Serialize(new { error = "stream_error" });
+                await Response.WriteAsync($"data: {payload}\n\n");
+                await Response.Body.FlushAsync();
+            }
+            catch { /* ignore */ }
+        }
+    }
+
+    /// <summary>
     /// AI Summary endpoint for generating summaries of text content
     /// </summary>
     [HttpPost("summary")]

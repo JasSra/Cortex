@@ -45,6 +45,14 @@ function normalizeUrl(url: string): string {
       parsed.searchParams.delete(param)
     })
     
+    // LinkedIn often requires an original_referer query param to allow fetching profile pages
+    // e.g., https://au.linkedin.com/in/... ?original_referer=https%3A%2F%2Fwww.google.com%2F
+    const hostname = parsed.hostname.toLowerCase()
+    const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com')
+    if (isLinkedIn && !parsed.searchParams.has('original_referer')) {
+      parsed.searchParams.set('original_referer', 'https://www.google.com/')
+    }
+
     // Remove fragment (hash)
     parsed.hash = ''
     
@@ -84,6 +92,14 @@ async function fetchUrlWithTimeout(url: string, timeoutMs = 30000): Promise<Resp
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   
   try {
+    // Detect LinkedIn to add a Referer header which improves access reliability
+    let isLinkedIn = false
+    try {
+      const u = new URL(url)
+      const host = u.hostname.toLowerCase()
+      isLinkedIn = host === 'linkedin.com' || host.endsWith('.linkedin.com')
+    } catch {}
+
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -94,6 +110,7 @@ async function fetchUrlWithTimeout(url: string, timeoutMs = 30000): Promise<Resp
         'DNT': '1',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
+        ...(isLinkedIn ? { Referer: 'https://www.google.com/' } : {}),
       },
       redirect: 'follow',
       // Security: limit redirects
