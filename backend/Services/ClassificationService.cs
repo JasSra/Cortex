@@ -65,15 +65,24 @@ public class ClassificationService : IClassificationService
             {
                 var topicInput = new TopicInput { Text = text };
                 var topicPrediction = _topicEngine.Predict(topicInput);
-                
-                // Convert to TagPrediction objects
+
+                // Convert to TagPrediction objects from model label
                 var tags = ExtractTopTags(topicPrediction.Score, topicPrediction.PredictedLabel);
-                result.Tags = tags.Select(tag => new TagPrediction 
-                { 
-                    Name = tag, 
+                var mlTags = tags.Select(tag => new TagPrediction
+                {
+                    Name = tag,
                     Confidence = topicPrediction.Score.Max(),
-                    Suggested = true 
+                    Suggested = true
                 }).ToList();
+
+                // Also extract keyword/phrase tags from title + content to enrich results
+                var keywordTags = ExtractKeywordTags(text, 6);
+                var keywordPreds = keywordTags
+                    .Except(mlTags.Select(t => t.Name), StringComparer.OrdinalIgnoreCase)
+                    .Select(t => new TagPrediction { Name = t, Confidence = 0.65, Suggested = true })
+                    .ToList();
+
+                result.Tags = mlTags.Concat(keywordPreds).ToList();
             }
 
             // Predict sensitivity score
@@ -366,9 +375,16 @@ public class ClassificationService : IClassificationService
             additionalTags.Add(new TagPrediction { Name = "research", Confidence = 0.7 });
         }
 
-        if (additionalTags.Any())
+        // Keyword/phrase tags extracted from the text/title
+        var keywordTags = ExtractKeywordTags(text, 6)
+            .Except(result.Tags.Select(t => t.Name), StringComparer.OrdinalIgnoreCase)
+            .Select(t => new TagPrediction { Name = t, Confidence = 0.65 })
+            .ToList();
+
+        if (additionalTags.Any() || keywordTags.Any())
         {
             result.Tags.AddRange(additionalTags);
+            result.Tags.AddRange(keywordTags);
         }
 
         return await Task.FromResult(result);
@@ -376,17 +392,111 @@ public class ClassificationService : IClassificationService
 
     private async Task<List<string>> FallbackTagPredictionAsync(string text)
     {
-        var tags = new List<string>();
-        var lowerText = text.ToLowerInvariant();
+        var tags = ExtractKeywordTags(text, 6);
+        if (tags.Count == 0) tags = new List<string> { "general" };
+        return await Task.FromResult(tags);
+    }
 
-        // Simple keyword-based tagging
-        if (lowerText.Contains("todo") || lowerText.Contains("task")) tags.Add("todo");
-        if (lowerText.Contains("idea") || lowerText.Contains("brainstorm")) tags.Add("idea");
-        if (lowerText.Contains("meeting") || lowerText.Contains("agenda")) tags.Add("meeting");
-        if (lowerText.Contains("research")) tags.Add("research");
-        if (lowerText.Contains("project")) tags.Add("project");
+    // Heuristic keyword/phrase tag extraction from title + content
+    private List<string> ExtractKeywordTags(string text, int max = 6)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return new List<string>();
 
-        return await Task.FromResult(tags.Any() ? tags : new List<string> { "general" });
+        // Normalize whitespace
+        var normalized = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+
+        // Prefer the first line (often the title) for phrase extraction
+        var firstSentence = normalized.Split('.', '!', '?').FirstOrDefault() ?? normalized;
+
+        // Basic stopwords
+        var stop = new HashSet<string>(new[]{
+            "the","a","an","and","or","but","for","nor","on","in","at","to","from","by",
+            "of","is","are","was","were","be","been","being","with","as","that","this","it",
+            "impossibly","very","really","just","about","over","under","more","most","less","least"
+        }, StringComparer.OrdinalIgnoreCase);
+
+        // Known tech terms to prioritize
+        var techHints = new[] {
+            "python","javascript","typescript","web","framework","microframework","microservice","api",
+            "web framework","cli","database","sql","sqlite","postgres","docker","kubernetes","ai","ml",
+            "hacker news","hn","open source","performance","benchmark"
+        };
+
+        // Collect candidates: n-grams from the title/first sentence and capitalized tokens
+        var tokens = firstSentence
+            .Split(new[]{' ', '\t', '\u00A0', '"', '\'', '(', ')', '[', ']', '{', '}', ',', ';', ':', '/', '|', '\\'}, StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim('—','–','-','–','—','.',',',';','!','?'))
+            .Where(t => t.Length >= 2 && t.Length <= 32)
+            .ToList();
+
+        var candidates = new List<string>();
+
+        // Capitalized tokens (likely proper nouns/technologies)
+        foreach (var t in tokens)
+        {
+            if (!stop.Contains(t) && char.IsLetter(t[0]) && char.IsUpper(t[0]))
+            {
+                candidates.Add(t);
+            }
+        }
+
+        // 2-gram and 3-gram phrases from the first sentence
+        for (int n = 2; n <= 3; n++)
+        {
+            for (int i = 0; i + n <= tokens.Count; i++)
+            {
+                var phrase = string.Join(" ", tokens.Skip(i).Take(n));
+                var words = phrase.Split(' ');
+                if (words.Any(w => stop.Contains(w))) continue;
+                if (words.All(w => w.Length <= 1)) continue;
+                // keep phrases with alpha content
+                if (words.Any(w => w.Any(char.IsLetter)))
+                    candidates.Add(phrase);
+            }
+        }
+
+        // Add tech hints present in text
+        var lower = normalized.ToLowerInvariant();
+        foreach (var hint in techHints)
+        {
+            if (lower.Contains(hint)) candidates.Add(hint);
+        }
+
+        // Score candidates by frequency in full text (favor phrases and unique tokens)
+        var scores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in candidates)
+        {
+            if (stop.Contains(c)) continue;
+            var lc = c.ToLowerInvariant();
+            var count = 0;
+            var idx = 0;
+            while ((idx = lower.IndexOf(lc, idx, StringComparison.Ordinal)) >= 0)
+            {
+                count++; idx += lc.Length;
+            }
+            if (count > 0) scores[c] = (scores.TryGetValue(c, out var prev) ? prev : 0) + count + (c.Contains(' ') ? 1 : 0);
+        }
+
+        var ordered = scores
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key.Length)
+            .Select(kv => kv.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(t => t.Length >= 2 && t.Length <= 40)
+            .Take(max)
+            .ToList();
+
+        // Normalize casing: lower-case multiword technical phrases, keep proper nouns
+        var normalizedTags = ordered.Select(tag =>
+        {
+            if (tag.Any(char.IsWhiteSpace)) return tag.ToLowerInvariant();
+            // Keep capitalization if looks like proper noun/acronym
+            return (tag.All(char.IsUpper) || char.IsUpper(tag[0])) ? tag : tag.ToLowerInvariant();
+        })
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+        return normalizedTags;
     }
 
     private async Task<double> FallbackSensitivityScoreAsync(string text)

@@ -59,6 +59,8 @@ export default function AutotagPanel({
   const [customTag, setCustomTag] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [workingTags, setWorkingTags] = useState<string[]>(existingTags);
+  const [statusMessage, setStatusMessage] = useState<string>("")
+  const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string>("")
 
   // Use the Cortex API clients
   const classificationApi = useClassificationApi()
@@ -75,15 +77,31 @@ export default function AutotagPanel({
     try {
       // Get classification results using the Cortex client
       const classifyData = await classificationApi.classifyNote(noteId) as any
-      setClassification(classifyData as ClassificationResult);
 
-      // Note: Tag suggestions endpoint needs to be added to the generated client
-      // For now, this would need to be implemented in the backend and added to OpenAPI
-      // Using placeholder for tag suggestions functionality
-      const mockSuggestions: AutotagSuggestion[] = []
-      setSuggestions(mockSuggestions);
+      // Map API response to our local display type
+      const mapped: ClassificationResult = {
+        topics: Array.isArray(classifyData?.tags) ? classifyData.tags : [],
+        sensitivity: Number(classifyData?.sensitivity ?? 1),
+        confidence: Number(classifyData?.confidence ?? 0.6),
+        hasPii: Array.isArray(classifyData?.pii) && classifyData.pii.length > 0,
+        hasSecrets: Array.isArray(classifyData?.secrets) && classifyData.secrets.length > 0,
+        reasoning: classifyData?.summary ?? ''
+      }
+      setClassification(mapped)
+
+      // Build suggestion list from classification tags
+      const builtSuggestions: AutotagSuggestion[] = (mapped.topics || []).map((t: string) => ({
+        tag: t,
+        confidence: mapped.confidence || 0.65,
+        reasoning: 'Suggested by AI classification',
+        category: 'AI'
+      }))
+      setSuggestions(builtSuggestions)
+      setStatusMessage(`Analyzed • ${builtSuggestions.length} tag${builtSuggestions.length === 1 ? '' : 's'} suggested`)
+      setLastAnalyzedAt(new Date().toLocaleTimeString())
     } catch (error) {
       console.error("Error generating suggestions:", error);
+      setStatusMessage('Analysis failed')
     } finally {
       setLoading(false);
     }
@@ -135,6 +153,7 @@ export default function AutotagPanel({
       
       onTagsUpdated(workingTags);
       setIsEditing(false);
+      setStatusMessage('Tags saved')
     } catch (error) {
       console.error("Error saving tags:", error);
       alert("Failed to save tags");
@@ -210,6 +229,14 @@ export default function AutotagPanel({
           )}
         </div>
       </div>
+
+      {/* Status line */}
+      {statusMessage && (
+        <div className="mb-3 text-xs text-gray-600">
+          {statusMessage}
+          {lastAnalyzedAt && <span className="ml-2 text-gray-400">at {lastAnalyzedAt}</span>}
+        </div>
+      )}
 
       {/* Classification Results */}
       {classification && (

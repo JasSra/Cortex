@@ -121,6 +121,7 @@ public class NotesController : ControllerBase
             {
                 n.Id,
                 n.Title,
+                n.IsPinned,
                 Content = includeContent ? n.Content : string.Empty,
                 Preview = preview,
                 n.UserId,
@@ -307,6 +308,39 @@ public class NotesController : ControllerBase
             return StatusCode(500, new { error = "Failed to update note" });
         }
     }
+
+    /// <summary>
+    /// Set or clear the pinned state on a note (Editor role required)
+    /// </summary>
+    [HttpPut("{id}/pin")]
+    public async Task<IActionResult> SetPin(string id, [FromBody] PinRequest request)
+    {
+        if (!Rbac.RequireRole(_userContext, "Editor"))
+            return StatusCode(403, "Editor role required");
+
+        if (request is null)
+            return BadRequest(new { error = "Request body required" });
+
+        try
+        {
+            var note = await _db.Notes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted && n.UserId == _userContext.UserId);
+            if (note is null)
+            {
+                return NotFound(new { error = "Note not found" });
+            }
+
+            note.IsPinned = request.IsPinned;
+            note.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            return Ok(new { noteId = note.Id, isPinned = note.IsPinned });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting pin state for note {NoteId} by user {UserId}", id, _userContext.UserId);
+            return StatusCode(500, new { error = "Failed to set pin state" });
+        }
+    }
 }
 
 public class UpdateNoteRequest
@@ -318,4 +352,9 @@ public class UpdateNoteRequest
     /// Use for autosave to avoid heavy processing on every keystroke.
     /// </summary>
     public bool SkipProcessing { get; set; } = false;
+}
+
+public class PinRequest
+{
+    public bool IsPinned { get; set; }
 }

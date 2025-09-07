@@ -638,9 +638,9 @@ public class GraphService : IGraphService
         {
             // Clear existing graph data
             _logger.LogInformation("Clearing existing graph data");
-            await _context.Database.ExecuteSqlRawAsync("DELETE FROM edges");
-            await _context.Database.ExecuteSqlRawAsync("DELETE FROM entities");
-            await _context.Database.ExecuteSqlRawAsync("DELETE FROM text_spans WHERE entity_id IS NOT NULL");
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM Edges");
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM Entities");
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM TextSpans WHERE EntityId IS NOT NULL");
             
             result.ClearedEntities = true;
             
@@ -918,21 +918,21 @@ public class GraphService : IGraphService
             var coOccurrences = await _context.Database
                 .SqlQueryRaw<EntityCoOccurrence>(@"
                     SELECT 
-                        ts1.entity_id as EntityId1,
-                        ts2.entity_id as EntityId2,
-                        COUNT(DISTINCT ts1.note_id) as CoOccurrenceCount
-                    FROM text_spans ts1
-                    JOIN text_spans ts2 ON ts1.note_id = ts2.note_id 
-                    WHERE ts1.entity_id IS NOT NULL 
-                        AND ts2.entity_id IS NOT NULL 
-                        AND ts1.entity_id < ts2.entity_id
+                        ts1.EntityId as EntityId1,
+                        ts2.EntityId as EntityId2,
+                        COUNT(DISTINCT ts1.NoteId) as CoOccurrenceCount
+                    FROM TextSpans ts1
+                    JOIN TextSpans ts2 ON ts1.NoteId = ts2.NoteId 
+                    WHERE ts1.EntityId IS NOT NULL 
+                        AND ts2.EntityId IS NOT NULL 
+                        AND ts1.EntityId < ts2.EntityId
                         AND NOT EXISTS (
-                            SELECT 1 FROM edges e 
-                            WHERE (e.from_entity_id = ts1.entity_id AND e.to_entity_id = ts2.entity_id)
-                               OR (e.from_entity_id = ts2.entity_id AND e.to_entity_id = ts1.entity_id)
+                            SELECT 1 FROM Edges e 
+                            WHERE (e.FromEntityId = ts1.EntityId AND e.ToEntityId = ts2.EntityId)
+                               OR (e.FromEntityId = ts2.EntityId AND e.ToEntityId = ts1.EntityId)
                         )
-                    GROUP BY ts1.entity_id, ts2.entity_id
-                    HAVING COUNT(DISTINCT ts1.note_id) >= 2
+                    GROUP BY ts1.EntityId, ts2.EntityId
+                    HAVING COUNT(DISTINCT ts1.NoteId) >= 2
                     ORDER BY CoOccurrenceCount DESC
                     LIMIT {0}", maxSuggestions)
                 .ToListAsync();

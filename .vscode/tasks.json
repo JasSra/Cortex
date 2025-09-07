@@ -237,6 +237,11 @@
 			"label": "frontend-build-once",
 			"type": "shell",
 			"command": "npm run --silent build"
+		},
+		{
+			"label": "frontend-build-once",
+			"type": "shell",
+			"command": "npm run --silent build"
 		}
 	]
 }

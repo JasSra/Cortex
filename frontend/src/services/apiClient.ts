@@ -256,6 +256,8 @@ export function useNotesApi() {
       })
     },
     getNote: (id: number | string) => http.get<any>(`/api/Notes/${id}`),
+  // Toggle pin state
+  togglePin: (id: string, isPinned: boolean) => http.put<{ noteId: string; isPinned: boolean }>(`/api/Notes/${id}/pin`, { isPinned }),
     // Optional 4th param to skip heavy processing (autosave)
     updateNote: (id: string, content: string, title?: string, skipProcessing?: boolean) => http.put<any>(`/api/Notes/${id}`, { content, title, skipProcessing: !!skipProcessing }).then((data) => ({
       noteId: data?.noteId ?? data?.NoteId ?? id,
@@ -862,10 +864,12 @@ export function useClassificationApi() {
   // Dedupe repeated classification calls per-note for a short TTL
   const TTL = 60_000 // 60s
   return {
+    // Reclassify a note and return classification response using the generated client
     classifyNote: (noteId: string) => {
       const key = `classify:${noteId}`
-      return getCached(key, TTL, () => client.classification(noteId) as any)
+  return getCached(key, TTL, () => (client as any).classify({ content: '', noteId }))
     },
+    // Bulk classify uses generated endpoint
     bulkClassify: (request: any) => client.bulk(request) as any,
   }
 }

@@ -206,24 +206,24 @@ const AdvancedSearchPage: React.FC = () => {
   const transformResultsFromResponse = useCallback((response: any): SearchResult[] => {
     const hits = response?.Hits || response?.hits || []
     return hits.map((h: any, index: number) => ({
-  id: h.ChunkId || h.NoteId || `result-${index}`,
-  title: h.NoteTitle || h.Title || h.FileName || h.Source || `Result ${index + 1}`,
-  // Prefer server-provided highlight HTML if available
-  content: h.Highlight || h.Snippet || h.Content || '',
-  score: h.Score ?? Math.random() * 0.3 + 0.7,
-  noteId: h.NoteId,
-  chunkId: h.ChunkId,
-  offsets: h.Offsets,
-  snippetStart: h.SnippetStart,
+      id: h.chunkId || h.ChunkId || h.noteId || h.NoteId || `result-${index}`,
+      title: h.title || h.Title || h.noteTitle || h.NoteTitle || h.fileName || h.FileName || h.source || h.Source || `Result ${index + 1}`,
+      // Prefer snippet over content for search results, then fall back to content, then highlight
+      content: h.snippet || h.Snippet || h.content || h.Content || h.highlight || h.Highlight || '',
+      score: h.score || h.Score || 0,
+      noteId: h.noteId || h.NoteId,
+      chunkId: h.chunkId || h.ChunkId,
+      offsets: h.offsets || h.Offsets,
+      snippetStart: h.snippetStart || h.SnippetStart,
       metadata: {
-        source: h.Source,
-        createdAt: h.CreatedAt,
-        sensitivityLevel: h.SensitivityLevel ?? 0,
-        tags: h.Tags || [],
-        fileType: h.FileType,
-        chunkIndex: h.ChunkIndex ?? 0,
+        source: h.source || h.Source,
+        createdAt: h.createdAt || h.CreatedAt,
+        sensitivityLevel: h.sensitivityLevel ?? h.SensitivityLevel ?? 0,
+        tags: h.tags || h.Tags || [],
+        fileType: h.fileType || h.FileType,
+        chunkIndex: h.chunkIndex ?? h.ChunkIndex ?? 0,
         wordCount: (() => {
-          const content = h.Content || h.Snippet || '';
+          const content = h.content || h.Content || h.snippet || h.Snippet || '';
           if (!content.trim()) return 0;
           const words = content.trim().split(/\s+/).filter((word: string) => word.length > 0);
           return words.length;
@@ -292,6 +292,7 @@ const AdvancedSearchPage: React.FC = () => {
       DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
       DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
     })
+    console.log('Semantic search response:', res)
     setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
     return transformResultsFromResponse(res)
   }, [advancedSearch, transformResultsFromResponse, filters, page, pageSize])
@@ -310,6 +311,7 @@ const AdvancedSearchPage: React.FC = () => {
       DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
       DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
     })
+    console.log('Hybrid search response:', res)
     setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
     return transformResultsFromResponse(res)
   }, [advancedSearch, transformResultsFromResponse, filters, page, pageSize])
@@ -331,6 +333,7 @@ const AdvancedSearchPage: React.FC = () => {
         DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
         DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
       })
+      console.log('AI search response:', res)
       setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
       return transformResultsFromResponse(res)
     } catch (error) {
@@ -367,6 +370,7 @@ const AdvancedSearchPage: React.FC = () => {
       DateFrom: filters.fromDate ? new Date(filters.fromDate).toISOString() : undefined,
       DateTo: filters.toDate ? new Date(filters.toDate).toISOString() : undefined,
     })
+    console.log('Expert search response:', res)
     setSearchStats(s => ({ ...s, total: res?.Total ?? res?.total ?? 0 }))
     return transformResultsFromResponse(res)
   }, [expertQuery, advancedSearch, transformResultsFromResponse, filters, page, pageSize])
@@ -539,16 +543,17 @@ const AdvancedSearchPage: React.FC = () => {
     speak('Search results exported!', 'responding')
   }
 
-  // Group results by NoteId with best score ordering
+  // Group results by a stable key but preserve the real noteId separately
   const groupedResults = React.useMemo(() => {
-    const groups = new Map<string, { noteId: string, title: string, items: SearchResult[], bestScore: number }>()
+    const groups = new Map<string, { groupKey: string; noteId?: string; title: string; items: SearchResult[]; bestScore: number }>()
     for (const r of results) {
-      const key = r.noteId || r.id
+      const key = r.noteId || r.id // UI grouping key; chunk ids may be used here but are NOT treated as note ids
       if (!groups.has(key)) {
-        groups.set(key, { noteId: key, title: r.title, items: [r], bestScore: r.score })
+        groups.set(key, { groupKey: key, noteId: r.noteId, title: r.title, items: [r], bestScore: r.score })
       } else {
         const g = groups.get(key)!
         g.items.push(r)
+        if (!g.noteId && r.noteId) g.noteId = r.noteId // capture real noteId when it appears
         if (r.score > g.bestScore) g.bestScore = r.score
       }
     }
@@ -1168,9 +1173,9 @@ const AdvancedSearchPage: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              {groupedResults.map((group, index) => (
+        {groupedResults.map((group, index) => (
                 <motion.div
-                  key={group.noteId}
+          key={group.groupKey}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
@@ -1178,8 +1183,8 @@ const AdvancedSearchPage: React.FC = () => {
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="text-xl font-semibold text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer transition-colors" onClick={() => openPreview(group.noteId, noteMeta[group.noteId]?.title || group.title)}>
-                        {noteMeta[group.noteId]?.title || group.title}
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer transition-colors" onClick={() => group.noteId && openPreview(group.noteId, (group.noteId && noteMeta[group.noteId]?.title) || group.title)}>
+             {group.noteId ? (noteMeta[group.noteId]?.title || group.title) : group.title}
                       </h3>
                       <div className="mt-2 w-full h-2 bg-gray-100 dark:bg-gray-700 rounded">
                         <div className={`${scoreColor(group.bestScore)} h-2 rounded ${widthClassForScore(group.bestScore)}`} />
@@ -1243,7 +1248,7 @@ const AdvancedSearchPage: React.FC = () => {
                       <button 
                         className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900 rounded-lg transition-all"
                         title="View full document"
-                        onClick={() => openPreview(group.noteId, group.title)}
+                        onClick={() => group.noteId && openPreview(group.noteId, group.title)}
                       >
                         <EyeIcon className="w-4 h-4" />
                       </button>

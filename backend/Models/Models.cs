@@ -17,6 +17,7 @@ public class Note
     public string Lang { get; set; } = "en";
     public string Source { get; set; } = "ingest";
     public bool IsDeleted { get; set; }
+    public bool IsPinned { get; set; } = false;
     public int Version { get; set; } = 1;
     
     // Stage 2 fields

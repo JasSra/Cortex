@@ -60,8 +60,9 @@ public class ClassificationController : ControllerBase
 
         try
         {
-            // Perform classification
-            var classificationResult = await _classificationService.ClassifyTextAsync(note.Content, note.Id);
+            // Perform classification using title + content for better topical tags
+            var titlePlusContent = string.IsNullOrWhiteSpace(note.Title) ? note.Content : ($"{note.Title}\n\n{note.Content}");
+            var classificationResult = await _classificationService.ClassifyTextAsync(titlePlusContent, note.Id);
             var piiDetections = await _piiDetectionService.DetectPiiAsync(note.Content);
             var secretDetections = await _secretsDetectionService.DetectSecretsAsync(note.Content);
 
@@ -121,7 +122,8 @@ public class ClassificationController : ControllerBase
             {
                 try
                 {
-                    var classificationResult = await _classificationService.ClassifyTextAsync(note.Content, note.Id);
+                    var titlePlusContent = string.IsNullOrWhiteSpace(note.Title) ? note.Content : ($"{note.Title}\n\n{note.Content}");
+                    var classificationResult = await _classificationService.ClassifyTextAsync(titlePlusContent, note.Id);
                     var piiDetections = await _piiDetectionService.DetectPiiAsync(note.Content);
                     var secretDetections = await _secretsDetectionService.DetectSecretsAsync(note.Content);
 

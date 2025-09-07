@@ -12,9 +12,11 @@ import {
   ArrowLeftIcon,
   ClipboardDocumentIcon,
   SparklesIcon,
-  TrashIcon
+  TrashIcon,
+  BoltIcon,
+  ScissorsIcon
 } from '@heroicons/react/24/outline'
-import { useWorkspaceApi, useNotesApi, useAssistApi, useClassificationApi, useTagsApi } from '../../services/apiClient'
+import { useWorkspaceApi, useNotesApi, useAssistApi, useClassificationApi, useTagsApi, useGraphApi } from '../../services/apiClient'
 import { NoteEditorAI } from '@/components/editor/NoteEditorAI'
 import ProgressDialog from '@/components/common/ProgressDialog'
 import { formatRelativeTime, formatTimeWithTooltip } from '@/lib/timeUtils'
@@ -59,9 +61,12 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
   const { getNote, updateNote, deleteNote, getDeletionPlan } = useNotesApi()
   const { assist, generateSummary, classifyContent } = useAssistApi()
   const { classifyNote } = useClassificationApi()
+  const { rebuildGraph } = useGraphApi()
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
   const [aiOutput, setAiOutput] = useState('')
+  const [savedSummary, setSavedSummary] = useState<string>('')
+  const [savedSummaryAt, setSavedSummaryAt] = useState<string>('')
   const [showRecent, setShowRecent] = useState(false)
   const [recentNotes, setRecentNotes] = useState<Array<{ id: string, title: string, updatedAt?: string }>>([])
   const [tagInput, setTagInput] = useState('')
@@ -95,6 +100,16 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
   const [tagSuggestions, setTagSuggestions] = useState<string[] | null>(null)
   const tagsApi = useTagsApi()
   const [allTags, setAllTags] = useState<string[]>([])
+  const [toast, setToast] = useState<string>('')
+
+  // Helper: refresh note tags from API
+  const refreshNoteTags = useCallback(async (id: string) => {
+    try {
+      const fresh = await tagsApi.getForNote(id)
+      const tags: string[] = fresh?.tags ?? fresh?.Tags ?? []
+      setNote(prev => (prev && prev.id === id) ? { ...prev, tags } : prev)
+    } catch {/* ignore */}
+  }, [tagsApi])
 
   // Load all tags once for autocomplete
   useEffect(() => {
@@ -427,6 +442,16 @@ export default function WorkspaceEditor({ noteId, onBack, isVisible }: Workspace
     try {
       const response = await generateSummary({ content: text, maxLength: 150 })
       setAiOutput(response.summary)
+      // Persist summary locally (per note)
+      if (note?.id) {
+        try {
+          const key = `note:summary:${note.id}`
+          const payload = { summary: response.summary, at: new Date().toISOString() }
+          localStorage.setItem(key, JSON.stringify(payload))
+          setSavedSummary(response.summary)
+          setSavedSummaryAt(payload.at)
+        } catch {/* ignore */}
+      }
       setProgressDialog(prev => ({ ...prev, isOpen: false }))
     } catch (error) {
       console.error('Summary generation failed:', error)
@@ -470,6 +495,22 @@ Summary: ${response.summary}`)
   const handleTextSelection = useCallback((selectedText: string) => {
     setSelectedText(selectedText)
   }, [])
+
+  // Load cached summary on note change
+  useEffect(() => {
+    if (!note?.id) { setSavedSummary(''); setSavedSummaryAt(''); return }
+    try {
+      const raw = localStorage.getItem(`note:summary:${note.id}`)
+      if (raw) {
+        const obj = JSON.parse(raw)
+        setSavedSummary(obj?.summary || '')
+        setSavedSummaryAt(obj?.at || '')
+      } else {
+        setSavedSummary('')
+        setSavedSummaryAt('')
+      }
+    } catch { /* ignore */ }
+  }, [note?.id])
 
   // Copy content to clipboard
   const copyToClipboard = useCallback(async (text?: string) => {
@@ -699,25 +740,114 @@ Summary: ${response.summary}`)
               Copy
             </button>
             
-            <button
-              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 disabled:opacity-50 transition-colors"
-              onClick={() => aiSummarizeWithProgress()}
-              disabled={aiBusy || progressDialog.isOpen}
-              title={selectedText ? 'Summarize selected text' : 'Summarize content'}
-            >
-              <SparklesIcon className="w-4 h-4" />
-              {selectedText ? 'Summarize Selection' : 'AI Summary'}
-            </button>
-            
-            <button
-              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 hover:bg-purple-200 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 disabled:opacity-50 transition-colors"
-              onClick={() => aiClassifyWithProgress()}
-              disabled={aiBusy || progressDialog.isOpen}
-              title={selectedText ? 'Classify selected text' : 'Classify content'}
-            >
-              <TagIcon className="w-4 h-4" />
-              {selectedText ? 'Classify Selection' : 'Classify'}
-            </button>
+          <button
+            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 disabled:opacity-50 transition-colors"
+            onClick={() => aiSummarizeWithProgress()}
+            disabled={aiBusy || progressDialog.isOpen}
+            title={selectedText ? 'Summarize selected text' : 'Summarize content'}
+          >
+            <SparklesIcon className="w-4 h-4" />
+            {selectedText ? 'Summarize Selection' : 'AI Summary'}
+          </button>
+
+          <button
+            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 hover:bg-purple-200 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 disabled:opacity-50 transition-colors"
+            onClick={() => aiClassifyWithProgress()}
+            disabled={aiBusy || progressDialog.isOpen}
+            title={selectedText ? 'Classify selected text' : 'Classify content'}
+          >
+            <TagIcon className="w-4 h-4" />
+            {selectedText ? 'Classify Selection' : 'Classify'}
+          </button>
+
+          {/* Auto-tag: classify and apply tags */}
+          <button
+            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 disabled:opacity-50 transition-colors"
+            onClick={async () => {
+              if (!note) return
+              try {
+                setProgressDialog({ isOpen: true, title: 'Auto-tagging', message: 'Classifying note and applying tags…', progress: 0 })
+                const res: any = await classifyNote(note.id)
+                let tags: string[] = Array.isArray(res?.tags) ? res.tags : []
+                // Fallback: lightweight keyword tags if AI returned none
+                if (tags.length === 0) {
+                  const fallback = (text: string) => {
+                    const stop = new Set(['the','a','an','and','or','for','of','to','in','on','with','by','from','is','are','was','were'])
+                    const words = (text || '').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w => w.length >= 3 && !stop.has(w))
+                    const freq: Record<string, number> = {}
+                    for (const w of words) freq[w] = (freq[w] || 0) + 1
+                    return Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([w])=>w)
+                  }
+                  tags = fallback(content)
+                }
+                if (tags.length > 0) {
+                  await tagsApi.addToNote(note.id, tags)
+                  await refreshNoteTags(note.id)
+                }
+                setProgressDialog({ isOpen: false, title: '', message: '' })
+              } catch (e) {
+                setProgressDialog({ isOpen: false, title: '', message: '' })
+                console.error('Auto-tag failed', e)
+              }
+            }}
+            disabled={!note || saving || loading}
+            title="Auto-generate and apply tags"
+          >
+            <TagIcon className="w-4 h-4" />
+            Auto Tag
+          </button>
+
+          {/* Remove empty lines */}
+          <button
+            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-300 disabled:opacity-50 transition-colors"
+            onClick={() => {
+              const beforeLines = (content || '').split('\n').length
+              const cleaned = (content || '')
+                .split('\n')
+                .reduce<string[]>((acc, line) => {
+                  const trimmed = line.trim()
+                  if (trimmed.length === 0) {
+                    if (acc.length > 0 && acc[acc.length - 1] !== '') acc.push('')
+                  } else {
+                    acc.push(line)
+                  }
+                  return acc
+                }, [])
+                .join('\n')
+                .replace(/\n{3,}/g, '\n\n')
+              setContent(cleaned)
+              setHasUnsavedChanges(true)
+              const afterLines = cleaned.split('\n').length
+              const diff = Math.max(0, beforeLines - afterLines)
+              setToast(`Cleaned ${diff} line${diff === 1 ? '' : 's'}`)
+              setTimeout(() => setToast(''), 2000)
+            }}
+            disabled={!note}
+            title="Remove empty lines"
+          >
+            <ScissorsIcon className="w-4 h-4" />
+            Clean Lines
+          </button>
+
+          {/* Rebuild Graph */}
+          <button
+            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/30 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 disabled:opacity-50 transition-colors"
+            onClick={async () => {
+              try {
+                setProgressDialog({ isOpen: true, title: 'Rebuilding Graph', message: 'Running entity extraction and relationship discovery…', progress: undefined })
+                await rebuildGraph()
+                setProgressDialog({ isOpen: false, title: '', message: '' })
+              } catch (e) {
+                setProgressDialog({ isOpen: false, title: '', message: '' })
+                console.error('Graph rebuild failed', e)
+              }
+            }}
+            disabled={loading}
+            title="Rebuild knowledge graph"
+          >
+            <BoltIcon className="w-4 h-4" />
+            Rebuild Graph
+          </button>
             
             <button
               className={`px-2 py-1 rounded transition-colors ${showRecent ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600'}`}
@@ -736,14 +866,22 @@ Summary: ${response.summary}`)
           </div>
         </div>
         {aiOutput && (
-          <div className="mt-2 p-2 rounded bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-800 dark:text-gray-200">
-            <div className="font-medium mb-1">AI Output</div>
-            <div className="whitespace-pre-wrap text-xs">{aiOutput}</div>
-            {Array.isArray(tagSuggestions) && (
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  className="px-2 py-1 rounded bg-emerald-600 text-white text-xs"
-                  onClick={async () => {
+        <div className="mt-2 p-2 rounded bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-800 dark:text-gray-200">
+          <div className="flex items-center justify-between mb-1">
+            <div className="font-medium">AI Output</div>
+            {savedSummaryAt && (
+              <div className="text-[10px] text-gray-500">Saved {formatRelativeTime(savedSummaryAt)}</div>
+            )}
+          </div>
+          <div className="whitespace-pre-wrap text-xs max-h-56 overflow-auto">{aiOutput || savedSummary}</div>
+          {savedSummary && !aiOutput && (
+            <div className="mt-1 text-[10px] text-gray-500">Showing last saved summary (no new output)</div>
+          )}
+          {Array.isArray(tagSuggestions) && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                className="px-2 py-1 rounded bg-emerald-600 text-white text-xs"
+                onClick={async () => {
                     if (!note || !tagSuggestions?.length) return
                     await tagsApi.addToNote(note.id, tagSuggestions)
                     const fresh = await tagsApi.getForNote(note.id)
@@ -755,6 +893,15 @@ Summary: ${response.summary}`)
                 <button className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-700 text-xs" onClick={() => setTagSuggestions(null)}>Dismiss</button>
               </div>
             )}
+          </div>
+        )}
+        {/* Selection toolbar */}
+        {selectedText && (
+          <div className="mt-2 p-2 border border-dashed border-purple-300 rounded bg-purple-50 dark:bg-purple-900/10 text-[11px] text-purple-800 dark:text-purple-200 flex items-center gap-2">
+            <span className="truncate">Selection: “{selectedText.slice(0, 60)}{selectedText.length > 60 ? '…' : ''}”</span>
+            <button className="px-2 py-0.5 rounded bg-purple-600 text-white" onClick={() => aiSummarizeWithProgress(selectedText)}>Summarize</button>
+            <button className="px-2 py-0.5 rounded bg-purple-600 text-white" onClick={() => aiClassifyWithProgress(selectedText)}>Classify</button>
+            <button className="px-2 py-0.5 rounded bg-gray-200 dark:bg-slate-700" onClick={() => setSelectedText('')}>Clear</button>
           </div>
         )}
         {showRecent && (
@@ -791,6 +938,12 @@ Summary: ${response.summary}`)
         progress={progressDialog.progress}
         canCancel={true}
       />
+
+      {toast && (
+        <div className="fixed bottom-4 right-4 px-3 py-2 rounded bg-black/80 text-white text-xs shadow-lg">
+          {toast}
+        </div>
+      )}
 
       {/* Deletion confirmation dialog */}
       <DeletionPlanDialog

@@ -31,23 +31,35 @@ export default function DeletionPlanDialog({
   const [deletionPlan, setDeletionPlan] = useState<NoteDeletionPlan | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
-    if (isOpen && noteId) {
-      setLoading(true)
-      setError(null)
-      getDeletionPlan(noteId)
-        .then(plan => {
-          setDeletionPlan(plan)
-        })
-        .catch(err => {
-          console.error('Failed to get deletion plan:', err)
-          setError('Failed to load deletion details')
-        })
-        .finally(() => {
-          setLoading(false)
-        })
+    let interval: any
+    async function fetchPlan() {
+      try {
+        setLoading(true)
+        setError(null)
+        const plan = await getDeletionPlan(noteId)
+        setDeletionPlan(plan)
+      } catch (err) {
+        console.error('Failed to get deletion plan:', err)
+        setError('Failed to load deletion details')
+      } finally {
+        setLoading(false)
+      }
     }
+    if (isOpen && noteId) {
+      fetchPlan()
+      // Poll every 2s while open to catch background job completions
+      interval = setInterval(async () => {
+        try {
+          setRefreshing(true)
+          const plan = await getDeletionPlan(noteId)
+          setDeletionPlan(plan)
+        } catch { /* ignore */ } finally { setRefreshing(false) }
+      }, 2000)
+    }
+    return () => { if (interval) clearInterval(interval) }
   }, [isOpen, noteId, getDeletionPlan])
 
   const handleConfirm = () => {
@@ -213,6 +225,13 @@ export default function DeletionPlanDialog({
           )}
 
           <div className="flex gap-3 justify-end">
+            <button
+              onClick={async () => {
+                try { setRefreshing(true); const plan = await getDeletionPlan(noteId); setDeletionPlan(plan) } finally { setRefreshing(false) }
+              }}
+              className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-xl"
+              title="Refresh details"
+            >{refreshing ? 'Refreshing…' : 'Refresh'}</button>
             <button
               onClick={onClose}
               className="px-4 py-2 text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-xl transition-colors"

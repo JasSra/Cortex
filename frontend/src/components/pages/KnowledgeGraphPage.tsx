@@ -197,6 +197,52 @@ const KnowledgeGraphPage: React.FC = () => {
     }
   }, [historyIndex, graphHistory])
 
+  // Load graph data (declared early to satisfy hook dependencies in other callbacks)
+  const loadGraph = useCallback(async (focus?: string) => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    setIsLoading(true)
+    think()
+
+    try {
+      const depth = filters.maxDepth
+      const types = filters.entityTypes
+      const fromDate = filters.fromDate
+      const toDate = filters.toDate
+
+      const response: any = await getGraph(
+        focus,
+        depth,
+        types,
+        fromDate,
+        toDate
+      )
+      
+      // Process and layout nodes
+      const processedData = processGraphData(response)
+      setGraphData(processedData)
+      
+      // Extract available entity types
+      const nodeTypes = processedData.nodes?.map((n: GraphNode) => n.type) || []
+      const uniqueTypes = Array.from(new Set(nodeTypes)) as string[]
+      setAvailableEntityTypes(uniqueTypes)
+
+      if (response.nodes?.length > 0) {
+        speak(`Loaded ${response.nodes.length} entities and ${response.edges?.length || 0} relationships!`, 'responding')
+      } else {
+        speak("No entities found. Try uploading some documents first!", 'suggesting')
+      }
+
+    } catch (error) {
+      console.error('Graph loading error:', error)
+      speak("Failed to load the knowledge graph. Please try again.", 'error')
+    } finally {
+      setIsLoading(false)
+      idle()
+      loadingRef.current = false
+    }
+  }, [filters.maxDepth, filters.entityTypes, filters.fromDate, filters.toDate, getGraph, speak, think, idle, processGraphData])
+
   // Rebuild graph functionality
   const handleRebuildGraph = useCallback(async () => {
     if (isRebuildingGraph) return
@@ -226,8 +272,8 @@ const KnowledgeGraphPage: React.FC = () => {
   const loadEntityNotes = useCallback(async (entityId: string) => {
     try {
       think()
-      const notes = await getEntityNotes(entityId)
-      setRelatedResults(notes.map(note => ({
+  const notes = await getEntityNotes(entityId)
+  setRelatedResults((notes as any[]).map((note: any) => ({
         id: note.id,
         title: note.value,
         fileName: note.properties?.fileName || '',
@@ -289,51 +335,8 @@ const KnowledgeGraphPage: React.FC = () => {
     }
   }, [applySuggestion, loadGraph, speak])
 
-  // Load graph data
-  const loadGraph = useCallback(async (focus?: string) => {
-    if (loadingRef.current) return
-    loadingRef.current = true
-    setIsLoading(true)
-    think()
-
-    try {
-      const depth = filters.maxDepth
-      const types = filters.entityTypes
-      const fromDate = filters.fromDate
-      const toDate = filters.toDate
-
-      const response: any = await getGraph(
-        focus,
-        depth,
-        types,
-        fromDate,
-        toDate
-      )
-      
-      // Process and layout nodes
-      const processedData = processGraphData(response)
-      setGraphData(processedData)
-      
-      // Extract available entity types
-      const nodeTypes = processedData.nodes?.map((n: GraphNode) => n.type) || []
-      const uniqueTypes = Array.from(new Set(nodeTypes)) as string[]
-      setAvailableEntityTypes(uniqueTypes)
-
-      if (response.nodes?.length > 0) {
-        speak(`Loaded ${response.nodes.length} entities and ${response.edges?.length || 0} relationships!`, 'responding')
-      } else {
-        speak("No entities found. Try uploading some documents first!", 'suggesting')
-      }
-
-    } catch (error) {
-      console.error('Graph loading error:', error)
-      speak("Failed to load the knowledge graph. Please try again.", 'error')
-    } finally {
-    setIsLoading(false)
-    idle()
-    loadingRef.current = false
-    }
-  }, [filters.maxDepth, filters.entityTypes, filters.fromDate, filters.toDate, getGraph, speak, think, idle, processGraphData])
+  // Load graph data (hoisted as a regular function to avoid TS "used before declaration")
+  
 
   // Load initial graph (respect optional ?focus=<entityId> param)
   useEffect(() => {
@@ -1497,7 +1500,7 @@ const KnowledgeGraphPage: React.FC = () => {
                       <div className="text-center py-8">
                         <p className="text-sm text-gray-500 mb-2">No suggestions available.</p>
                         <p className="text-xs text-gray-400">
-                          Suggestions are based on entities that frequently appear together but aren't connected yet.
+                          Suggestions are based on entities that frequently appear together but aren&apos;t connected yet.
                         </p>
                       </div>
                     ) : (

@@ -1133,6 +1133,295 @@
         }
       }
     },
+    "/api/Graph/rebuild": {
+      "post": {
+        "tags": [
+          "Graph"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphRebuildResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphRebuildResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphRebuildResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Graph/entities/{fromEntityId}/link/{toEntityId}": {
+      "post": {
+        "tags": [
+          "Graph"
+        ],
+        "parameters": [
+          {
+            "name": "fromEntityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "toEntityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "relationType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "manual"
+            }
+          },
+          {
+            "name": "confidence",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "default": 0.8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Graph"
+        ],
+        "parameters": [
+          {
+            "name": "fromEntityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "toEntityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Graph/entities/{entityId}/notes": {
+      "get": {
+        "tags": [
+          "Graph"
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphNode"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphNode"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphNode"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Graph/entities/{entityId}/connection-suggestions": {
+      "get": {
+        "tags": [
+          "Graph"
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "maxSuggestions",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphSuggestion"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphSuggestion"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphSuggestion"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Graph/global-suggestions": {
+      "get": {
+        "tags": [
+          "Graph"
+        ],
+        "parameters": [
+          {
+            "name": "maxSuggestions",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphSuggestion"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphSuggestion"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraphSuggestion"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Graph/apply-suggestion": {
+      "post": {
+        "tags": [
+          "Graph"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphSuggestion"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphSuggestion"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphSuggestion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -1520,6 +1809,47 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Notes/{id}/pin": {
+      "put": {
+        "tags": [
+          "Notes"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -6006,6 +6336,45 @@
         },
         "additionalProperties": false
       },
+      "GraphRebuildResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "clearedEntities": {
+            "type": "boolean"
+          },
+          "processedNotes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failedNotes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalEntities": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalRelations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration": {
+            "$ref": "#/components/schemas/TimeSpan"
+          }
+        },
+        "additionalProperties": false
+      },
       "GraphResponse": {
         "type": "object",
         "properties": {
@@ -6030,6 +6399,55 @@
           "totalEdges": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GraphSuggestion": {
+        "type": "object",
+        "properties": {
+          "fromEntityId": {
+            "type": "string",
+            "nullable": true
+          },
+          "fromEntityName": {
+            "type": "string",
+            "nullable": true
+          },
+          "fromEntityType": {
+            "type": "string",
+            "nullable": true
+          },
+          "toEntityId": {
+            "type": "string",
+            "nullable": true
+          },
+          "toEntityName": {
+            "type": "string",
+            "nullable": true
+          },
+          "toEntityType": {
+            "type": "string",
+            "nullable": true
+          },
+          "suggestedRelationType": {
+            "type": "string",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "supportingNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -6137,6 +6555,9 @@
             "nullable": true
           },
           "isDeleted": {
+            "type": "boolean"
+          },
+          "isPinned": {
             "type": "boolean"
           },
           "version": {
@@ -6517,6 +6938,15 @@
           "title": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PinRequest": {
+        "type": "object",
+        "properties": {
+          "isPinned": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -7201,6 +7631,86 @@
           },
           "entity": {
             "$ref": "#/components/schemas/Entity"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TimeSpan": {
+        "type": "object",
+        "properties": {
+          "ticks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "days": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "hours": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "milliseconds": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "microseconds": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "nanoseconds": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "minutes": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "seconds": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "totalDays": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "totalHours": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "totalMilliseconds": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "totalMicroseconds": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "totalNanoseconds": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "totalMinutes": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "totalSeconds": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
           }
         },
         "additionalProperties": false

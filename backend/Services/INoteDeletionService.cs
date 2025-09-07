@@ -54,9 +54,13 @@ public class NoteDeletionService : INoteDeletionService
             return new NoteDeletionPlan { Found = false };
         }
 
-        var embeddingCount = await _db.Embeddings
-            .Where(e => e.Chunk.NoteId == noteId)
-            .CountAsync(ct);
+        // Count embeddings robustly by joining through NoteChunks to avoid any lazy-loading issues
+        var embeddingCount = await (
+            from em in _db.Embeddings.AsNoTracking()
+            join ch in _db.NoteChunks.AsNoTracking() on em.ChunkId equals ch.Id
+            where ch.NoteId == noteId
+            select em.Id
+        ).CountAsync(ct);
 
         var entityCount = await _db.TextSpans
             .Where(ts => ts.NoteId == noteId && ts.EntityId != null)

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using CortexApi.Models;
 using CortexApi.Services;
 using CortexApi.Services.Providers;
+using CortexApi.Data;
+using Microsoft.EntityFrameworkCore;
 using CortexApi.Security;
 
 namespace CortexApi.Controllers;
@@ -17,19 +19,22 @@ public class SuggestionsController : ControllerBase
     private readonly IUserContextAccessor _userContext;
     private readonly ILlmProvider _llmProvider;
     private readonly IClassificationService _classificationService;
+    private readonly CortexDbContext _context;
 
     public SuggestionsController(
         ISuggestionsService suggestionsService,
         ILogger<SuggestionsController> logger,
         IUserContextAccessor userContext,
         ILlmProvider llmProvider,
-        IClassificationService classificationService)
+        IClassificationService classificationService,
+        CortexDbContext context)
     {
         _suggestionsService = suggestionsService;
         _logger = logger;
         _userContext = userContext;
         _llmProvider = llmProvider;
         _classificationService = classificationService;
+        _context = context;
     }
 
     /// <summary>
@@ -189,11 +194,26 @@ public class SuggestionsController : ControllerBase
         try
         {
             var userId = _userContext.UserId;
-            var result = await _classificationService.ClassifyTextAsync(request.Content);
+
+            // If a NoteId is provided, use title + content for richer tags
+            string contentToClassify = request.Content;
+            if (!string.IsNullOrWhiteSpace(request.NoteId))
+            {
+                var note = await _context.Notes
+                    .FirstOrDefaultAsync(n => n.Id == request.NoteId && n.UserId == userId && !n.IsDeleted);
+                if (note != null)
+                {
+                    var titlePlusContent = string.IsNullOrWhiteSpace(note.Title) ? note.Content : ($"{note.Title}\n\n{note.Content}");
+                    // If client sent content, prefer combining to avoid losing context
+                    contentToClassify = string.IsNullOrWhiteSpace(request.Content) ? titlePlusContent : ($"{note.Title}\n\n{request.Content}");
+                }
+            }
+
+            var result = await _classificationService.ClassifyTextAsync(contentToClassify, request.NoteId);
 
             return Ok(new ClassificationResponse
             {
-                NoteId = string.Empty, // No note ID for standalone classification
+                NoteId = request.NoteId ?? string.Empty,
                 Tags = result.Tags.Select(t => t.Name).ToList(),
                 Sensitivity = result.SensitivityLevel,
                 SensitivityScore = result.Confidence,

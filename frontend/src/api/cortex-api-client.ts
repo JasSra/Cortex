@@ -1618,6 +1618,317 @@ export class CortexApiClient {
     /**
      * @return Success
      */
+    rebuild(): Promise<GraphRebuildResult> {
+        let url_ = this.baseUrl + "/api/Graph/rebuild";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processRebuild(_response);
+        });
+    }
+
+    protected processRebuild(response: Response): Promise<GraphRebuildResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = GraphRebuildResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<GraphRebuildResult>(null as any);
+    }
+
+    /**
+     * @param relationType (optional) 
+     * @param confidence (optional) 
+     * @return Success
+     */
+    linkPOST(fromEntityId: string, toEntityId: string, relationType: string | undefined, confidence: number | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Graph/entities/{fromEntityId}/link/{toEntityId}?";
+        if (fromEntityId === undefined || fromEntityId === null)
+            throw new Error("The parameter 'fromEntityId' must be defined.");
+        url_ = url_.replace("{fromEntityId}", encodeURIComponent("" + fromEntityId));
+        if (toEntityId === undefined || toEntityId === null)
+            throw new Error("The parameter 'toEntityId' must be defined.");
+        url_ = url_.replace("{toEntityId}", encodeURIComponent("" + toEntityId));
+        if (relationType === null)
+            throw new Error("The parameter 'relationType' cannot be null.");
+        else if (relationType !== undefined)
+            url_ += "relationType=" + encodeURIComponent("" + relationType) + "&";
+        if (confidence === null)
+            throw new Error("The parameter 'confidence' cannot be null.");
+        else if (confidence !== undefined)
+            url_ += "confidence=" + encodeURIComponent("" + confidence) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processLinkPOST(_response);
+        });
+    }
+
+    protected processLinkPOST(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    linkDELETE(fromEntityId: string, toEntityId: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/Graph/entities/{fromEntityId}/link/{toEntityId}";
+        if (fromEntityId === undefined || fromEntityId === null)
+            throw new Error("The parameter 'fromEntityId' must be defined.");
+        url_ = url_.replace("{fromEntityId}", encodeURIComponent("" + fromEntityId));
+        if (toEntityId === undefined || toEntityId === null)
+            throw new Error("The parameter 'toEntityId' must be defined.");
+        url_ = url_.replace("{toEntityId}", encodeURIComponent("" + toEntityId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processLinkDELETE(_response);
+        });
+    }
+
+    protected processLinkDELETE(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
+    notes(entityId: string): Promise<GraphNode[]> {
+        let url_ = this.baseUrl + "/api/Graph/entities/{entityId}/notes";
+        if (entityId === undefined || entityId === null)
+            throw new Error("The parameter 'entityId' must be defined.");
+        url_ = url_.replace("{entityId}", encodeURIComponent("" + entityId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processNotes(_response);
+        });
+    }
+
+    protected processNotes(response: Response): Promise<GraphNode[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(GraphNode.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<GraphNode[]>(null as any);
+    }
+
+    /**
+     * @param maxSuggestions (optional) 
+     * @return Success
+     */
+    connectionSuggestions(entityId: string, maxSuggestions: number | undefined): Promise<GraphSuggestion[]> {
+        let url_ = this.baseUrl + "/api/Graph/entities/{entityId}/connection-suggestions?";
+        if (entityId === undefined || entityId === null)
+            throw new Error("The parameter 'entityId' must be defined.");
+        url_ = url_.replace("{entityId}", encodeURIComponent("" + entityId));
+        if (maxSuggestions === null)
+            throw new Error("The parameter 'maxSuggestions' cannot be null.");
+        else if (maxSuggestions !== undefined)
+            url_ += "maxSuggestions=" + encodeURIComponent("" + maxSuggestions) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processConnectionSuggestions(_response);
+        });
+    }
+
+    protected processConnectionSuggestions(response: Response): Promise<GraphSuggestion[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(GraphSuggestion.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<GraphSuggestion[]>(null as any);
+    }
+
+    /**
+     * @param maxSuggestions (optional) 
+     * @return Success
+     */
+    globalSuggestions(maxSuggestions: number | undefined): Promise<GraphSuggestion[]> {
+        let url_ = this.baseUrl + "/api/Graph/global-suggestions?";
+        if (maxSuggestions === null)
+            throw new Error("The parameter 'maxSuggestions' cannot be null.");
+        else if (maxSuggestions !== undefined)
+            url_ += "maxSuggestions=" + encodeURIComponent("" + maxSuggestions) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "text/plain"
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processGlobalSuggestions(_response);
+        });
+    }
+
+    protected processGlobalSuggestions(response: Response): Promise<GraphSuggestion[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(GraphSuggestion.fromJS(item));
+            }
+            else {
+                result200 = <any>null;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<GraphSuggestion[]>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    applySuggestion(body: GraphSuggestion | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Graph/apply-suggestion";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processApplySuggestion(_response);
+        });
+    }
+
+    protected processApplySuggestion(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @return Success
+     */
     health3(): Promise<void> {
         let url_ = this.baseUrl + "/health";
         url_ = url_.replace(/[?&]$/, "");
@@ -2225,6 +2536,47 @@ export class CortexApiClient {
     }
 
     protected processDeletionPlan(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * @param body (optional) 
+     * @return Success
+     */
+    pin(id: string, body: PinRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/Notes/{id}/pin";
+        if (id === undefined || id === null)
+            throw new Error("The parameter 'id' must be defined.");
+        url_ = url_.replace("{id}", encodeURIComponent("" + id));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.http.fetch(url_, options_).then((_response: Response) => {
+            return this.processPin(_response);
+        });
+    }
+
+    protected processPin(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
@@ -7851,6 +8203,74 @@ export interface IGraphNode {
     lastSeen?: Date;
 }
 
+export class GraphRebuildResult implements IGraphRebuildResult {
+    success?: boolean;
+    clearedEntities?: boolean;
+    processedNotes?: number;
+    failedNotes?: number;
+    totalEntities?: number;
+    totalRelations?: number;
+    errorMessage?: string | undefined;
+    completedAt?: Date;
+    duration?: TimeSpan;
+
+    constructor(data?: IGraphRebuildResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.success = _data["success"];
+            this.clearedEntities = _data["clearedEntities"];
+            this.processedNotes = _data["processedNotes"];
+            this.failedNotes = _data["failedNotes"];
+            this.totalEntities = _data["totalEntities"];
+            this.totalRelations = _data["totalRelations"];
+            this.errorMessage = _data["errorMessage"];
+            this.completedAt = _data["completedAt"] ? new Date(_data["completedAt"].toString()) : <any>undefined;
+            this.duration = _data["duration"] ? TimeSpan.fromJS(_data["duration"]) : <any>undefined;
+        }
+    }
+
+    static fromJS(data: any): GraphRebuildResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new GraphRebuildResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["success"] = this.success;
+        data["clearedEntities"] = this.clearedEntities;
+        data["processedNotes"] = this.processedNotes;
+        data["failedNotes"] = this.failedNotes;
+        data["totalEntities"] = this.totalEntities;
+        data["totalRelations"] = this.totalRelations;
+        data["errorMessage"] = this.errorMessage;
+        data["completedAt"] = this.completedAt ? this.completedAt.toISOString() : <any>undefined;
+        data["duration"] = this.duration ? this.duration.toJSON() : <any>undefined;
+        return data;
+    }
+}
+
+export interface IGraphRebuildResult {
+    success?: boolean;
+    clearedEntities?: boolean;
+    processedNotes?: number;
+    failedNotes?: number;
+    totalEntities?: number;
+    totalRelations?: number;
+    errorMessage?: string | undefined;
+    completedAt?: Date;
+    duration?: TimeSpan;
+}
+
 export class GraphResponse implements IGraphResponse {
     nodes?: GraphNode[] | undefined;
     edges?: GraphEdge[] | undefined;
@@ -7913,6 +8333,86 @@ export interface IGraphResponse {
     edges?: GraphEdge[] | undefined;
     totalNodes?: number;
     totalEdges?: number;
+}
+
+export class GraphSuggestion implements IGraphSuggestion {
+    fromEntityId?: string | undefined;
+    fromEntityName?: string | undefined;
+    fromEntityType?: string | undefined;
+    toEntityId?: string | undefined;
+    toEntityName?: string | undefined;
+    toEntityType?: string | undefined;
+    suggestedRelationType?: string | undefined;
+    confidence?: number;
+    reason?: string | undefined;
+    supportingNotes?: string[] | undefined;
+
+    constructor(data?: IGraphSuggestion) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.fromEntityId = _data["fromEntityId"];
+            this.fromEntityName = _data["fromEntityName"];
+            this.fromEntityType = _data["fromEntityType"];
+            this.toEntityId = _data["toEntityId"];
+            this.toEntityName = _data["toEntityName"];
+            this.toEntityType = _data["toEntityType"];
+            this.suggestedRelationType = _data["suggestedRelationType"];
+            this.confidence = _data["confidence"];
+            this.reason = _data["reason"];
+            if (Array.isArray(_data["supportingNotes"])) {
+                this.supportingNotes = [] as any;
+                for (let item of _data["supportingNotes"])
+                    this.supportingNotes!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): GraphSuggestion {
+        data = typeof data === 'object' ? data : {};
+        let result = new GraphSuggestion();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["fromEntityId"] = this.fromEntityId;
+        data["fromEntityName"] = this.fromEntityName;
+        data["fromEntityType"] = this.fromEntityType;
+        data["toEntityId"] = this.toEntityId;
+        data["toEntityName"] = this.toEntityName;
+        data["toEntityType"] = this.toEntityType;
+        data["suggestedRelationType"] = this.suggestedRelationType;
+        data["confidence"] = this.confidence;
+        data["reason"] = this.reason;
+        if (Array.isArray(this.supportingNotes)) {
+            data["supportingNotes"] = [];
+            for (let item of this.supportingNotes)
+                data["supportingNotes"].push(item);
+        }
+        return data;
+    }
+}
+
+export interface IGraphSuggestion {
+    fromEntityId?: string | undefined;
+    fromEntityName?: string | undefined;
+    fromEntityType?: string | undefined;
+    toEntityId?: string | undefined;
+    toEntityName?: string | undefined;
+    toEntityType?: string | undefined;
+    suggestedRelationType?: string | undefined;
+    confidence?: number;
+    reason?: string | undefined;
+    supportingNotes?: string[] | undefined;
 }
 
 export class MascotInteraction implements IMascotInteraction {
@@ -8079,6 +8579,7 @@ export class Note implements INote {
     lang?: string | undefined;
     source?: string | undefined;
     isDeleted?: boolean;
+    isPinned?: boolean;
     version?: number;
     sensitivityLevel?: number;
     piiFlags?: string | undefined;
@@ -8118,6 +8619,7 @@ export class Note implements INote {
             this.lang = _data["lang"];
             this.source = _data["source"];
             this.isDeleted = _data["isDeleted"];
+            this.isPinned = _data["isPinned"];
             this.version = _data["version"];
             this.sensitivityLevel = _data["sensitivityLevel"];
             this.piiFlags = _data["piiFlags"];
@@ -8173,6 +8675,7 @@ export class Note implements INote {
         data["lang"] = this.lang;
         data["source"] = this.source;
         data["isDeleted"] = this.isDeleted;
+        data["isPinned"] = this.isPinned;
         data["version"] = this.version;
         data["sensitivityLevel"] = this.sensitivityLevel;
         data["piiFlags"] = this.piiFlags;
@@ -8221,6 +8724,7 @@ export interface INote {
     lang?: string | undefined;
     source?: string | undefined;
     isDeleted?: boolean;
+    isPinned?: boolean;
     version?: number;
     sensitivityLevel?: number;
     piiFlags?: string | undefined;
@@ -8801,6 +9305,42 @@ export class PdfUrlIngestRequest implements IPdfUrlIngestRequest {
 export interface IPdfUrlIngestRequest {
     url: string;
     title?: string | undefined;
+}
+
+export class PinRequest implements IPinRequest {
+    isPinned?: boolean;
+
+    constructor(data?: IPinRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.isPinned = _data["isPinned"];
+        }
+    }
+
+    static fromJS(data: any): PinRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new PinRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["isPinned"] = this.isPinned;
+        return data;
+    }
+}
+
+export interface IPinRequest {
+    isPinned?: boolean;
 }
 
 export class ProactiveSuggestion implements IProactiveSuggestion {
@@ -10371,6 +10911,98 @@ export interface ITextSpan {
     confidence?: number;
     createdAt?: Date;
     entity?: Entity;
+}
+
+export class TimeSpan implements ITimeSpan {
+    ticks?: number;
+    readonly days?: number;
+    readonly hours?: number;
+    readonly milliseconds?: number;
+    readonly microseconds?: number;
+    readonly nanoseconds?: number;
+    readonly minutes?: number;
+    readonly seconds?: number;
+    readonly totalDays?: number;
+    readonly totalHours?: number;
+    readonly totalMilliseconds?: number;
+    readonly totalMicroseconds?: number;
+    readonly totalNanoseconds?: number;
+    readonly totalMinutes?: number;
+    readonly totalSeconds?: number;
+
+    constructor(data?: ITimeSpan) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (<any>this)[property] = (<any>data)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            this.ticks = _data["ticks"];
+            (<any>this).days = _data["days"];
+            (<any>this).hours = _data["hours"];
+            (<any>this).milliseconds = _data["milliseconds"];
+            (<any>this).microseconds = _data["microseconds"];
+            (<any>this).nanoseconds = _data["nanoseconds"];
+            (<any>this).minutes = _data["minutes"];
+            (<any>this).seconds = _data["seconds"];
+            (<any>this).totalDays = _data["totalDays"];
+            (<any>this).totalHours = _data["totalHours"];
+            (<any>this).totalMilliseconds = _data["totalMilliseconds"];
+            (<any>this).totalMicroseconds = _data["totalMicroseconds"];
+            (<any>this).totalNanoseconds = _data["totalNanoseconds"];
+            (<any>this).totalMinutes = _data["totalMinutes"];
+            (<any>this).totalSeconds = _data["totalSeconds"];
+        }
+    }
+
+    static fromJS(data: any): TimeSpan {
+        data = typeof data === 'object' ? data : {};
+        let result = new TimeSpan();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        data["ticks"] = this.ticks;
+        data["days"] = this.days;
+        data["hours"] = this.hours;
+        data["milliseconds"] = this.milliseconds;
+        data["microseconds"] = this.microseconds;
+        data["nanoseconds"] = this.nanoseconds;
+        data["minutes"] = this.minutes;
+        data["seconds"] = this.seconds;
+        data["totalDays"] = this.totalDays;
+        data["totalHours"] = this.totalHours;
+        data["totalMilliseconds"] = this.totalMilliseconds;
+        data["totalMicroseconds"] = this.totalMicroseconds;
+        data["totalNanoseconds"] = this.totalNanoseconds;
+        data["totalMinutes"] = this.totalMinutes;
+        data["totalSeconds"] = this.totalSeconds;
+        return data;
+    }
+}
+
+export interface ITimeSpan {
+    ticks?: number;
+    days?: number;
+    hours?: number;
+    milliseconds?: number;
+    microseconds?: number;
+    nanoseconds?: number;
+    minutes?: number;
+    seconds?: number;
+    totalDays?: number;
+    totalHours?: number;
+    totalMilliseconds?: number;
+    totalMicroseconds?: number;
+    totalNanoseconds?: number;
+    totalMinutes?: number;
+    totalSeconds?: number;
 }
 
 export class ToolRequest implements IToolRequest {

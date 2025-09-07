@@ -130,6 +130,8 @@ builder.Services.AddScoped<INerService, NerService>();
 builder.Services.AddScoped<IGraphService, GraphService>();
 
 // Add Hangfire services for background job processing
+// Ensure the data directory exists for SQLite storage
+try { System.IO.Directory.CreateDirectory("./data"); } catch { /* ignore */ }
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -740,8 +742,31 @@ using (var scope = app.Services.CreateScope())
             using var conn2 = new SqliteConnection(absoluteSqliteConnectionString);
             await conn2.OpenAsync();
 
-            // Database schema is now managed entirely through EF Core migrations
-            // Manual table creation code removed - use migrations for schema changes
+            // Ensure Notes.IsPinned column exists (hotfix for environments that missed migration)
+            using (var cmd = conn2.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA table_info('Notes');";
+                using var reader = await cmd.ExecuteReaderAsync();
+                bool hasIsPinned = false;
+                while (await reader.ReadAsync())
+                {
+                    var colName = reader.GetString(1); // name
+                    if (string.Equals(colName, "IsPinned", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasIsPinned = true;
+                        break;
+                    }
+                }
+
+                if (!hasIsPinned)
+                {
+                    Console.WriteLine("[DB] Missing Notes.IsPinned column detected. Applying hotfix ALTER TABLE...");
+                    using var alter = conn2.CreateCommand();
+                    alter.CommandText = "ALTER TABLE Notes ADD COLUMN IsPinned INTEGER NOT NULL DEFAULT 0;";
+                    await alter.ExecuteNonQueryAsync();
+                    Console.WriteLine("[DB] Notes.IsPinned column added successfully");
+                }
+            }
         }
         catch (Exception ex)
         {

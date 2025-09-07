@@ -41,6 +41,7 @@ public class IngestService : IIngestService
     private readonly IClassificationService _classificationService;
     private readonly ISuggestionsService _suggestionsService;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IBackgroundJobService _jobs;
 
     public IngestService(
         CortexDbContext context, 
@@ -52,7 +53,8 @@ public class IngestService : IIngestService
         ISecretsDetectionService secretsDetectionService,
         IClassificationService classificationService,
         ISuggestionsService suggestionsService,
-        IFileStorageService fileStorageService)
+        IFileStorageService fileStorageService,
+        IBackgroundJobService jobs)
     {
         _context = context;
         _configurationService = configurationService;
@@ -66,6 +68,7 @@ public class IngestService : IIngestService
         _classificationService = classificationService;
         _suggestionsService = suggestionsService;
         _fileStorageService = fileStorageService;
+        _jobs = jobs;
     }
 
     public async Task<List<IngestResult>> IngestFilesAsync(IFormFileCollection files)
@@ -188,6 +191,9 @@ public class IngestService : IIngestService
             await _vectorService.EnqueueEmbedAsync(note, ch);
         }
 
+        // Optionally enqueue graph enrichment for this note (async discovery)
+        try { await _jobs.EnqueueJobAsync("graph_enrich", new GraphEnrichJobPayload { NoteId = note.Id }); } catch { }
+
         return new IngestResult
         {
             NoteId = note.Id,
@@ -261,6 +267,8 @@ public class IngestService : IIngestService
         {
             await _vectorService.EnqueueEmbedAsync(note, ch);
         }
+
+        try { await _jobs.EnqueueJobAsync("graph_enrich", new GraphEnrichJobPayload { NoteId = note.Id }); } catch { }
 
         _logger.LogInformation("Updated note {NoteId} with {ChunkCount} chunks for user {UserId}", note.Id, note.ChunkCount, _user.UserId);
         return new IngestResult { NoteId = note.Id, Title = note.Title, CountChunks = note.ChunkCount };
@@ -365,6 +373,8 @@ public class IngestService : IIngestService
         {
             await _vectorService.EnqueueEmbedAsync(note, ch);
         }
+
+        try { await _jobs.EnqueueJobAsync("graph_enrich", new GraphEnrichJobPayload { NoteId = note.Id }); } catch { }
 
         return new IngestResult
         {
@@ -1013,7 +1023,8 @@ public class IngestService : IIngestService
         try
         {
             _logger.LogInformation("Starting auto-classification for note {NoteId}", note.Id);
-            var classificationResult = await _classificationService.ClassifyTextAsync(content, note.Id);
+            var titlePlusContent = string.IsNullOrWhiteSpace(note.Title) ? content : ($"{note.Title}\n\n{content}");
+            var classificationResult = await _classificationService.ClassifyTextAsync(titlePlusContent, note.Id);
             if (classificationResult.Tags.Any())
             {
                 note.Tags = string.Join(",", classificationResult.Tags.Select(t => t.Name));

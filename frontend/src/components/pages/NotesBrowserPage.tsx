@@ -7,6 +7,7 @@ import {
   DocumentTextIcon,
   EyeIcon,
   TrashIcon,
+  StarIcon,
   CalendarIcon,
   TagIcon,
   AdjustmentsHorizontalIcon,
@@ -18,7 +19,7 @@ import {
   Squares2X2Icon,
   ListBulletIcon
 } from '@heroicons/react/24/outline'
-import { DocumentTextIcon as DocumentTextSolid } from '@heroicons/react/24/solid'
+import { DocumentTextIcon as DocumentTextSolid, StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useMascot } from '@/contexts/MascotContext'
 import appBus from '@/lib/appBus'
 import { useNotesApi, useSearchApi, useTagsApi } from '@/services/apiClient'
@@ -32,6 +33,7 @@ interface Note {
   content: string
   createdAt: string
   updatedAt: string
+  isPinned?: boolean
   tags?: string[]
   metadata?: {
     source?: string
@@ -78,9 +80,10 @@ interface NoteCardProps {
   highlighted: boolean
   onClick: () => void
   onDelete: (noteId: string, noteTitle: string) => void
+  onTogglePin: (noteId: string, next: boolean) => void
 }
 
-const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, onClick, onDelete }) => {
+const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, onClick, onDelete, onTogglePin }) => {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -265,6 +268,17 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
               {note.title}
             </h3>
             <div className="flex items-center space-x-1 ml-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onTogglePin(note.id, !(note.isPinned ?? false)) }}
+                  title={note.isPinned ? 'Unpin note' : 'Pin note'}
+                  className={`p-1 rounded ${note.isPinned ? 'text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}
+                >
+                  {note.isPinned ? (
+                    <StarIconSolid className="w-5 h-5" />
+                  ) : (
+                    <StarIcon className="w-5 h-5" />
+                  )}
+                </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -360,6 +374,17 @@ const NoteCardBase: React.FC<NoteCardProps> = ({ note, viewMode, highlighted, on
               </div>
               <div className="flex items-center space-x-2">
                 <button
+                  onClick={(e) => { e.stopPropagation(); onTogglePin(note.id, !(note.isPinned ?? false)) }}
+                  title={note.isPinned ? 'Unpin note' : 'Pin note'}
+                  className={`p-1 rounded ${note.isPinned ? 'text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}
+                >
+                  {note.isPinned ? (
+                    <StarIconSolid className="w-5 h-5" />
+                  ) : (
+                    <StarIcon className="w-5 h-5" />
+                  )}
+                </button>
+                <button
                   onClick={(e) => {
                     e.stopPropagation()
                     onDelete(note.id, note.title)
@@ -396,7 +421,7 @@ const NotesBrowserPage: React.FC = () => {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   // Notes API helpers
-  const { updateNote, getNote, getNotes, deleteNote, getDeletionPlan } = useNotesApi()
+  const { updateNote, getNote, getNotes, deleteNote, getDeletionPlan, togglePin } = useNotesApi()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null)
   const [sortOption, setSortOption] = useState<SortOption>({
@@ -409,6 +434,8 @@ const NotesBrowserPage: React.FC = () => {
     tags: [],
     sources: []
   })
+  // UI: show only pinned notes
+  const [pinnedOnly, setPinnedOnly] = useState(false)
   // Deletion dialog state
   const [deletionDialog, setDeletionDialog] = useState<{
     isOpen: boolean
@@ -421,6 +448,7 @@ const NotesBrowserPage: React.FC = () => {
   })
   const [availableTags, setAvailableTags] = useState<string[]>([])
   const [availableSources, setAvailableSources] = useState<string[]>([])
+  const [serverTagResults, setServerTagResults] = useState<Note[] | null>(null)
   const [pagination, setPagination] = useState({
     currentPage: 1,
     pageSize: 20,
@@ -430,7 +458,7 @@ const NotesBrowserPage: React.FC = () => {
   const { speak, think, idle, suggest } = useMascot()
   // getNotes is obtained above from useNotesApi
   const { searchGet } = useSearchApi()
-  const { getAllTags } = useTagsApi()
+  const { getAllTags, searchNotesByTags } = useTagsApi()
   const { enqueueGraphEnrich } = useJobsApi()
 
   // Load available tags
@@ -500,6 +528,7 @@ const NotesBrowserPage: React.FC = () => {
           content,
           createdAt: note.createdAt || note.CreatedAt || new Date().toISOString(),
           updatedAt: note.updatedAt || note.UpdatedAt || note.createdAt || note.CreatedAt || new Date().toISOString(),
+          isPinned: note.isPinned ?? note.IsPinned ?? false,
           tags,
           metadata: {
             source: note.source || note.Source,
@@ -598,9 +627,10 @@ const NotesBrowserPage: React.FC = () => {
     }
   }, [notes]) // Re-run when notes are loaded
 
-  // Apply search and filters
+  // Apply search and filters against either server-tag results or local notes
   useEffect(() => {
-    let filtered = [...notes]
+    const base = serverTagResults ?? notes
+    let filtered = [...base]
 
     // Apply search query
     if (searchQuery.trim()) {
@@ -649,8 +679,17 @@ const NotesBrowserPage: React.FC = () => {
       )
     }
 
-    // Apply sorting
+    // Pinned-only toggle
+    if (pinnedOnly) {
+      filtered = filtered.filter(note => !!note.isPinned)
+    }
+
+    // Apply sorting (pinned first, then selected sort)
     filtered.sort((a, b) => {
+      const pinA = !!a.isPinned
+      const pinB = !!b.isPinned
+      if (pinA !== pinB) return pinA ? -1 : 1
+
       if (sortOption.field === 'wordCount') {
         const aCount = a.metadata?.wordCount || 0
         const bCount = b.metadata?.wordCount || 0
@@ -674,7 +713,45 @@ const NotesBrowserPage: React.FC = () => {
     })
 
     setFilteredNotes(filtered)
-  }, [notes, searchQuery, filters, sortOption])
+  }, [notes, serverTagResults, searchQuery, filters, sortOption, pinnedOnly])
+
+  // Server-side tag filtering
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (filters.tags.length === 0) {
+        setServerTagResults(null)
+        return
+      }
+      try {
+        setRefreshing(true)
+        const res = await searchNotesByTags(filters.tags, { mode: 'all', limit: 100, offset: 0 })
+        const mapped: Note[] = (res.items || []).map((m: any) => ({
+          id: m.id ?? m.Id,
+          title: m.title ?? m.Title ?? 'Untitled',
+          content: '',
+          createdAt: m.createdAt ?? m.CreatedAt ?? new Date().toISOString(),
+          updatedAt: m.updatedAt ?? m.UpdatedAt ?? new Date().toISOString(),
+          isPinned: m.isPinned ?? m.IsPinned ?? undefined,
+          tags: m.tags ?? m.Tags ?? [],
+          metadata: {
+            source: m.source ?? m.Source,
+            fileType: m.fileType ?? m.FileType,
+            chunkCount: m.chunkCount ?? m.ChunkCount ?? 0,
+            wordCount: 0,
+          },
+          status: undefined,
+        }))
+        if (!cancelled) setServerTagResults(mapped)
+      } catch (e) {
+        if (!cancelled) setServerTagResults([])
+      } finally {
+        if (!cancelled) setRefreshing(false)
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [filters.tags, searchNotesByTags])
 
   // Clear all filters
   const clearFilters = () => {
@@ -693,6 +770,20 @@ const NotesBrowserPage: React.FC = () => {
       noteId,
       noteTitle
     })
+  }
+
+  // Toggle pin handler with optimistic update
+  const handleTogglePin = async (noteId: string, next: boolean) => {
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, isPinned: next } : n))
+    setFilteredNotes(prev => prev.map(n => n.id === noteId ? { ...n, isPinned: next } : n))
+    try {
+      await togglePin(noteId, next)
+      speak(next ? 'Note pinned' : 'Note unpinned', 'idle')
+    } catch (e) {
+      // revert on failure
+      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, isPinned: !next } : n))
+      setFilteredNotes(prev => prev.map(n => n.id === noteId ? { ...n, isPinned: !next } : n))
+    }
   }
 
   // Confirm deletion handler
@@ -842,6 +933,22 @@ const NotesBrowserPage: React.FC = () => {
                 </span>
               )}
             </button>
+
+            {/* Pinned-only toggle */}
+            <button
+              onClick={() => setPinnedOnly(prev => !prev)}
+              className={`${pinnedOnly
+                ? 'flex items-center space-x-2 px-4 py-3 rounded-lg bg-amber-500 text-white hover:bg-amber-600'
+                : 'flex items-center space-x-2 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors'}`}
+              title="Show only pinned notes"
+            >
+              {pinnedOnly ? (
+                <StarIconSolid className="w-5 h-5" />
+              ) : (
+                <StarIcon className="w-5 h-5" />
+              )}
+              <span>Pinned only</span>
+            </button>
           </div>
 
           {/* Advanced Filters */}
@@ -980,7 +1087,7 @@ const NotesBrowserPage: React.FC = () => {
         >
           <div className="flex items-center space-x-6">
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              Showing <span className="font-medium text-gray-900 dark:text-white">{filteredNotes.length}</span> of <span className="font-medium text-gray-900 dark:text-white">{notes.length}</span> notes
+              Showing <span className="font-medium text-gray-900 dark:text-white">{filteredNotes.length}</span> of <span className="font-medium text-gray-900 dark:text-white">{(serverTagResults ?? notes).length}</span> notes
             </div>
             {searchQuery && (
               <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -1019,7 +1126,7 @@ const NotesBrowserPage: React.FC = () => {
                 : 'space-y-4'
             }
           >
-            {filteredNotes.map(note => (
+      {filteredNotes.map(note => (
               <NoteCard
                 key={note.id}
                 note={note}
@@ -1033,6 +1140,7 @@ const NotesBrowserPage: React.FC = () => {
                   } catch {}
                 }}
                 onDelete={handleDeleteNote}
+        onTogglePin={handleTogglePin}
               />
             ))}
           </div>

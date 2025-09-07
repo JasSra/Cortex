@@ -35,8 +35,10 @@ public class TagsController : ControllerBase
     [HttpPost("bulk")]
     public async Task<IActionResult> BulkTagOperation([FromBody] BulkTagRequest request)
     {
-        if (!Rbac.RequireRole(_userContext, "Editor"))
-            return Forbid("Editor role required");
+        // Allow any authenticated Reader (or above) to tag their own notes.
+        // Ownership is enforced below by filtering on userId.
+        if (!Rbac.RequireRole(_userContext, "Reader"))
+            return Forbid();
 
         if (request.NoteIds?.Any() != true)
             return BadRequest("NoteIds is required and cannot be empty");
@@ -92,8 +94,8 @@ public class TagsController : ControllerBase
                         }
                     }
 
-                    // Update the note
-                    note.Tags = currentTags.Any() ? string.Join(",", currentTags.Distinct()) : null;
+                    // Update the note (Note.Tags is non-nullable; use empty string when none)
+                    note.Tags = currentTags.Any() ? string.Join(",", currentTags.Distinct()) : string.Empty;
                     note.UpdatedAt = DateTime.UtcNow;
 
                     results.Add(new TagOperationResult
@@ -139,7 +141,7 @@ public class TagsController : ControllerBase
     public async Task<IActionResult> GetTags()
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
-            return Forbid("Reader role required");
+            return Forbid();
 
         try
         {
@@ -201,7 +203,7 @@ public class TagsController : ControllerBase
     public async Task<IActionResult> GetNoteTags(string noteId)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
-            return Forbid("Reader role required");
+            return Forbid();
 
         var note = await _context.Notes
             .FirstOrDefaultAsync(n => n.Id == noteId && n.UserId == _userContext.UserId && !n.IsDeleted);
@@ -226,7 +228,7 @@ public class TagsController : ControllerBase
     public async Task<IActionResult> SearchByTags([FromQuery] string tags, [FromQuery] string mode = "all", [FromQuery] int limit = 20, [FromQuery] int offset = 0)
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
-            return Forbid("Reader role required");
+            return Forbid();
 
         if (limit <= 0) limit = 20;
         if (limit > 100) limit = 100;

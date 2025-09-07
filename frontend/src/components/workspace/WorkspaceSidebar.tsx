@@ -68,6 +68,7 @@ export default function WorkspaceSidebar({
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkTagInput, setBulkTagInput] = useState('')
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
 
   const { getRecentNotes, trackNoteAccess } = useWorkspaceApi()
   const { getNotes } = useNotesApi()
@@ -93,6 +94,18 @@ export default function WorkspaceSidebar({
       (note.content && note.content.toLowerCase().includes(query))
     )
   }, [allNotes, recentNotes, searchQuery, activeTab])
+
+  // Sort filtered notes with pinned items first
+  const pinnedSortedNotes = useMemo(() => {
+    const arr = [...filteredNotes]
+    return arr.sort((a, b) => {
+      const ap = pinnedIds.has(a.id) ? 1 : 0
+      const bp = pinnedIds.has(b.id) ? 1 : 0
+      if (ap !== bp) return bp - ap // pinned first
+      // fallback: updatedAt desc
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    })
+  }, [filteredNotes, pinnedIds])
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -398,6 +411,32 @@ export default function WorkspaceSidebar({
     }
   }, [isOpen, loadNotes])
 
+  // Load pinned set from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('workspace:pinnedNotes')
+      if (raw) {
+        const ids: string[] = JSON.parse(raw)
+        setPinnedIds(new Set(ids))
+      }
+    } catch {}
+  }, [])
+
+  // Persist pinned set
+  useEffect(() => {
+    try {
+      localStorage.setItem('workspace:pinnedNotes', JSON.stringify(Array.from(pinnedIds)))
+    } catch {}
+  }, [pinnedIds])
+
+  const togglePin = useCallback((id: string) => {
+    setPinnedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }, [])
+
   // Generate smart suggestions when data changes
   useEffect(() => {
     if (isOpen && allNotes.length > 0) {
@@ -473,13 +512,22 @@ export default function WorkspaceSidebar({
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Workspace
               </h2>
-              <button
-                onClick={onClose}
-                aria-label="Close workspace sidebar"
-                className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <XMarkIcon className="w-5 h-5 text-gray-500 dark:text-slate-400" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadNotes}
+                  title="Refresh"
+                  className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <BoltIcon className="w-5 h-5 text-gray-500 dark:text-slate-400" />
+                </button>
+                <button
+                  onClick={onClose}
+                  aria-label="Close workspace sidebar"
+                  className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <XMarkIcon className="w-5 h-5 text-gray-500 dark:text-slate-400" />
+                </button>
+              </div>
             </div>
 
             {/* Enhanced Search with AI indicator */}
@@ -762,7 +810,7 @@ export default function WorkspaceSidebar({
                         </div>
                       ) : (
                         <AnimatePresence mode="popLayout">
-                          {filteredNotes.map((note) => (
+                          {pinnedSortedNotes.map((note) => (
                             <motion.div
                               key={note.id}
                               layout
@@ -791,12 +839,21 @@ export default function WorkspaceSidebar({
                                     aria-label={`Select note: ${note.title}`}
                                   />
                                 )}
+                                {/* Pin toggle */}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); togglePin(note.id) }}
+                                  title={pinnedIds.has(note.id) ? 'Unpin note' : 'Pin note'}
+                                  className={`absolute top-2 right-2 p-1 rounded ${pinnedIds.has(note.id) ? 'bg-yellow-100 text-yellow-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                                >
+                                  <StarIcon className="w-4 h-4" />
+                                </button>
+
                                 {/* Auto-tagging progress indicator */}
                                 {tagGenerationProgress[note.id] && (
                                   <motion.div
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
-                                    className="absolute top-2 right-2"
+                                    className="absolute top-2 right-8"
                                   >
                                     <motion.div
                                       animate={{ rotate: 360 }}
