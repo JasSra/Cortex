@@ -18,7 +18,7 @@ import {
 import AdaptiveCardView from './AdaptiveCardView'
 import { useMascot } from '@/contexts/MascotContext'
 import { useChatToolsApi, useVoiceApi, useGamificationApi } from '@/services/apiClient'
-import { useAppAuth } from '@/hooks/useAppAuth'
+import { useAuth } from '@/contexts/AuthContext'
 
 type Role = 'user' | 'assistant' | 'system'
 
@@ -82,28 +82,14 @@ const SmartLiveAssistant: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const interruptTokenRef = useRef<string>('0')
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const mediaStreamRef = useRef<MediaStream | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const wsRef = useRef<WebSocket | null>(null)
 
   const { listen, think, idle, respond, speak: mascotSpeak, error: mascotError } = useMascot()
   const { processChat, executeTool, getAvailableTools } = useChatToolsApi()
   const voiceApi = useVoiceApi()
   const { checkAchievements, getMyAchievements } = useGamificationApi() as any
-  const { getAccessToken } = useAppAuth()
+  const { isAuthenticated, getAccessToken } = useAuth()
 
   const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
-  const wsUrl = useMemo(() => {
-    try {
-      const u = new URL(baseUrl)
-      u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-      u.pathname = '/voice/stt'
-      u.search = ''
-      return u.toString()
-    } catch {
-      return 'ws://localhost:8081/voice/stt'
-    }
-  }, [baseUrl])
 
   // Theme handling (local override; falls back to global app theme)
   const containerThemeClass = useMemo(() => {
@@ -356,23 +342,18 @@ const SmartLiveAssistant: React.FC = () => {
     think()
 
     try {
-      // Build ChatToolsRequest as expected by backend: { query, availableTools, context }
+      // Build ChatToolsRequest as expected by backend
       const recent = [...messages, userMessage].slice(-12)
       const payload: any = {
-        // support both legacy and new shapes
-        messages: recent.map(m => ({ role: m.role, content: m.content })),
         query: userMessage.content,
         availableTools,
-        temperature: 0.7,
-        maxTokens: 500,
-        useRag: true,
         context: { recentMessages: recent.map(m => ({ role: m.role, content: m.content, at: m.timestamp.toISOString() })) }
       }
       const res: any = await processChat(payload)
 
       if (interruptTokenRef.current !== tokenAtStart) return // dropped due to newer input
 
-      const reply = (res?.response || res?.answer || 'OK').toString()
+      const reply = (res?.response || res?.answer || res?.Response || res?.Answer || 'OK').toString()
       const assistantMessage: Message = { id: Date.now().toString() + '_assistant', role: 'assistant', content: reply, timestamp: new Date() }
       setMessages(prev => [...prev, assistantMessage])
 
@@ -381,10 +362,8 @@ const SmartLiveAssistant: React.FC = () => {
 
       // Execute suggested tools if provided
       const tools: Array<{ tool: string; args?: any; title?: string }> = res?.suggestedTools || res?.SuggestedTools || []
-  // If we have tool suggestions but auto-exec is disabled, expose as quick actions beneath input
-  if ((!autoExecuteTools || res?.requiresConfirmation) && tools.length) {
-        // Convert tool suggestions into lightweight UI prompts by pre-filling input on click
-        // Stored transiently via stateful hint bar; we'll render from the latest assistant message context
+      // If we have tool suggestions but auto-exec is disabled, expose as quick actions beneath input
+      if ((!autoExecuteTools || res?.requiresConfirmation) && tools.length) {
         setQuickToolPrompts(tools.map(t => ({ tool: t.tool, title: t.title || t.tool, args: t.args })))
       } else {
         setQuickToolPrompts([])
@@ -424,7 +403,6 @@ const SmartLiveAssistant: React.FC = () => {
               if (newOnes.length) {
                 setKnownAchievementIds(nextSet)
                 setAchievementToasts(prev => [...prev, ...newOnes])
-                // Auto-dismiss after 6s per batch
                 setTimeout(() => {
                   setAchievementToasts(prev => prev.slice(newOnes.length))
                 }, 6000)
@@ -451,7 +429,13 @@ const SmartLiveAssistant: React.FC = () => {
         }
       }
     } catch (err: any) {
-      const assistantMessage: Message = { id: Date.now().toString() + '_err', role: 'assistant', content: 'Sorry, I hit an error.', timestamp: new Date() }
+      console.error('Chat processing error:', err)
+      const assistantMessage: Message = { 
+        id: Date.now().toString() + '_err', 
+        role: 'assistant', 
+        content: `Sorry, I encountered an error: ${err?.message || 'Unknown error'}`, 
+        timestamp: new Date() 
+      }
       setMessages(prev => [...prev, assistantMessage])
     } finally {
       setIsProcessing(false)
@@ -459,109 +443,77 @@ const SmartLiveAssistant: React.FC = () => {
     }
   }, [availableTools, autoExecuteTools, executeTool, idle, messages, processChat, speakTts, think, interrupt, checkAchievements, getMyAchievements, knownAchievementIds, currentSessionId, sessions])
 
-  // Try WebSocket streaming STT first, then fall back to browser STT
+  // Simplified voice functionality using browser APIs
   const startListening = useCallback(async () => {
     interrupt()
     setPartialText('')
-    // Prefer MediaRecorder + WS to backend
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('getUserMedia not available')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const token = await getAccessToken()?.catch(() => null) as string | null
-      const authed = token ? `${wsUrl}?access_token=${encodeURIComponent(token)}` : wsUrl
-      const ws = new WebSocket(authed)
-      ws.binaryType = 'arraybuffer'
-      ws.onopen = () => {
-        mediaStreamRef.current = stream
-        setIsListening(true)
-        listen()
-        const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
-        mediaRecorderRef.current = rec
-        rec.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-            e.data.arrayBuffer().then(buf => ws.send(buf))
-          }
-        }
-        rec.start(250)
-      }
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
-          const text: string = msg?.text || msg?.partial || ''
-          if (!text) return
-          if (msg?.final || msg?.type === 'final') {
-            setPartialText('')
-            handleTranscript(text)
-          } else {
-            setPartialText(text)
-          }
-        } catch {}
-      }
-      ws.onerror = () => {
-        // let onclose trigger cleanup; we will fall back next time
-      }
-      ws.onclose = () => {
-        setIsListening(false)
-        setPartialText('')
-        try { mediaRecorderRef.current?.stop() } catch {}
-        try { mediaStreamRef.current?.getTracks().forEach(t => t.stop()) } catch {}
-        mediaRecorderRef.current = null
-        mediaStreamRef.current = null
-        wsRef.current = null
-        idle()
-      }
-      wsRef.current = ws
-      return
-    } catch {
-      // Fallback path below
-    }
-    if (!(globalThis as any).webkitSpeechRecognition) {
+    
+    // Check for browser support
+    if (!(globalThis as any).webkitSpeechRecognition && !(globalThis as any).SpeechRecognition) {
       mascotError("Voice input not supported in this browser.")
       return
     }
+    
     setIsListening(true)
     listen()
+    
     if (!recognitionRef.current) {
-      recognitionRef.current = new (window as any).webkitSpeechRecognition()
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      recognitionRef.current = new SpeechRecognition()
       recognitionRef.current.continuous = true
       recognitionRef.current.interimResults = true
       recognitionRef.current.lang = 'en-US'
     }
+    
     let finalTranscript = ''
     recognitionRef.current.onresult = (event: any) => {
       let interim = ''
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) finalTranscript += transcript
-        else interim += transcript
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript
+        } else {
+          interim += transcript
+        }
       }
       setPartialText(interim)
+      
       // When a phrase is finalized, handle it
       if (finalTranscript.trim()) {
         handleTranscript(finalTranscript.trim())
         finalTranscript = ''
       }
     }
-    recognitionRef.current.onerror = () => { setIsListening(false); setPartialText(''); idle() }
-    recognitionRef.current.onend = () => { setIsListening(false); setPartialText(''); idle() }
-    recognitionRef.current.start()
-  }, [handleTranscript, idle, listen, mascotError, wsUrl, interrupt, getAccessToken])
-
-  const stopListening = useCallback(() => {
-    if (mediaRecorderRef.current || mediaStreamRef.current || wsRef.current) {
-      try { mediaRecorderRef.current?.stop() } catch {}
-      try { mediaStreamRef.current?.getTracks().forEach(t => t.stop()) } catch {}
-      try { wsRef.current?.close() } catch {}
-      mediaRecorderRef.current = null
-      mediaStreamRef.current = null
-      wsRef.current = null
+    
+    recognitionRef.current.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error)
       setIsListening(false)
       setPartialText('')
       idle()
-      return
     }
+    
+    recognitionRef.current.onend = () => {
+      setIsListening(false)
+      setPartialText('')
+      idle()
+    }
+    
+    try {
+      recognitionRef.current.start()
+    } catch (error) {
+      console.error('Failed to start speech recognition:', error)
+      setIsListening(false)
+      idle()
+    }
+  }, [handleTranscript, idle, listen, mascotError, interrupt])
+
+  const stopListening = useCallback(() => {
     if (recognitionRef.current && isListening) {
-      try { recognitionRef.current.stop() } catch {}
+      try { 
+        recognitionRef.current.stop() 
+      } catch (error) {
+        console.error('Error stopping speech recognition:', error)
+      }
       setIsListening(false)
       setPartialText('')
       idle()
@@ -633,6 +585,22 @@ const SmartLiveAssistant: React.FC = () => {
   }, [sessions])
 
   const showWorkingPane = workingItems.length > 0 || tasks.length > 0 || confirmQueue.length > 0
+
+  // Check authentication first
+  if (!isAuthenticated) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+            Authentication Required
+          </div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Please sign in to use the Smart Assistant
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`${containerThemeClass} h-full w-full`}>

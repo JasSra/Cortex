@@ -1144,7 +1144,7 @@ export function useChatApi() {
       messages: messages.map(m => [m.role, m.content] as [string, string]),
       topK: 8,
       alpha: 0.6,
-      filters: filters
+      filters: filters || {}
     }
     return await client.query(request as any) as any
   }, [client])

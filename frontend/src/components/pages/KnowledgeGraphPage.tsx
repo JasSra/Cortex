@@ -49,7 +49,6 @@ interface GraphFilters {
   toDate?: string
   minScore?: number
   maxDepth: number
-}
 
 interface GraphSuggestion {
   fromEntityId: string

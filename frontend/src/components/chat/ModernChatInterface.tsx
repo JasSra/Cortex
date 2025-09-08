@@ -201,22 +201,21 @@ export default function ModernChatInterface() {
     setIsTyping(true)
 
     try {
-      // Convert messages to API format
-      const messageHistory = [...messages, userMessage].map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }))
+      // Convert messages to API format - backend expects [role, content] tuples
+      const messageHistory = [...messages, userMessage].map(msg => [msg.role, msg.content] as [string, string])
 
       // Use RAG query for knowledge-based chat
-      const response = await chatApi.ragQuery(messageHistory)
+      const response = await chatApi.ragQuery(messageHistory.map(([role, content]) => ({ role, content })))
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response.Answer || 'I apologize, but I couldn\'t find relevant information to answer your question.',
+        content: response.answer || response.Answer || 'I apologize, but I couldn\'t find relevant information to answer your question.',
         timestamp: new Date(),
         // Store citations if available
-        metadata: response.Citations?.length > 0 ? { citations: response.Citations } : undefined
+        metadata: response.citations || response.Citations ? { 
+          citations: response.citations || response.Citations || [] 
+        } : undefined
       }
 
       setMessages(prev => [...prev, assistantMessage])
