@@ -18,6 +18,10 @@ import {
   XCircleIcon,
   TrashIcon,
   ArrowPathIcon,
+  ClipboardDocumentIcon,
+  HandThumbUpIcon,
+  HandThumbDownIcon,
+  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline'
 
 import AdaptiveCardView from './AdaptiveCardView'
@@ -32,6 +36,14 @@ interface Message {
   role: Role
   content: string
   timestamp: Date
+  reactions?: Array<{ emoji: string; count: number; users: string[] }>
+  isEdited?: boolean
+  attachments?: Array<{
+    id: string
+    name: string
+    type: string
+    url: string
+  }>
 }
 
 interface ToolExecResult {
@@ -80,14 +92,17 @@ const SmartLiveAssistant: React.FC = () => {
   const [quickToolPrompts, setQuickToolPrompts] = useState<Array<{ tool: string; title: string; args?: any }>>([])
   // Sessions
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([])
-  const [currentSessionId, setCurrentSessionId] = useState<string>('')
   const [quickActionsRunTools, setQuickActionsRunTools] = useState<boolean>(false)
+  const [messageSearch, setMessageSearch] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set())
 
   // State for better UX
   const [error, setError] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected')
   const [retryCount, setRetryCount] = useState(0)
   const [processingStep, setProcessingStep] = useState<string>('')
+  const [currentSessionId, setCurrentSessionId] = useState<string>('')
 
   const recognitionRef = useRef<any>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -260,7 +275,6 @@ const SmartLiveAssistant: React.FC = () => {
     
     return () => { mounted = false }
   }, [getAvailableTools, getMyAchievements, showError])
-  }, [getAvailableTools, getMyAchievements])
 
   const stopAudio = useCallback(() => {
     if (audioRef.current) {
@@ -641,8 +655,56 @@ const SmartLiveAssistant: React.FC = () => {
     await next.run()
   }, [tasks])
 
-  // UI helpers
-  const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'))
+  // Message reactions and copy functionality
+  const addReaction = useCallback((messageId: string, emoji: string) => {
+    setMessages(prev => prev.map(msg => {
+      if (msg.id === messageId) {
+        const reactions = msg.reactions || []
+        const existingReaction = reactions.find(r => r.emoji === emoji)
+        if (existingReaction) {
+          return {
+            ...msg,
+            reactions: reactions.map(r =>
+              r.emoji === emoji
+                ? { ...r, count: r.count + 1, users: [...r.users, 'user'] }
+                : r
+            )
+          }
+        } else {
+          return {
+            ...msg,
+            reactions: [...reactions, { emoji, count: 1, users: ['user'] }]
+          }
+        }
+      }
+      return msg
+    }))
+  }, [])
+
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      showError('Copied to clipboard!', 2000)
+    } catch (err) {
+      showError('Failed to copy to clipboard')
+    }
+  }, [showError])
+
+  const exportChat = useCallback(() => {
+    const chatContent = messages.map(msg =>
+      `[${msg.timestamp.toLocaleString()}] ${msg.role.toUpperCase()}: ${msg.content}`
+    ).join('\n\n')
+
+    const blob = new Blob([chatContent], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cortex-chat-${new Date().toISOString().split('T')[0]}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [messages])
 
   const sendInput = useCallback(() => {
     const text = inputText.trim()
@@ -875,11 +937,18 @@ const SmartLiveAssistant: React.FC = () => {
                   New Chat
                 </button>
                 <button
-                  onClick={toggleTheme}
+                  onClick={() => setShowSearch(!showSearch)}
                   className="p-2 rounded bg-gray-200 dark:bg-gray-700"
-                  title="Toggle theme"
+                  title="Search messages"
                 >
-                  {theme === 'dark' ? <SunIcon className="w-4 h-4" /> : <MoonIcon className="w-4 h-4" />}
+                  <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={exportChat}
+                  className="p-2 rounded bg-gray-200 dark:bg-gray-700"
+                  title="Export chat"
+                >
+                  <ClipboardDocumentIcon className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -922,6 +991,33 @@ const SmartLiveAssistant: React.FC = () => {
             </motion.div>
           )}
 
+          {/* Search Bar */}
+          {showSearch && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50"
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={messageSearch}
+                  onChange={(e) => setMessageSearch(e.target.value)}
+                  placeholder="Search messages..."
+                  className="flex-1 px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+                />
+                <button
+                  onClick={() => setMessageSearch('')}
+                  className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                  title="Clear search"
+                >
+                  <XCircleIcon className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {/* Quick start tool prompts (initial state or when suggestions available and auto-exec is off) */}
@@ -955,7 +1051,9 @@ const SmartLiveAssistant: React.FC = () => {
               </div>
             )}
             <AnimatePresence>
-              {messages.map(m => (
+              {messages
+                .filter(m => !messageSearch || m.content.toLowerCase().includes(messageSearch.toLowerCase()))
+                .map(m => (
                 <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                   <div className={`max-w-[80%] rounded-lg px-3 py-2 border text-sm ${m.role === 'user' ? 'ml-auto bg-purple-50 dark:bg-purple-900/40 border-purple-200 dark:border-purple-800' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
                     {m.role === 'assistant' ? (
@@ -965,18 +1063,70 @@ const SmartLiveAssistant: React.FC = () => {
                     ) : (
                       <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
                     )}
-                    <div className="text-[10px] text-gray-500 mt-1 flex items-center justify-between">
-                      <span>{m.timestamp.toLocaleTimeString()}</span>
-                      {m.role === 'user' && (
+
+                    {/* Message Actions */}
+                    <div className="flex items-center justify-between mt-2">
+                      <div className="text-[10px] text-gray-500">
+                        {m.timestamp.toLocaleTimeString()}
+                        {m.isEdited && <span className="ml-1 text-gray-400">(edited)</span>}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {/* Copy button */}
                         <button
-                          onClick={() => handleTranscript(m.content)}
-                          className="ml-2 p-1 hover:bg-purple-100 dark:hover:bg-purple-800/30 rounded"
-                          title="Resend this message"
+                          onClick={() => copyToClipboard(m.content)}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded opacity-50 hover:opacity-100 transition-opacity"
+                          title="Copy message"
                         >
-                          <ArrowPathIcon className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                          <ClipboardDocumentIcon className="w-3 h-3 text-gray-500" />
                         </button>
-                      )}
+
+                        {/* Reaction buttons */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => addReaction(m.id, '👍')}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded opacity-50 hover:opacity-100 transition-opacity"
+                            title="Like"
+                          >
+                            <HandThumbUpIcon className="w-3 h-3 text-gray-500" />
+                          </button>
+                          <button
+                            onClick={() => addReaction(m.id, '👎')}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded opacity-50 hover:opacity-100 transition-opacity"
+                            title="Dislike"
+                          >
+                            <HandThumbDownIcon className="w-3 h-3 text-gray-500" />
+                          </button>
+                        </div>
+
+                        {m.role === 'user' && (
+                          <button
+                            onClick={() => handleTranscript(m.content)}
+                            className="p-1 hover:bg-purple-100 dark:hover:bg-purple-800/30 rounded opacity-50 hover:opacity-100 transition-opacity"
+                            title="Resend this message"
+                          >
+                            <ArrowPathIcon className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Reactions display */}
+                    {m.reactions && m.reactions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {m.reactions.map((reaction, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => addReaction(m.id, reaction.emoji)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            title={`${reaction.count} reaction${reaction.count > 1 ? 's' : ''}`}
+                          >
+                            <span>{reaction.emoji}</span>
+                            <span className="text-gray-600 dark:text-gray-300">{reaction.count}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               ))}

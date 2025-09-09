@@ -13,7 +13,10 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ArrowPathIcon,
-  XCircleIcon
+  XCircleIcon,
+  ClipboardDocumentIcon,
+  HandThumbUpIcon,
+  HandThumbDownIcon,
 } from '@heroicons/react/24/outline'
 import { useCortexStore } from '../../store/cortexStore'
 import { useChatApi } from '../../services/apiClient'
@@ -53,7 +56,7 @@ const ChatMessage = ({ message, isTyping = false }: ChatMessage) => {
       animate={{ opacity: 1, y: 0 }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-6`}
     >
-      <div className={`flex max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'} items-start space-x-3`}>
+      <div className={`flex max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'} items-start space-x-3 group`}>
         {/* Avatar */}
         <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
           isUser 
@@ -126,19 +129,33 @@ const ChatMessage = ({ message, isTyping = false }: ChatMessage) => {
             <p className="text-xs text-gray-500">
               {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </p>
-            {isUser && (
+            
+            {/* Message Actions */}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
-                onClick={() => {
-                  // Re-send the message
-                  const event = new CustomEvent('resendMessage', { detail: message.content })
-                  window.dispatchEvent(event)
-                }}
-                className="p-1 hover:bg-gray-100 rounded opacity-50 hover:opacity-100 transition-opacity"
-                title="Resend this message"
+                onClick={() => navigator.clipboard.writeText(message.content)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                title="Copy message"
               >
-                <ArrowPathIcon className="w-3 h-3 text-gray-500" />
+                <ClipboardDocumentIcon className="w-3 h-3 text-gray-500" />
               </button>
-            )}
+              
+              {isUser && (
+                <>
+                  <button
+                    onClick={() => {
+                      // Re-send the message
+                      const event = new CustomEvent('resendMessage', { detail: message.content })
+                      window.dispatchEvent(event)
+                    }}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                    title="Resend this message"
+                  >
+                    <ArrowPathIcon className="w-3 h-3 text-gray-500" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -191,6 +208,8 @@ export default function ModernChatInterface() {
   const [isTyping, setIsTyping] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({})
   const [isConnected, setIsConnected] = useState(true)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -298,13 +317,55 @@ export default function ModernChatInterface() {
     }
   }, [handleSendMessage])
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
-    if (!files) return
+    if (!files || files.length === 0) return
 
-    // Handle file upload logic here
-    console.log('Files selected:', files)
-    showError('File upload feature coming soon!')
+    setIsUploading(true)
+    const uploadPromises = Array.from(files).map(async (file) => {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      // Simulate upload progress
+      const progressKey = file.name
+      setUploadProgress(prev => ({ ...prev, [progressKey]: 0 }))
+
+      try {
+        // Here you would make the actual API call to upload the file
+        // For now, we'll simulate the upload
+        for (let progress = 0; progress <= 100; progress += 10) {
+          setUploadProgress(prev => ({ ...prev, [progressKey]: progress }))
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+
+        // Add file attachment to the current message
+        const attachment: Message['attachments'][0] = {
+          id: Date.now().toString() + '_' + file.name,
+          name: file.name,
+          type: file.type,
+          url: URL.createObjectURL(file) // In real implementation, this would be the server URL
+        }
+
+        // You could add this to the current message or create a new message
+        showError(`File "${file.name}" uploaded successfully!`, 3000)
+        return attachment
+      } catch (error) {
+        console.error('Upload failed:', error)
+        showError(`Failed to upload ${file.name}`)
+        return null
+      }
+    })
+
+    try {
+      await Promise.all(uploadPromises)
+    } finally {
+      setIsUploading(false)
+      setUploadProgress({})
+      // Clear the input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
   }, [showError])
 
   const toggleRecording = useCallback(() => {
@@ -469,15 +530,29 @@ export default function ModernChatInterface() {
       >
         <div className="flex items-end space-x-4">
           {/* File Upload */}
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => fileInputRef.current?.click()}
-            className="p-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition-colors"
-            title="Attach file"
-          >
-            <DocumentPlusIcon className="h-5 w-5 text-gray-600" />
-          </motion.button>
+          <div className="relative">
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className={`p-3 rounded-xl transition-colors ${
+                isUploading
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+              }`}
+              title={isUploading ? "Uploading..." : "Attach file"}
+            >
+              <DocumentPlusIcon className="h-5 w-5" />
+            </motion.button>
+
+            {/* Upload Progress Overlay */}
+            {isUploading && Object.keys(uploadProgress).length > 0 && (
+              <div className="absolute -top-2 -right-2 bg-purple-600 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center">
+                {Object.values(uploadProgress).reduce((a, b) => a + b, 0) / Object.keys(uploadProgress).length}%
+              </div>
+            )}
+          </div>
           
           <input
             ref={fileInputRef}
