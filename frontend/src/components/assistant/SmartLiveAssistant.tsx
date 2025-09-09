@@ -13,6 +13,11 @@ import {
   QueueListIcon,
   WrenchScrewdriverIcon,
   PaperAirplaneIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  TrashIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline'
 
 import AdaptiveCardView from './AdaptiveCardView'
@@ -77,6 +82,12 @@ const SmartLiveAssistant: React.FC = () => {
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string>('')
   const [quickActionsRunTools, setQuickActionsRunTools] = useState<boolean>(false)
+
+  // State for better UX
+  const [error, setError] = useState<string | null>(null)
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected')
+  const [retryCount, setRetryCount] = useState(0)
+  const [processingStep, setProcessingStep] = useState<string>('')
 
   const recognitionRef = useRef<any>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -197,17 +208,40 @@ const SmartLiveAssistant: React.FC = () => {
     try { localStorage.setItem('cortex:chat:quickActionsRunTools', quickActionsRunTools ? '1' : '0') } catch {}
   }, [quickActionsRunTools])
 
-  // Preload available tools and current achievements
+  // Enhanced error handling with auto-dismiss
+  const showError = useCallback((message: string, duration = 5000) => {
+    setError(message)
+    setTimeout(() => setError(null), duration)
+  }, [])
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
+    // Enhanced tool loading with better error handling
   useEffect(() => {
     let mounted = true
+    setConnectionStatus('connecting')
+    
     ;(async () => {
       try {
+        setProcessingStep('Loading available tools...')
         const tools = await getAvailableTools()
-        if (mounted && Array.isArray(tools)) setAvailableTools(tools)
-      } catch {
-        // ignore; tools list is optional
+        if (mounted && Array.isArray(tools)) {
+          setAvailableTools(tools)
+          setConnectionStatus('connected')
+          setRetryCount(0)
+        }
+      } catch (err: any) {
+        console.error('Failed to load tools:', err)
+        if (mounted) {
+          setConnectionStatus('disconnected')
+          showError(`Failed to load tools: ${err?.message || 'Unknown error'}`)
+          setRetryCount(prev => prev + 1)
+        }
       }
+      
       try {
+        setProcessingStep('Loading achievements...')
         // Prime achievements baseline
         const mine: any[] = await getMyAchievements()
         const ids = new Set<string>()
@@ -216,9 +250,16 @@ const SmartLiveAssistant: React.FC = () => {
           if (id) ids.add(id)
         }
         if (mounted) setKnownAchievementIds(ids)
-      } catch {}
+      } catch (err: any) {
+        console.error('Failed to load achievements:', err)
+        // Don't show error for achievements as it's not critical
+      } finally {
+        setProcessingStep('')
+      }
     })()
+    
     return () => { mounted = false }
+  }, [getAvailableTools, getMyAchievements, showError])
   }, [getAvailableTools, getMyAchievements])
 
   const stopAudio = useCallback(() => {
@@ -325,11 +366,16 @@ const SmartLiveAssistant: React.FC = () => {
 
   const handleTranscript = useCallback(async (text: string) => {
     if (!text.trim()) return
+    
+    // Clear any previous errors
+    clearError()
+    
     const tokenAtStart = interruptTokenRef.current
     interrupt() // stop any current speech and deprioritize in-flight ops
 
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: text.trim(), timestamp: new Date() }
     setMessages(prev => [...prev, userMessage])
+    
     // If this is the first user message in the session, derive a title
     if (messages.filter(m => m.role === 'user').length === 0 && currentSessionId) {
       const title = userMessage.content.slice(0, 48)
@@ -339,6 +385,7 @@ const SmartLiveAssistant: React.FC = () => {
     }
 
     setIsProcessing(true)
+    setProcessingStep('Analyzing your request...')
     think()
 
     try {
@@ -349,31 +396,41 @@ const SmartLiveAssistant: React.FC = () => {
         availableTools,
         context: { recentMessages: recent.map(m => ({ role: m.role, content: m.content, at: m.timestamp.toISOString() })) }
       }
+      
+      setProcessingStep('Processing with AI...')
       const res: any = await processChat(payload)
 
       if (interruptTokenRef.current !== tokenAtStart) return // dropped due to newer input
 
-      const reply = (res?.response || res?.answer || res?.Response || res?.Answer || 'OK').toString()
+      const reply = (res?.response || res?.answer || res?.Response || res?.Answer || 'I understand your request, but I didn\'t receive a proper response.').toString()
       const assistantMessage: Message = { id: Date.now().toString() + '_assistant', role: 'assistant', content: reply, timestamp: new Date() }
       setMessages(prev => [...prev, assistantMessage])
 
+      setProcessingStep('Generating speech...')
       // Speak response (non-blocking)
       speakTts(assistantMessage.content)
 
       // Execute suggested tools if provided
       const tools: Array<{ tool: string; args?: any; title?: string }> = res?.suggestedTools || res?.SuggestedTools || []
-      // If we have tool suggestions but auto-exec is disabled, expose as quick actions beneath input
+      
+      if (tools.length > 0) {
+        setProcessingStep(`Processing ${tools.length} suggested tool${tools.length > 1 ? 's' : ''}...`)
+      }
+      
+      // If we have tool suggestions but auto-exec is disabled, expose as quick actions
       if ((!autoExecuteTools || res?.requiresConfirmation) && tools.length) {
         setQuickToolPrompts(tools.map(t => ({ tool: t.tool, title: t.title || t.tool, args: t.args })))
       } else {
         setQuickToolPrompts([])
       }
+      
       for (const t of tools) {
         const isTask = LONG_RUNNING_TOOLS.has(t.tool.toLowerCase())
         const needsConfirm = !autoExecuteTools || DANGEROUS_TOOLS.has(t.tool.toLowerCase()) || !!res?.requiresConfirmation
         const exec = async () => {
           const execToken = interruptTokenRef.current
           try {
+            setProcessingStep(`Executing ${t.title || t.tool}...`)
             const result: any = await executeTool({ tool: t.tool, args: t.args || {} })
             if (interruptTokenRef.current !== execToken) return // ignore if superseded
 
@@ -388,6 +445,8 @@ const SmartLiveAssistant: React.FC = () => {
               ]
             })
             setWorkingItems(prev => [{ id: Date.now().toString(), title: t.title || t.tool, card, success: true }, ...prev])
+            
+            // Check for new achievements
             try {
               await checkAchievements()
               const mine: any[] = await getMyAchievements()
@@ -407,8 +466,11 @@ const SmartLiveAssistant: React.FC = () => {
                   setAchievementToasts(prev => prev.slice(newOnes.length))
                 }, 6000)
               }
-            } catch {}
+            } catch (achievementError) {
+              console.warn('Achievement check failed:', achievementError)
+            }
           } catch (e: any) {
+            console.error(`Tool ${t.tool} execution failed:`, e)
             const card = {
               type: 'AdaptiveCard', version: '1.5', body: [
                 { type: 'TextBlock', text: `${t.tool} failed`, weight: 'Bolder', color: 'Attention' },
@@ -416,6 +478,7 @@ const SmartLiveAssistant: React.FC = () => {
               ]
             }
             setWorkingItems(prev => [{ id: Date.now().toString(), title: t.title || t.tool, card, success: false }, ...prev])
+            showError(`Tool "${t.title || t.tool}" failed: ${e?.message || 'Unknown error'}`)
           }
         }
 
@@ -430,82 +493,115 @@ const SmartLiveAssistant: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Chat processing error:', err)
+      const errorMessage = err?.message || 'Unknown error occurred'
+      showError(`Chat processing failed: ${errorMessage}`)
+      
       const assistantMessage: Message = { 
         id: Date.now().toString() + '_err', 
         role: 'assistant', 
-        content: `Sorry, I encountered an error: ${err?.message || 'Unknown error'}`, 
+        content: `I apologize, but I encountered an error while processing your request: ${errorMessage}. Please try again or rephrase your question.`, 
         timestamp: new Date() 
       }
       setMessages(prev => [...prev, assistantMessage])
     } finally {
       setIsProcessing(false)
+      setProcessingStep('')
       idle()
     }
-  }, [availableTools, autoExecuteTools, executeTool, idle, messages, processChat, speakTts, think, interrupt, checkAchievements, getMyAchievements, knownAchievementIds, currentSessionId, sessions])
+  }, [availableTools, autoExecuteTools, executeTool, idle, messages, processChat, speakTts, think, interrupt, checkAchievements, getMyAchievements, knownAchievementIds, currentSessionId, sessions, clearError, showError])
 
-  // Simplified voice functionality using browser APIs
+  // Enhanced voice functionality with retry mechanism
   const startListening = useCallback(async () => {
     interrupt()
     setPartialText('')
+    clearError()
     
     // Check for browser support
     if (!(globalThis as any).webkitSpeechRecognition && !(globalThis as any).SpeechRecognition) {
-      mascotError("Voice input not supported in this browser.")
+      showError("Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.")
       return
     }
     
     setIsListening(true)
     listen()
     
-    if (!recognitionRef.current) {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      recognitionRef.current = new SpeechRecognition()
-      recognitionRef.current.continuous = true
-      recognitionRef.current.interimResults = true
-      recognitionRef.current.lang = 'en-US'
-    }
-    
-    let finalTranscript = ''
-    recognitionRef.current.onresult = (event: any) => {
-      let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript
-        } else {
-          interim += transcript
+    try {
+      if (!recognitionRef.current) {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        recognitionRef.current = new SpeechRecognition()
+        recognitionRef.current.continuous = true
+        recognitionRef.current.interimResults = true
+        recognitionRef.current.lang = 'en-US'
+        recognitionRef.current.maxAlternatives = 1
+      }
+      
+      let finalTranscript = ''
+      recognitionRef.current.onresult = (event: any) => {
+        let interim = ''
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcript = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript
+          } else {
+            interim += transcript
+          }
+        }
+        setPartialText(interim)
+        
+        // When a phrase is finalized, handle it
+        if (finalTranscript.trim()) {
+          handleTranscript(finalTranscript.trim())
+          finalTranscript = ''
         }
       }
-      setPartialText(interim)
       
-      // When a phrase is finalized, handle it
-      if (finalTranscript.trim()) {
-        handleTranscript(finalTranscript.trim())
-        finalTranscript = ''
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error)
+        setIsListening(false)
+        setPartialText('')
+        idle()
+        
+        // Handle specific error types
+        switch (event.error) {
+          case 'not-allowed':
+            showError("Microphone access denied. Please enable microphone permissions and try again.")
+            break
+          case 'no-speech':
+            // Don't show error for no speech - it's normal
+            break
+          case 'network':
+            showError("Network error during speech recognition. Please check your connection.")
+            break
+          case 'service-not-allowed':
+            showError("Speech recognition service is not allowed. Please check browser settings.")
+            break
+          default:
+            if (retryCount < 3) {
+              setTimeout(() => {
+                setRetryCount(prev => prev + 1)
+                startListening()
+              }, 1000)
+            } else {
+              showError(`Speech recognition failed: ${event.error}. Please try typing instead.`)
+            }
+        }
       }
-    }
-    
-    recognitionRef.current.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error)
-      setIsListening(false)
-      setPartialText('')
-      idle()
-    }
-    
-    recognitionRef.current.onend = () => {
-      setIsListening(false)
-      setPartialText('')
-      idle()
-    }
-    
-    try {
+      
+      recognitionRef.current.onend = () => {
+        setIsListening(false)
+        setPartialText('')
+        idle()
+      }
+      
       recognitionRef.current.start()
-    } catch (error) {
+      setRetryCount(0) // Reset retry count on successful start
+    } catch (error: any) {
       console.error('Failed to start speech recognition:', error)
       setIsListening(false)
       idle()
+      showError(`Failed to start voice recognition: ${error.message}`)
     }
-  }, [handleTranscript, idle, listen, mascotError, interrupt])
+  }, [handleTranscript, idle, listen, interrupt, clearError, showError, retryCount])
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current && isListening) {
@@ -605,38 +701,121 @@ const SmartLiveAssistant: React.FC = () => {
   return (
     <div className={`${containerThemeClass} h-full w-full`}>
       <div className="h-full flex bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-  {/* Working Area (left) - hidden if nothing to show */}
+  {/* Enhanced Working Area (left) */}
   {showWorkingPane && (
-          <div className="w-[36%] min-w-[300px] max-w-[520px] border-r border-gray-200 dark:border-gray-800 p-4 space-y-3 overflow-y-auto bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <WrenchScrewdriverIcon className="w-4 h-4 text-purple-500" />
-                <span className="text-sm font-semibold">Working Area</span>
+          <div className="w-[36%] min-w-[300px] max-w-[520px] border-r border-gray-200 dark:border-gray-800 overflow-y-auto bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm">
+            <div className="p-4 space-y-3">
+              {/* Working Area Header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <WrenchScrewdriverIcon className="w-4 h-4 text-purple-500" />
+                  <span className="text-sm font-semibold">Working Area</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <QueueListIcon className="w-4 h-4 text-gray-500" />
+                  <span className="text-xs text-gray-500">{tasks.length} queued</span>
+                  {tasks.length > 0 && (
+                    <button 
+                      onClick={runNextTask} 
+                      className="text-xs px-2 py-1 rounded bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+                    >
+                      Run next
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setWorkingItems([])
+                      setTasks([])
+                      setConfirmQueue([])
+                    }}
+                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    title="Clear all results"
+                  >
+                    <TrashIcon className="w-3 h-3 text-gray-500" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <QueueListIcon className="w-4 h-4 text-gray-500" />
-                <span className="text-xs text-gray-500">{tasks.length} queued</span>
-                <button onClick={runNextTask} disabled={!tasks.length} className="text-xs px-2 py-1 rounded bg-purple-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white">Run next</button>
-              </div>
+              
+              {/* Task Results */}
+              {workingItems.map(item => (
+                <motion.div 
+                  key={item.id} 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-medium text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                      {item.success ? (
+                        <CheckCircleIcon className="w-3 h-3 text-green-500" />
+                      ) : (
+                        <XCircleIcon className="w-3 h-3 text-red-500" />
+                      )}
+                      {item.title}
+                    </div>
+                    <button
+                      onClick={() => setWorkingItems(prev => prev.filter(w => w.id !== item.id))}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded opacity-50 hover:opacity-100"
+                    >
+                      <XCircleIcon className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <AdaptiveCardView card={item.card} />
+                </motion.div>
+              ))}
+              
+              {/* Queued Tasks */}
+              {tasks.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-gray-600 dark:text-gray-400">Queued Tasks</div>
+                  {tasks.map(task => (
+                    <div key={task.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                      <span className="text-xs">{task.label}</span>
+                      <button
+                        onClick={() => setTasks(prev => prev.filter(t => t.id !== task.id))}
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                      >
+                        <XCircleIcon className="w-3 h-3 text-gray-500" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {workingItems.map(item => (
-              <div key={item.id} className="space-y-2">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-400">{item.title}</div>
-                <AdaptiveCardView card={item.card} />
-              </div>
-            ))}
           </div>
         )}
 
         {/* Conversation (right) */}
         <div className="flex-1 flex flex-col">
-          {/* Header */}
+          {/* Enhanced Header with Status */}
           <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/60 backdrop-blur-sm">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <BoltIcon className="w-5 h-5 text-purple-500" />
-                <div className="font-semibold">Smart Live Assistant</div>
-                <div className="text-xs text-gray-500">Constant, interruptible interaction</div>
+                <div>
+                  <div className="font-semibold">Smart Live Assistant</div>
+                  <div className="text-xs text-gray-500 flex items-center gap-2">
+                    <span>AI-powered knowledge companion</span>
+                    {connectionStatus === 'connected' && (
+                      <span className="inline-flex items-center gap-1 text-green-600">
+                        <CheckCircleIcon className="w-3 h-3" />
+                        Connected
+                      </span>
+                    )}
+                    {connectionStatus === 'connecting' && (
+                      <span className="inline-flex items-center gap-1 text-yellow-600">
+                        <ArrowPathIcon className="w-3 h-3 animate-spin" />
+                        Connecting...
+                      </span>
+                    )}
+                    {connectionStatus === 'disconnected' && (
+                      <span className="inline-flex items-center gap-1 text-red-600">
+                        <XCircleIcon className="w-3 h-3" />
+                        Disconnected
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {/* Toggle tools panel */}
@@ -706,6 +885,43 @@ const SmartLiveAssistant: React.FC = () => {
             </div>
           </div>
 
+          {/* Error Banner */}
+          {error && (
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ExclamationTriangleIcon className="w-4 h-4 text-red-600 dark:text-red-400" />
+                  <span className="text-sm text-red-800 dark:text-red-200">{error}</span>
+                </div>
+                <button
+                  onClick={clearError}
+                  className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded"
+                >
+                  <XCircleIcon className="w-4 h-4 text-red-600 dark:text-red-400" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Processing Status */}
+          {processingStep && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800"
+            >
+              <div className="flex items-center gap-2">
+                <ArrowPathIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin" />
+                <span className="text-sm text-blue-800 dark:text-blue-200">{processingStep}</span>
+              </div>
+            </motion.div>
+          )}
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {/* Quick start tool prompts (initial state or when suggestions available and auto-exec is off) */}
@@ -749,7 +965,18 @@ const SmartLiveAssistant: React.FC = () => {
                     ) : (
                       <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
                     )}
-                    <div className="text-[10px] text-gray-500 mt-1">{m.timestamp.toLocaleTimeString()}</div>
+                    <div className="text-[10px] text-gray-500 mt-1 flex items-center justify-between">
+                      <span>{m.timestamp.toLocaleTimeString()}</span>
+                      {m.role === 'user' && (
+                        <button
+                          onClick={() => handleTranscript(m.content)}
+                          className="ml-2 p-1 hover:bg-purple-100 dark:hover:bg-purple-800/30 rounded"
+                          title="Resend this message"
+                        >
+                          <ArrowPathIcon className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               ))}

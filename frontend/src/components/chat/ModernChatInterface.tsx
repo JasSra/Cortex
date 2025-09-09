@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   PaperAirplaneIcon,
@@ -9,10 +9,15 @@ import {
   Cog6ToothIcon,
   UserIcon,
   SparklesIcon,
-  StopIcon
+  StopIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  ArrowPathIcon,
+  XCircleIcon
 } from '@heroicons/react/24/outline'
 import { useCortexStore } from '../../store/cortexStore'
 import { useChatApi } from '../../services/apiClient'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface Message {
   id: string
@@ -116,10 +121,25 @@ const ChatMessage = ({ message, isTyping = false }: ChatMessage) => {
             )}
           </div>
           
-          {/* Timestamp */}
-          <p className={`text-xs text-gray-500 mt-1 ${isUser ? 'text-right' : 'text-left'}`}>
-            {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </p>
+          {/* Timestamp and Actions */}
+          <div className={`flex items-center gap-2 mt-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <p className="text-xs text-gray-500">
+              {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+            {isUser && (
+              <button
+                onClick={() => {
+                  // Re-send the message
+                  const event = new CustomEvent('resendMessage', { detail: message.content })
+                  window.dispatchEvent(event)
+                }}
+                className="p-1 hover:bg-gray-100 rounded opacity-50 hover:opacity-100 transition-opacity"
+                title="Resend this message"
+              >
+                <ArrowPathIcon className="w-3 h-3 text-gray-500" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </motion.div>
@@ -170,12 +190,27 @@ export default function ModernChatInterface() {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isConnected, setIsConnected] = useState(true)
+  
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const recognitionRef = useRef<any>(null)
   
+  const { isAuthenticated } = useAuth()
   const { chatMessages, addChatMessage, isLoading } = useCortexStore()
   const chatApi = useChatApi()
+
+  // Enhanced error handling
+  const showError = useCallback((message: string, duration = 5000) => {
+    setError(message)
+    setTimeout(() => setError(null), duration)
+  }, [])
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -185,8 +220,23 @@ export default function ModernChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  const handleSendMessage = async () => {
+  // Handle resend message event
+  useEffect(() => {
+    const handleResendMessage = (event: any) => {
+      const content = event.detail
+      setInput(content)
+      inputRef.current?.focus()
+    }
+
+    window.addEventListener('resendMessage', handleResendMessage)
+    return () => window.removeEventListener('resendMessage', handleResendMessage)
+  }, [])
+
+  const handleSendMessage = useCallback(async () => {
     if (!input.trim()) return
+
+    // Clear any previous errors
+    clearError()
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -219,46 +269,122 @@ export default function ModernChatInterface() {
       }
 
       setMessages(prev => [...prev, assistantMessage])
-    } catch (error) {
+      setIsConnected(true)
+    } catch (error: any) {
       console.error('Error sending message:', error)
+      setIsConnected(false)
       
-      // Add error message
-      const errorMessage: Message = {
+      const errorMessage = error?.message || 'An unexpected error occurred'
+      showError(`Failed to send message: ${errorMessage}`)
+      
+      // Add error message to chat
+      const errorChatMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'I apologize, but I encountered an error while processing your request. Please try again.',
+        content: 'I apologize, but I encountered an error while processing your request. Please check your connection and try again.',
         timestamp: new Date()
       }
       
-      setMessages(prev => [...prev, errorMessage])
+      setMessages(prev => [...prev, errorChatMessage])
     } finally {
       setIsTyping(false)
     }
-  }
+  }, [input, messages, chatApi, clearError, showError])
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
     }
-  }
+  }, [handleSendMessage])
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files) return
 
     // Handle file upload logic here
     console.log('Files selected:', files)
-  }
+    showError('File upload feature coming soon!')
+  }, [showError])
 
-  const toggleRecording = () => {
-    setIsRecording(!isRecording)
-    // Implement voice recording logic here
+  const toggleRecording = useCallback(() => {
+    if (!isRecording) {
+      // Start recording
+      if (!(globalThis as any).webkitSpeechRecognition && !(globalThis as any).SpeechRecognition) {
+        showError("Voice input is not supported in this browser.")
+        return
+      }
+
+      try {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        recognitionRef.current = new SpeechRecognition()
+        recognitionRef.current.continuous = true
+        recognitionRef.current.interimResults = true
+        recognitionRef.current.lang = 'en-US'
+
+        let finalTranscript = ''
+        recognitionRef.current.onresult = (event: any) => {
+          let interim = ''
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript
+            } else {
+              interim += transcript
+            }
+          }
+          
+          if (finalTranscript.trim()) {
+            setInput(finalTranscript.trim())
+            finalTranscript = ''
+          }
+        }
+
+        recognitionRef.current.onerror = (event: any) => {
+          console.error('Speech recognition error:', event.error)
+          setIsRecording(false)
+          showError(`Voice recognition failed: ${event.error}`)
+        }
+
+        recognitionRef.current.onend = () => {
+          setIsRecording(false)
+        }
+
+        recognitionRef.current.start()
+        setIsRecording(true)
+      } catch (error: any) {
+        showError(`Failed to start voice recognition: ${error.message}`)
+      }
+    } else {
+      // Stop recording
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+      setIsRecording(false)
+    }
+  }, [isRecording, showError])
+
+  // Check authentication
+  if (!isAuthenticated) {
+    return (
+      <div className="flex flex-col h-full bg-gradient-to-br from-gray-50 to-blue-50/30">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-lg font-medium text-gray-900 mb-2">
+              Authentication Required
+            </div>
+            <div className="text-sm text-gray-600">
+              Please sign in to use the chat interface
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-gray-50 to-blue-50/30">
-      {/* Chat Header */}
+      {/* Enhanced Chat Header */}
       <motion.div 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -270,7 +396,20 @@ export default function ModernChatInterface() {
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Cortex Assistant</h2>
-            <p className="text-sm text-gray-500">AI-powered knowledge companion</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-gray-500">AI-powered knowledge companion</p>
+              {isConnected ? (
+                <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                  <CheckCircleIcon className="w-3 h-3" />
+                  Connected
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                  <XCircleIcon className="w-3 h-3" />
+                  Disconnected
+                </span>
+              )}
+            </div>
           </div>
         </div>
         
@@ -285,6 +424,31 @@ export default function ModernChatInterface() {
           </motion.button>
         </div>
       </motion.div>
+
+      {/* Error Banner */}
+      <AnimatePresence>
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="px-6 py-3 bg-red-50 border-b border-red-200"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ExclamationTriangleIcon className="w-4 h-4 text-red-600" />
+                <span className="text-sm text-red-800">{error}</span>
+              </div>
+              <button
+                onClick={clearError}
+                className="p-1 hover:bg-red-100 rounded"
+              >
+                <XCircleIcon className="w-4 h-4 text-red-600" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
