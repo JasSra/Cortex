@@ -6,6 +6,7 @@ import { MascotProvider } from "@/contexts/MascotContext";
 import { ConnectivityProvider } from "@/contexts/ConnectivityContext";
 import { AuthWrapper } from "@/components/AuthWrapper";
 import { StructuredData } from "@/components/StructuredData";
+import ModernLayout from "@/components/layout/ModernLayout";
 
 const isDevelopment = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ||
@@ -112,7 +113,9 @@ export default function RootLayout({
             <ConnectivityProvider>
               <MascotProvider position="bottom-right" size="medium">
                 <AuthWrapper>
-                  {children}
+                  <ModernLayout>
+                    {children}
+                  </ModernLayout>
                 </AuthWrapper>
               </MascotProvider>
             </ConnectivityProvider>

@@ -23,7 +23,7 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
   const [debounceMs, setDebounceMs] = useState(450)
   const [provider, setProvider] = useState<'openai'|'ollama'>(() => (localStorage.getItem('editor:provider') as any) || 'openai')
 
-  const { assist, streamAssist } = useAssistApi()
+  const { assist } = useAssistApi()
   const voice = useVoiceApi()
   const { getAccessToken } = useAppAuth()
 
@@ -44,16 +44,9 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
     const t = setTimeout(async () => {
       try {
         setLoading(true)
-        // Try streaming first for lower latency
-        let gotStream = false
-        await streamAssist(
-          { context: text.slice(-1500), mode: 'suggest', provider, maxTokens: 80, temperature: 0.4 },
-          (partial) => { if (id === lastReqId.current) { gotStream = true; setSuggestion(partial.trim()) } }
-        ).catch(() => {/* fall back to non-stream */})
-        if (!gotStream) {
-          const res = await assist({ context: text.slice(-1500), mode: 'suggest', provider, maxTokens: 80, temperature: 0.4 })
-          if (id === lastReqId.current) setSuggestion(res.text?.trim() ?? '')
-        }
+        // Use regular assist API
+        const res = await assist({ context: text.slice(-1500), mode: 'suggest', provider, maxTokens: 80, temperature: 0.4 })
+        if (id === lastReqId.current) setSuggestion(res.text?.trim() ?? '')
       } catch {
         if (id === lastReqId.current) setSuggestion('')
       } finally {

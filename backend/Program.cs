@@ -6,6 +6,8 @@ using CortexApi.Services.Providers;
 using CortexApi.Models;
 using System.Net.WebSockets;
 using System.Data;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Microsoft.Data.Sqlite;
 using CortexApi.Security;
 using System.Security.Cryptography;
@@ -18,6 +20,7 @@ using Serilog;
 using Hangfire;
 using Hangfire.SQLite;
 using Microsoft.AspNetCore.Authentication;
+
 
 // Configure Serilog early to capture startup logs
 Log.Logger = new LoggerConfiguration()

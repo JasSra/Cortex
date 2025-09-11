@@ -2,18 +2,16 @@
 
 import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 import { SparklesIcon, InboxArrowDownIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { useSeedApi, useNotesApi } from '@/services/apiClient'
 import { useAuth } from '@/contexts/AuthContext'
 
-interface WelcomePageProps {
-  onNavigate: (view: string) => void
-}
-
-const WelcomePage: React.FC<WelcomePageProps> = ({ onNavigate }) => {
+const WelcomePage: React.FC = () => {
   const { isAuthenticated, clearRecentAuthEvent } = useAuth()
   const { seedIfNeeded } = useSeedApi()
   const notesApi = useNotesApi()
+  const router = useRouter()
   const [hasData, setHasData] = useState<boolean | null>(null)
   const [seeding, setSeeding] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -53,7 +51,19 @@ const WelcomePage: React.FC<WelcomePageProps> = ({ onNavigate }) => {
   const handleNavigate = (view: string) => {
     // Clear the auth event when user navigates away
     clearRecentAuthEvent()
-    onNavigate(view)
+    
+    // Map views to routes
+    const viewToRoute: Record<string, string> = {
+      'dashboard': '/dashboard',
+      'search': '/search',
+      'ingest': '/ingest',
+      'notes': '/notes',
+      'chat': '/chat',
+      'settings': '/settings'
+    }
+    
+    const route = viewToRoute[view] || `/${view}`
+    router.push(route)
   }
 
   return (

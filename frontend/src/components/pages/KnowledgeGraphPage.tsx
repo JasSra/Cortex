@@ -49,6 +49,7 @@ interface GraphFilters {
   toDate?: string
   minScore?: number
   maxDepth: number
+}
 
 interface GraphSuggestion {
   fromEntityId: string
@@ -106,7 +107,20 @@ const KnowledgeGraphPage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null)
   
   const { speak, think, idle, suggest } = useMascot()
-  const { getGraph, getConnectedEntities, discoverAll, rebuildGraph, linkEntities, unlinkEntities, getEntityNotes, getConnectionSuggestions, getGlobalSuggestions, applySuggestion } = useGraphApi()
+  const { 
+    getGraph, 
+    getConnectedEntities, 
+    discoverAll, 
+    getEntitySuggestions, 
+    getStatistics, 
+    rebuildGraph,
+    linkEntities,
+    unlinkEntities,
+    getEntityNotes,
+    getConnectionSuggestions,
+    getGlobalSuggestions,
+    applySuggestion
+  } = useGraphApi()
   const { searchGet } = useSearchApi()
 
   // Process graph data for visualization

@@ -10,12 +10,7 @@ import WorkspaceSidebar from './WorkspaceSidebar'
 import WorkspaceEditor from './WorkspaceEditor'
 import { useWorkspaceApi, useIngestApi } from '../../services/apiClient'
 
-interface WorkspaceViewProps {
-  activeView: string
-  onViewChange: (view: string) => void
-}
-
-export default function WorkspaceView({ activeView, onViewChange }: WorkspaceViewProps) {
+export default function WorkspaceView() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -47,10 +42,8 @@ export default function WorkspaceView({ activeView, onViewChange }: WorkspaceVie
   }, [getWorkspace])
 
   useEffect(() => {
-    if (activeView === 'workspace') {
-      loadWorkspace()
-    }
-  }, [activeView, loadWorkspace])
+    loadWorkspace()
+  }, [loadWorkspace])
 
   const handleNoteSelect = useCallback((noteId: string) => {
     setSelectedNoteId(noteId)
@@ -88,10 +81,6 @@ export default function WorkspaceView({ activeView, onViewChange }: WorkspaceVie
       setCreating(false)
     }
   }, [createNote, creating])
-
-  if (activeView !== 'workspace') {
-    return null
-  }
 
   return (
     <div className="h-full flex bg-gray-50 dark:bg-slate-900">

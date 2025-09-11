@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 import { 
   UserCircleIcon, 
   Cog6ToothIcon, 
@@ -18,10 +19,10 @@ import { useMascot } from '@/contexts/MascotContext'
 import MascotPicker from '@/components/mascot/MascotPicker'
 
 interface UserProfileDropdownProps {
-  onNavigate?: (page: string) => void
+  // No props needed - using router for navigation
 }
 
-const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate }) => {
+const UserProfileDropdown: React.FC<UserProfileDropdownProps> = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -34,6 +35,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
   const { selectedMascotId, setSelectedMascotId } = useMascot()
   const [isPickerOpen, setPickerOpen] = useState(false)
   const [notesCount, setNotesCount] = useState<number | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -67,7 +69,16 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ onNavigate })
 
   const handleNavigate = (page: string) => {
     setIsOpen(false)
-    onNavigate?.(page)
+    
+    // Map view names to routes
+    const routeMap: { [key: string]: string } = {
+      'achievements': '/achievements',
+      'settings': '/settings',
+      'analytics': '/analytics',
+    }
+    
+    const route = routeMap[page] || `/${page}`
+    router.push(route)
   }
 
   const handleLogout = async () => {

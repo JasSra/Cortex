@@ -128,11 +128,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const initializeAuth = async () => {
       try {
         console.log('Starting MSAL initialization...')
-        await msalInstance.initialize()
+        
+        // Add timeout to MSAL initialization
+        const initPromise = msalInstance.initialize()
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('MSAL initialization timeout')), 10000)
+        )
+        
+        await Promise.race([initPromise, timeoutPromise])
         console.log('MSAL initialized successfully')
         
-        // Handle redirect response
-        const response = await msalInstance.handleRedirectPromise()
+        // Handle redirect response with timeout
+        const redirectPromise = msalInstance.handleRedirectPromise()
+        const redirectTimeoutPromise = new Promise<any>((resolve) => 
+          setTimeout(() => resolve(null), 5000)
+        )
+        
+        const response = await Promise.race([redirectPromise, redirectTimeoutPromise])
         console.log('Redirect response:', response)
         
         if (response && response.account) {
@@ -163,7 +175,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
             console.log('Attempting silent token acquisition for account:', accounts[0].username)
             console.log('Account claims:', accounts[0].idTokenClaims)
             try {
-              const token = await msalInstance.acquireTokenSilent({ ...tokenRequest, account: accounts[0] })
+              // Add timeout to silent token acquisition
+              const tokenPromise = msalInstance.acquireTokenSilent({ ...tokenRequest, account: accounts[0] })
+              const tokenTimeoutPromise = new Promise<any>((_, reject) => 
+                setTimeout(() => reject(new Error('Silent token timeout')), 5000)
+              )
+              
+              const token = await Promise.race([tokenPromise, tokenTimeoutPromise])
               if (token && token.accessToken) {
                 console.log('Silent token acquisition successful')
                 setUser(accounts[0])
@@ -187,7 +205,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     }
 
-    initializeAuth()
+    // Add an overall timeout for the entire auth initialization
+    const initWithTimeout = async () => {
+      try {
+        const overallTimeoutPromise = new Promise<void>((_, reject) => 
+          setTimeout(() => reject(new Error('Auth initialization overall timeout')), 15000)
+        )
+        
+        await Promise.race([initializeAuth(), overallTimeoutPromise])
+      } catch (error) {
+        console.error('Auth initialization timed out or failed:', error)
+        setLoading(false) // Ensure we always exit loading state
+      }
+    }
+
+    initWithTimeout()
     // We purposely run this once on mount to bootstrap auth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

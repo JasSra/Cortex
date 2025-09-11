@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter, usePathname } from 'next/navigation'
 import { 
   HomeIcon, 
   ChatBubbleLeftRightIcon, 
@@ -33,13 +34,9 @@ import GamificationWidget from '../gamification/GamificationWidget'
 import UserProfileDropdown from '../UserProfileDropdown'
 import JobStatusWidget from '../JobStatusWidget'
 import ConnectivityIndicator from '../ConnectivityIndicator'
-import PageRenderer from '../PageRenderer'
 
 interface ModernLayoutProps {
-  activeView: string
-  onViewChange: (view: string) => void
-  sidebarOpen: boolean
-  onSidebarToggle: () => void
+  children: React.ReactNode
 }
 
 // Navigation organized by relevance and logical grouping
@@ -79,14 +76,50 @@ const navigation = [
 ]
 
 export default function ModernLayout({ 
-  activeView, 
-  onViewChange, 
-  sidebarOpen, 
-  onSidebarToggle 
+  children
 }: ModernLayoutProps) {
+  const router = useRouter()
+  const pathname = usePathname()
   const { user, isAuthenticated } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const searchApi = useSearchApi()
+  
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  
+  // Get current view from pathname
+  const activeView = pathname === '/' ? 'search' : pathname.slice(1).split('/')[0] || 'search'
+  
+  // Navigation handler that uses router
+  const onViewChange = useCallback((view: string) => {
+    // Map views to routes
+    const viewToRoute: Record<string, string> = {
+      'dashboard': '/dashboard',
+      'search': '/search',
+      'advanced-search': '/search',
+      'chat': '/chat',
+      'workspace': '/workspace',
+      'workflow': '/workflow',
+      'ingest': '/ingest',
+      'notes': '/notes',
+      'notes-browser': '/notes',
+      'documents': '/documents',
+      'graph': '/graph',
+      'analytics': '/analytics',
+      'achievements': '/achievements',
+      'settings': '/settings',
+      'jobs': '/jobs',
+      'system': '/system',
+      'config': '/config'
+    }
+    
+    const route = viewToRoute[view] || `/${view}`
+    router.push(route)
+  }, [router])
+  
+  const onSidebarToggle = useCallback(() => {
+    setSidebarOpen(prev => !prev)
+  }, [])
   
   // Global search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -328,7 +361,7 @@ export default function ModernLayout({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-3">
+        <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-3 scrollbar-thin">
           {/* Core Features - Always visible */}
           <div className="space-y-1">
             {coreNavigation.map((item) => (
@@ -552,7 +585,7 @@ export default function ModernLayout({
             ? 'border-gray-200 dark:border-slate-700 border-t' 
             : 'border-t border-gray-200/50 dark:border-slate-700/50'
         }`}>
-          <UserProfileDropdown onNavigate={onViewChange} />
+          <UserProfileDropdown />
         </div>
       </motion.div>
 
@@ -740,7 +773,7 @@ export default function ModernLayout({
             </motion.button>
 
             {/* Profile */}
-            <UserProfileDropdown onNavigate={onViewChange} />
+            <UserProfileDropdown />
           </div>
         </motion.header>
 
@@ -755,7 +788,7 @@ export default function ModernLayout({
               transition={{ duration: 0.3 }}
             >
               {/* Make an escape hatch so WelcomePage can navigate */}
-              <PageRenderer activeView={activeView} onViewChange={onViewChange} />
+              {children}
             </motion.div>
           </main>
         </div>

@@ -216,76 +216,37 @@ export default function WorkflowPage() {
       }
 
       ws.onmessage = (ev) => {
-        const processText = (raw: string) => {
-          if (!raw) return
-          // Normalize potential local echo prefix and whitespace/newlines
-          let text = raw.trim()
-          if (text.toLowerCase().startsWith('echo:')) {
-            text = text.slice(5).trim()
-          }
-          // Some providers may send multiple lines
-          text = text.split('\n').map(s => s.trim()).filter(Boolean).join(' ')
-
-          if (!text) return
-
-          console.log('Received transcription:', text)
-          setVoiceTranscript(prev => {
-            const newText = (prev.endsWith(' ') || prev.length === 0) ? prev + text : prev + ' ' + text
-
-            if (activeStep === 'capture' && activeFormId) {
-              setWorkflowForms(forms => forms.map(form => 
-                form.id === activeFormId 
-                  ? { ...form, content: newText }
-                  : form
-              ))
-            }
-
-            return newText
-          })
-        }
-
         try {
-          if (typeof ev.data === 'string') {
-            // Try JSON first, then fallback to plain text
-            try {
-              const msg = JSON.parse(ev.data)
-              if (msg && typeof msg.text === 'string') {
-                processText(msg.text)
-              } else if (typeof msg === 'string') {
-                processText(msg)
-              } else {
-                // Unknown JSON shape; ignore
+          const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '')
+          if (msg && msg.text) {
+            console.log('Received transcription:', msg.text)
+            setVoiceTranscript(prev => {
+              const newText = (prev.endsWith(' ') || prev.length === 0) ? prev + msg.text : prev + ' ' + msg.text
+              
+              // Auto-update active form if in capture mode
+              if (activeStep === 'capture' && activeFormId) {
+                setWorkflowForms(forms => forms.map(form => 
+                  form.id === activeFormId 
+                    ? { ...form, content: newText }
+                    : form
+                ))
               }
-            } catch {
-              // Not JSON, treat as plain text
-              processText(ev.data)
-            }
-          } else if (ev.data instanceof Blob) {
-            ev.data.text().then(processText).catch(err => {
-              console.warn('Failed to read Blob message:', err)
+              
+              return newText
             })
-          } else if (ev.data instanceof ArrayBuffer) {
-            const decoder = new TextDecoder()
-            processText(decoder.decode(new Uint8Array(ev.data)))
-          } else {
-            console.warn('Unknown WebSocket message type:', typeof ev.data)
           }
         } catch (e) {
-          console.warn('Voice message handling error:', e)
+          console.warn('Voice message parse error:', e)
         }
       }
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error)
-        setVoiceError('Voice connection error. Please try again.')
         setIsRecording(false)
       }
 
       ws.onclose = (event) => {
         console.log('WebSocket closed:', event.code, event.reason)
-        if (event.code !== 1000) {
-          setVoiceError(`Voice connection closed (${event.code}).`)
-        }
         wsRef.current = null
         setIsRecording(false)
       }
@@ -438,15 +399,11 @@ export default function WorkflowPage() {
         improvements: improvementResult?.text?.split('\n').filter((line: string) => line.trim()) || []
       }
 
-      setWorkflowForms(forms => forms.map(f => {
-        if (f.id !== formId) return f
-        const base = { ...f, suggestions, isProcessing: false }
-        if (autoEnhancements && suggestions.tags && suggestions.tags.length) {
-          const mergedTags = Array.from(new Set([...(f.tags || []), ...suggestions.tags]))
-          return { ...base, tags: mergedTags }
-        }
-        return base
-      }))
+      setWorkflowForms(forms => forms.map(f => 
+        f.id === formId 
+          ? { ...f, suggestions, isProcessing: false }
+          : f
+      ))
 
       // Move to enhancement step if we're in structure
       if (activeStep === 'structure') {
@@ -459,24 +416,7 @@ export default function WorkflowPage() {
         f.id === formId ? { ...f, isProcessing: false } : f
       ))
     }
-  }, [workflowForms, activeStep, suggestNoteTitle, generateSummary, classifyContent, assist, autoEnhancements])
-
-  // Auto-enhance after recording stops (when Auto AI is enabled)
-  const prevIsRecordingRef = useRef(false)
-  useEffect(() => {
-    const prev = prevIsRecordingRef.current
-    if (prev && !isRecording) {
-      if (autoEnhancements && activeFormId) {
-        const form = workflowForms.find(f => f.id === activeFormId)
-        if (form && form.content.trim()) {
-          setActiveStep('structure')
-          // Fire-and-forget; internal function will move to enhance step
-          enhanceWithAI(activeFormId)
-        }
-      }
-    }
-    prevIsRecordingRef.current = isRecording
-  }, [isRecording, autoEnhancements, activeFormId, workflowForms, enhanceWithAI])
+  }, [workflowForms, activeStep, suggestNoteTitle, generateSummary, classifyContent, assist])
 
   // Voice feedback - read content aloud
   const speakContent = useCallback(async (text: string) => {

@@ -339,7 +339,7 @@ export default function ModernChatInterface() {
         }
 
         // Add file attachment to the current message
-        const attachment: Message['attachments'][0] = {
+        const attachment = {
           id: Date.now().toString() + '_' + file.name,
           name: file.name,
           type: file.type,
