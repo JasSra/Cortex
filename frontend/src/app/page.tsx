@@ -7,8 +7,8 @@ export default function Home() {
   const router = useRouter()
 
   useEffect(() => {
-    // Redirect to search page by default
-    router.replace('/search')
+    // Redirect to workspace by default for logged in users
+    router.replace('/workspace')
   }, [router])
 
   return (

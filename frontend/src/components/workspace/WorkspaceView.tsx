@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 import { 
   Bars3Icon,
   FolderIcon
@@ -16,6 +17,7 @@ export default function WorkspaceView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const router = useRouter()
 
   const { getWorkspace } = useWorkspaceApi()
   const { createNote } = useIngestApi()
@@ -46,12 +48,9 @@ export default function WorkspaceView() {
   }, [loadWorkspace])
 
   const handleNoteSelect = useCallback((noteId: string) => {
-    setSelectedNoteId(noteId)
-    // Auto-close sidebar on mobile after selecting note
-    if (window.innerWidth < 1024) {
-      setSidebarOpen(false)
-    }
-  }, [])
+    // Navigate to the dynamic route for the selected note
+    router.push(`/workspace/notes/${noteId}`)
+  }, [router])
 
   const handleBackToWorkspace = useCallback(() => {
     setSelectedNoteId(null)
@@ -70,9 +69,8 @@ export default function WorkspaceView() {
       const created = await createNote('', 'Untitled Note')
       const newId = created?.noteId
       if (newId) {
-        setSelectedNoteId(String(newId))
-        // Ensure editor area is visible on mobile
-        if (window.innerWidth < 1024) setSidebarOpen(false)
+        // Navigate to the new note
+        router.push(`/workspace/notes/${newId}`)
       }
     } catch (e) {
       console.error('Failed to create note:', e)
@@ -80,7 +78,7 @@ export default function WorkspaceView() {
     } finally {
       setCreating(false)
     }
-  }, [createNote, creating])
+  }, [createNote, creating, router])
 
   return (
     <div className="h-full flex bg-gray-50 dark:bg-slate-900">

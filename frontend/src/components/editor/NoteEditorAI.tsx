@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAssistApi, useVoiceApi } from '@/services/apiClient'
 import { useAppAuth } from '@/hooks/useAppAuth'
+import TranscriptionControl from '@/components/voice/TranscriptionControl'
 
 type Mode = 'suggest' | 'summarize' | 'rewrite'
 
@@ -22,6 +23,7 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
   const [loading, setLoading] = useState(false)
   const [debounceMs, setDebounceMs] = useState(450)
   const [provider, setProvider] = useState<'openai'|'ollama'>(() => (localStorage.getItem('editor:provider') as any) || 'openai')
+  const [useEnhancedTranscription, setUseEnhancedTranscription] = useState(false)
 
   const { assist } = useAssistApi()
   const voice = useVoiceApi()
@@ -95,6 +97,17 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
     } catch {/* ignore */}
   }, [voice])
 
+  // Handle transcription from enhanced control
+  const handleTranscript = useCallback((transcriptText: string) => {
+    setText(prev => {
+      // Add the transcript to existing text with proper spacing
+      if (prev.trim() === '') {
+        return transcriptText
+      }
+      return prev + (prev.endsWith(' ') ? '' : ' ') + transcriptText
+    })
+  }, [])
+
   // Voice dictation via WebSocket -> STT
   const startVoice = useCallback(async () => {
     if (recorderRef.current || wsRef.current) return
@@ -150,11 +163,20 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
 
   const toolbar = useMemo(() => (
     <div className="flex items-center gap-2 p-2 border-b border-gray-200 dark:border-gray-700">
+      {!useEnhancedTranscription && (
+        <button
+          className={`px-3 py-1.5 rounded-md text-sm ${recording ? 'bg-red-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'}`}
+          onClick={() => recording ? stopVoice() : startVoice()}
+          title={recording ? 'Stop voice dictation' : 'Start voice dictation'}
+        >{recording ? 'Stop' : 'Mic'}</button>
+      )}
       <button
-        className={`px-3 py-1.5 rounded-md text-sm ${recording ? 'bg-red-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'}`}
-        onClick={() => recording ? stopVoice() : startVoice()}
-        title={recording ? 'Stop voice dictation' : 'Start voice dictation'}
-      >{recording ? 'Stop' : 'Mic'}</button>
+        className={`px-3 py-1.5 rounded-md text-sm ${useEnhancedTranscription ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'}`}
+        onClick={() => setUseEnhancedTranscription(!useEnhancedTranscription)}
+        title="Toggle enhanced transcription mode"
+      >
+        {useEnhancedTranscription ? 'Enhanced Voice' : 'Basic Voice'}
+      </button>
       <button
         className="px-3 py-1.5 rounded-md text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
         onClick={doSummarize}
@@ -191,7 +213,7 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
         )}
       </div>
     </div>
-  ), [recording, stopVoice, startVoice, doSummarize, doRewrite, debounceMs])
+  ), [recording, stopVoice, startVoice, doSummarize, doRewrite, debounceMs, provider, suggestion, useEnhancedTranscription])
 
   return (
     <div className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ${className || ''}`}>
@@ -229,6 +251,20 @@ export function NoteEditorAI({ initialContent = '', placeholder = 'Start typing 
               }}
             />
           </div>
+          {/* Enhanced Transcription Control */}
+          {useEnhancedTranscription && (
+            <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                Enhanced Voice Transcription
+              </h4>
+              <TranscriptionControl
+                onTranscript={handleTranscript}
+                className="w-full"
+                showPlayback={true}
+              />
+            </div>
+          )}
+
           <div className="mt-3 flex gap-2">
             <button
               className="px-3 py-1.5 rounded-md text-sm bg-purple-600 text-white disabled:opacity-50"

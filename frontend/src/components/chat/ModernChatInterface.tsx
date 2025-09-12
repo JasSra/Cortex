@@ -194,7 +194,11 @@ const TypingIndicator = () => (
   </motion.div>
 )
 
-export default function ModernChatInterface() {
+interface ModernChatInterfaceProps {
+  conversationId?: string
+}
+
+export default function ModernChatInterface({ conversationId }: ModernChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',

@@ -28,31 +28,20 @@ public class VoiceController : ControllerBase
     }
 
     /// <summary>
-    /// WebSocket endpoint for Speech-to-Text streaming
-    /// Note: This should be mapped separately in Program.cs due to WebSocket requirements
+    /// WebSocket endpoint for Speech-to-Text streaming is handled directly in Program.cs
+    /// This endpoint redirects to proper WebSocket URL
     /// </summary>
     [HttpGet("stt")]
-    public async Task<IActionResult> HandleSttWebSocket()
+    public IActionResult GetSttWebSocketInfo()
     {
         if (!Rbac.RequireRole(_userContext, "Reader"))
             return Forbid("Reader role required");
 
-        if (!HttpContext.WebSockets.IsWebSocketRequest)
-            return BadRequest("WebSocket connection required");
-
-        _logger.LogInformation("Starting STT WebSocket session for user {UserId}", _userContext.UserId);
-
-        try
-        {
-            var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
-            await _voiceService.HandleSttWebSocketAsync(webSocket);
-            return new EmptyResult();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in STT WebSocket for user {UserId}", _userContext.UserId);
-            return StatusCode(500, new { error = "WebSocket error" });
-        }
+        return Ok(new { 
+            message = "Use WebSocket connection to /api/voice/stt for speech-to-text",
+            websocketUrl = "/api/voice/stt",
+            protocol = "WebSocket"
+        });
     }
 
     /// <summary>

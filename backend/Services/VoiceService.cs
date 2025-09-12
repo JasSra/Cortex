@@ -129,20 +129,82 @@ public class VoiceService : IVoiceService
     private async Task HandleOpenAiSttAsync(WebSocket webSocket, string apiKey)
     {
         var config = _configurationService.GetConfiguration();
+        var audioBuffer = new List<byte>();
+        var model = config["OpenAI:WhisperModel"] ?? config["OPENAI_WHISPER_MODEL"] ?? "whisper-1";
         
-        // Process audio data and send to OpenAI Whisper API
-        var buffer = new byte[1024 * 4];
-        var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-
-        if (result.MessageType == WebSocketMessageType.Binary)
+        _logger.LogInformation("Starting OpenAI STT WebSocket session");
+        
+        try
         {
-            var audioData = new byte[result.Count];
-            Array.Copy(buffer, audioData, result.Count);
+            var buffer = new byte[1024 * 16]; // Larger buffer for audio
+            
+            while (webSocket.State == WebSocketState.Open)
+            {
+                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                    break;
+                }
+                
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    _logger.LogDebug("Received STT control message: {Message}", message);
+                    
+                    // Handle control messages (e.g., "END" to process accumulated audio)
+                    if (message.Trim().Equals("END", StringComparison.OrdinalIgnoreCase) && audioBuffer.Count > 0)
+                    {
+                        await ProcessAccumulatedAudio(webSocket, audioBuffer.ToArray(), model, apiKey);
+                        audioBuffer.Clear();
+                    }
+                    else if (message.Trim().Equals("CLEAR", StringComparison.OrdinalIgnoreCase))
+                    {
+                        audioBuffer.Clear();
+                        await SendWebSocketMessage(webSocket, "CLEARED");
+                    }
+                }
+                else if (result.MessageType == WebSocketMessageType.Binary)
+                {
+                    // Accumulate audio data
+                    var audioChunk = new byte[result.Count];
+                    Array.Copy(buffer, audioChunk, result.Count);
+                    audioBuffer.AddRange(audioChunk);
+                    
+                    _logger.LogDebug("Accumulated audio chunk: {ChunkSize} bytes, Total: {TotalSize} bytes", 
+                        audioChunk.Length, audioBuffer.Count);
+                }
+            }
+        }
+        catch (WebSocketException ex)
+        {
+            _logger.LogWarning(ex, "WebSocket connection closed unexpectedly");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in OpenAI STT WebSocket handling");
+            await SendWebSocketMessage(webSocket, $"ERROR: {ex.Message}");
+        }
+    }
+
+    private async Task ProcessAccumulatedAudio(WebSocket webSocket, byte[] audioData, string model, string apiKey)
+    {
+        try
+        {
+            if (audioData.Length < 1024) // Skip very small audio chunks
+            {
+                await SendWebSocketMessage(webSocket, "ERROR: Audio too short");
+                return;
+            }
+
+            _logger.LogInformation("Processing accumulated audio: {Size} bytes", audioData.Length);
 
             // Send to OpenAI Whisper
             using var form = new MultipartFormDataContent();
             form.Add(new ByteArrayContent(audioData), "file", "audio.wav");
-            form.Add(new StringContent(config["OpenAI:WhisperModel"] ?? config["OPENAI_WHISPER_MODEL"] ?? "whisper-1"), "model");
+            form.Add(new StringContent(model), "model");
+            form.Add(new StringContent("json"), "response_format");
 
             var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/audio/transcriptions");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -156,9 +218,36 @@ public class VoiceService : IVoiceService
                 var transcription = JsonSerializer.Deserialize<JsonElement>(responseContent);
                 var text = transcription.GetProperty("text").GetString() ?? "";
 
-                var resultBytes = Encoding.UTF8.GetBytes(text);
-                await webSocket.SendAsync(new ArraySegment<byte>(resultBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    _logger.LogInformation("STT transcription successful: {Text}", text);
+                    await SendWebSocketMessage(webSocket, text);
+                }
+                else
+                {
+                    await SendWebSocketMessage(webSocket, "");
+                }
             }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("OpenAI STT request failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+                await SendWebSocketMessage(webSocket, $"ERROR: STT failed with status {response.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing accumulated audio");
+            await SendWebSocketMessage(webSocket, $"ERROR: {ex.Message}");
+        }
+    }
+
+    private async Task SendWebSocketMessage(WebSocket webSocket, string message)
+    {
+        if (webSocket.State == WebSocketState.Open)
+        {
+            var bytes = Encoding.UTF8.GetBytes(message);
+            await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
         }
     }
 
@@ -215,29 +304,42 @@ public class VoiceService : IVoiceService
     {
         var config = _configurationService.GetConfiguration();
         
-        var model = config["OpenAI:TtsModel"] ?? config["OPENAI_TTS_MODEL"] ?? "tts-1";
+        // Use the latest OpenAI TTS model for better real-time performance
+        var model = config["OpenAI:TtsModel"] ?? config["OPENAI_TTS_MODEL"] ?? "tts-1-hd";
         var voice = config["OpenAI:TtsVoice"] ?? config["OPENAI_TTS_VOICE"] ?? "alloy";
+        var format = config["OpenAI:TtsFormat"] ?? config["OPENAI_TTS_FORMAT"] ?? "mp3";
 
         var requestData = new
         {
             model = model,
             input = text,
-            voice = voice
+            voice = voice,
+            response_format = format,
+            speed = 1.0
         };
 
         var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/audio/speech");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         request.Content = new StringContent(JsonSerializer.Serialize(requestData), Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.SendAsync(request);
-        
-        if (response.IsSuccessStatusCode)
+        try
         {
-            return await response.Content.ReadAsByteArrayAsync();
+            var response = await _httpClient.SendAsync(request);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsByteArrayAsync();
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("OpenAI TTS request failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+                return Array.Empty<byte>();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            _logger.LogError("OpenAI TTS request failed: {StatusCode}", response.StatusCode);
+            _logger.LogError(ex, "Exception during OpenAI TTS request");
             return Array.Empty<byte>();
         }
     }

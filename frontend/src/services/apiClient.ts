@@ -896,9 +896,10 @@ export function useSeedApi() {
 // Voice API convenience
 export function useVoiceApi() {
   const { getAccessToken } = useAppAuth()
+  const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+
   return {
     tts: async (text: string) => {
-      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
       const token = await getAccessToken()
       const resp = await fetch(`${baseUrl}/api/Voice/tts`, {
         method: 'POST',
@@ -911,15 +912,15 @@ export function useVoiceApi() {
       if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`)
       return await resp.blob()
     },
+    
     ttsStreamUrl: async (text: string) => {
-      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
       const token = await getAccessToken()
       const params = new URLSearchParams({ text })
       if (token) params.set('access_token', token)
       return `${baseUrl}/api/Voice/tts/stream?${params.toString()}`
     },
-  ttsTest: async (text?: string) => {
-      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+    
+    ttsTest: async (text?: string) => {
       const token = await getAccessToken()
       const resp = await fetch(`${baseUrl}/api/Voice/test`, {
         method: 'POST',
@@ -932,8 +933,8 @@ export function useVoiceApi() {
       if (!resp.ok) throw new Error(`TTS test failed: ${resp.status}`)
       return await resp.blob()
     },
+    
     validateConfig: async (config: Partial<VoiceConfigRequest>) => {
-      const baseUrl = (globalThis as any).process?.env?.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
       const token = await getAccessToken()
       const resp = await fetch(`${baseUrl}/api/Voice/config`, {
         method: 'POST',
@@ -947,6 +948,12 @@ export function useVoiceApi() {
       const data = text ? JSON.parse(text) : {}
       if (!resp.ok) throw new Error(data?.error || 'Voice config validation failed')
       return data as VoiceConfigValidationResult
+    },
+
+    // WebSocket-based STT service
+    createSTTWebSocket: async () => {
+      const { WebSocketSTTService } = await import('./websocketSTT')
+      return new WebSocketSTTService(baseUrl, getAccessToken)
     }
   }
 }

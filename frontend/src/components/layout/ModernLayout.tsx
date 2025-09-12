@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter, usePathname } from 'next/navigation'
+import { isWorkspaceNoteRoute, isChatConversationRoute, getWorkspaceNoteUrl, getChatConversationUrl } from '@/lib/routeUtils'
 import { 
   HomeIcon, 
   ChatBubbleLeftRightIcon, 
@@ -88,7 +89,20 @@ export default function ModernLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   
   // Get current view from pathname
-  const activeView = pathname === '/' ? 'search' : pathname.slice(1).split('/')[0] || 'search'
+  const activeView = pathname === '/' ? 'search' : (() => {
+    const segments = pathname.slice(1).split('/')
+    const baseRoute = segments[0] || 'search'
+    
+    // Handle dynamic routes - show parent route as active
+    if (baseRoute === 'workspace' && segments[1] === 'notes') {
+      return 'workspace'
+    }
+    if (baseRoute === 'chat' && segments[1]) {
+      return 'chat'
+    }
+    
+    return baseRoute
+  })()
   
   // Navigation handler that uses router
   const onViewChange = useCallback((view: string) => {

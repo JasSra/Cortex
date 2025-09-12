@@ -824,14 +824,31 @@ using (var scope = app.Services.CreateScope())
 app.MapControllers();
 
 // WebSocket endpoint for STT (requires special handling)
-app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
+app.Map("/api/voice/stt", async (HttpContext context, IVoiceService voiceService, IUserContextAccessor userContext) =>
 {
+    // Check for token in query parameter (for WebSocket compatibility)
+    var token = context.Request.Query["access_token"].FirstOrDefault();
+    if (!string.IsNullOrEmpty(token))
+    {
+        context.Request.Headers["Authorization"] = $"Bearer {token}";
+    }
+    
     // Enforce authentication for WebSocket STT
     if (!(context.User?.Identity?.IsAuthenticated ?? false))
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await context.Response.WriteAsync("Unauthorized");
         return;
     }
+    
+    // Check user has required role
+    if (!Rbac.RequireRole(userContext, "Reader"))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsync("Reader role required");
+        return;
+    }
+    
     if (context.WebSockets.IsWebSocketRequest)
     {
         var webSocket = await context.WebSockets.AcceptWebSocketAsync();
@@ -840,12 +857,13 @@ app.Map("/voice/stt", async (HttpContext context, IVoiceService voiceService) =>
     else
     {
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsync("WebSocket connection required");
     }
 });
 
-//// Health check endpoint
-//app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
-//.WithName("HealthCheck");
+// Health check endpoint
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
+.WithName("HealthCheck");
 
 try
 {
